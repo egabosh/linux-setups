@@ -1,0 +1,130 @@
+- name: Webmin setup
+  hosts: all
+  tasks:
+
+    - name: Add webmin Apt signing key
+      ansible.builtin.apt_key:
+        url: https://download.webmin.com/developers-key.asc
+        state: present
+
+    - name: Add webmin repository
+      ansible.builtin.apt_repository:
+        repo: deb [signed-by=/usr/share/keyrings/debian-webmin-developers.gpg] https://download.webmin.com/download/newkey/repository stable contrib
+        state: present
+        filename: webmin
+
+    - name: Install webmin
+      apt:
+        name:
+          - libauthen-oath-perl
+          - webmin
+        update_cache: no
+        install_recommends: no
+
+    - name: /etc/webmin/miniserv.conf ssl
+      ansible.builtin.lineinfile:
+        path: /etc/webmin/miniserv.conf
+        regexp: '^ssl\=1$'
+        line: 'ssl=0'
+        backup: yes
+      notify:
+      - Restart webmin
+
+    - name: /etc/webmin/miniserv.conf redirect_host
+      ansible.builtin.lineinfile:
+        path: /etc/webmin/miniserv.conf
+        regexp: '^redirect_host\=.*$'
+        line: "redirect_host=webmin.{{inventory_hostname}}"
+        backup: yes
+      notify:
+      - Restart webmin
+
+    - name: /etc/webmin/miniserv.conf redirect_port
+      ansible.builtin.lineinfile:
+        path: /etc/webmin/miniserv.conf
+        regexp: '^redirect_port\=.*$'
+        line: "redirect_port=443"
+        backup: yes
+      notify:
+      - Restart webmin
+
+    - name: /etc/webmin/miniserv.conf redirect_port
+      ansible.builtin.lineinfile:
+        path: /etc/webmin/miniserv.conf
+        regexp: '^redirect_ssl\=.*$'
+        line: "redirect_ssl=1"
+        backup: yes
+      notify:
+      - Restart webmin
+
+    - name: /etc/webmin/miniserv.conf trust_real_ip
+      ansible.builtin.lineinfile:
+        path: /etc/webmin/miniserv.conf
+        line: "trust_real_ip=1"
+        backup: yes
+      notify:
+      - Restart webmin
+
+    - name: /etc/webmin/config referers
+      ansible.builtin.lineinfile:
+        path: /etc/webmin/config
+        regexp: '^referers='
+        line: "referers=webmin.{{inventory_hostname}}"
+        backup: yes
+      notify:
+      - Restart webmin
+
+    - name: /etc/webmin/rootpwfromadm.sh
+      blockinfile:
+        path: /etc/webmin/rootpwfromadm.sh
+        create: yes
+        mode: 0400
+        owner: root
+        group: root
+        marker: "# {mark} ANSIBLE MANAGED BLOCK"
+        block: |
+          grep ^{{ ansible_facts['hostname'] }}adm: /etc/shadow >/etc/webmin/miniserv.users
+          sed -i "s/^{{ ansible_facts['hostname'] }}adm/root/" /etc/webmin/miniserv.users
+          echo done >/etc/webmin/rootpwfromadm.sh.done
+        backup: yes
+      notify:
+      - Restart webmin
+
+    - name: Set initial Webin-internal-Root Passwort from admin User
+      ansible.builtin.shell: bash /etc/webmin/rootpwfromadm.sh
+      args:
+        chdir: /home/docker/nextcloud.{{inventory_hostname}}
+        creates: /etc/webmin/rootpwfromadm.sh.done
+
+    - name: /home/docker/traefik/providers/webmin.yml Webmin<->Traefik provider
+      blockinfile:
+        path: /home/docker/traefik/providers/webmin.yml
+        create: yes
+        mode: 0444
+        owner: root
+        group: docker
+        marker: "# {mark} ANSIBLE MANAGED BLOCK"
+        block: |
+          http:
+            routers:
+              webmin:
+                rule: "Host(`webmin.{{inventory_hostname}}`)"
+                service: webmin
+                entryPoints:
+                  - "https"
+                tls:
+                  certresolver: letsencrypt
+                middlewares: secHeaders@file
+            services:
+              webmin:
+                loadBalancer:
+                  servers:
+                    - url: "http://192.168.41.1:10000"
+
+  handlers:
+
+    - name: Restart webmin
+      service:
+        name: webmin
+        state: restarted
+

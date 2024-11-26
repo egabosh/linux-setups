@@ -1,0 +1,24 @@
+---
+
+- name: signal-desktop
+  hosts: all
+  tasks:
+
+    - name: Add signing key
+      ansible.builtin.shell: curl -fsSL  https://updates.signal.org/desktop/apt/keys.asc | gpg --output  "/usr/share/keyrings/signal-desktop-keyring.gpg" --dearmor
+      args:
+        creates: /usr/share/keyrings/signal-desktop-keyring.gpg
+
+    - name: Add repository into list
+      ansible.builtin.apt_repository:
+        repo: "deb [arch=amd64 signed-by=/usr/share/keyrings/signal-desktop-keyring.gpg] https://updates.signal.org/desktop/apt xenial main"
+        state: present
+        filename: signal-desktop
+
+    - name: Package for signal-desktop
+      apt:
+        name:
+          - signal-desktop
+        update_cache: yes
+        install_recommends: no
+

@@ -1,0 +1,238 @@
+---
+- name: wordpress
+  hosts: all
+  tasks:
+
+    - name: Create /home/docker/wordpress.{{inventory_hostname}} dir
+      ansible.builtin.file:
+        path: /home/docker/wordpress.{{inventory_hostname}}
+        owner: root
+        group: docker
+        state: directory
+        mode: '0550'
+
+    - name: /home/docker/wordpress.{{inventory_hostname}}/genpw.sh (generate Random PW for Semaphore and DB)
+      blockinfile:
+        path: /home/docker/wordpress.{{inventory_hostname}}/genpw.sh
+        create: yes
+        mode: 0550
+        owner: root
+        group: docker
+        marker: "# {mark} ANSIBLE MANAGED BLOCK"
+        block: |
+          cd /home/docker/wordpress.{{inventory_hostname}}
+
+          mysqluser=$(pwgen -s 32 1)
+          mysqlpassword=$(pwgen -s 32 1)
+          wpadminpassword=$(pwgen -s 32 1)
+
+          [ -f env ] || echo "WORDPRESS_DB_USER=!MYSQLUSER!
+          WORDPRESS_DB_PASSWORD=!MYSQLPASSWORD!
+          WORDPRESS_ADMIN_PASSWORD=!WPADMINPASSWD!
+          " >env
+
+          [ -f env.db ] || echo "MARIADB_USER=!MYSQLUSER!
+          MARIADB_PASSWORD=!MYSQLPASSWORD!
+          " >env.db
+
+          [ -f env.phpmyadmin ] || echo "PMA_USER=!MYSQLUSER!
+          PMA_PASSWORD=!MYSQLPASSWORD!
+          " >env.phpmyadmin
+
+          chmod 440 env env.db env.phpmyadmin
+          chown root:docker env env.db env.phpmyadmin
+          sed -i "s/\!MYSQLUSER\!/$mysqluser/g" env env.db env.phpmyadmin
+          sed -i "s/\!MYSQLPASSWORD\!/$mysqlpassword/g" env env.db env.phpmyadmin
+          sed -i "s/\!WPADMINPASSWD\!/$wpadminpassword/g" env
+        backup: yes
+        validate: /bin/bash -n %s
+      notify: run genpw.sh
+
+    - name: /home/docker/wordpress.{{inventory_hostname}}/genpw.sh shebang
+      lineinfile:
+        path: /home/docker/wordpress.{{inventory_hostname}}/genpw.sh
+        insertbefore: BOF
+        line: "#!/bin/bash -e"
+
+    - name: Gen initial passwords if not exists
+      ansible.builtin.shell: ./genpw.sh
+      args:
+        chdir: /home/docker/wordpress.{{inventory_hostname}}
+        creates: /home/docker/wordpress.{{inventory_hostname}}/env
+
+    - name: /home/docker/wordpress.{{inventory_hostname}}/docker-compose.yml Container Configuration
+      blockinfile:
+        path: /home/docker/wordpress.{{inventory_hostname}}/docker-compose.yml
+        create: yes
+        mode: 0440
+        owner: root
+        group: docker
+        marker: "# {mark} ANSIBLE MANAGED BLOCK"
+        block: |
+        
+          services:
+
+            wordpress.{{inventory_hostname}}:
+              image: wordpress:latest
+              restart: unless-stopped
+              env_file: env
+              environment:
+                - WORDPRESS_DB_HOST=wordpress.{{inventory_hostname}}--db
+                - WORDPRESS_DB_NAME=wordpress-db
+                - WORDPRESS_DEBUG=0
+              volumes:
+                - ./wp-data:/var/www/html
+                - ./wp-static:/var/www/static
+                #- ./php.ini:/usr/local/etc/php/php.ini
+                - /etc/localtime:/etc/localtime
+              networks:
+                - wordpress.{{inventory_hostname}}--network
+                - traefik
+              labels:
+                - traefik.enable=true
+                # HTTPS
+                - traefik.http.routers.wordpress-{{ ansible_facts['hostname'] }}.rule=Host(`wordpress.{{ ansible_facts['nodename'] }}`)
+                - traefik.http.routers.wordpress-{{ ansible_facts['hostname'] }}.entrypoints=https
+                - traefik.http.routers.wordpress-{{ ansible_facts['hostname'] }}.tls=true
+                - traefik.http.routers.wordpress-{{ ansible_facts['hostname'] }}.middlewares=secHeaders@file
+                # Proxy to service-port
+                - traefik.http.services.wordpress-{{ ansible_facts['hostname'] }}.loadbalancer.server.port=80
+                - traefik.http.routers.wordpress-{{ ansible_facts['hostname'] }}.service=wordpress-{{ ansible_facts['hostname'] }}
+                # cert via letsencrypt
+                - traefik.http.routers.wordpress-{{ ansible_facts['hostname'] }}.tls.certresolver=letsencrypt
+                # Traefik network
+                - traefik.docker.network=traefik
+              depends_on:
+                - wordpress.{{inventory_hostname}}--db
+
+            wordpress.{{inventory_hostname}}--wpcli:
+              image: wordpress:cli
+              user: "33:33"
+              env_file: env
+              environment:
+                - WORDPRESS_DB_HOST=wordpress.{{inventory_hostname}}--db
+                - WORDPRESS_DB_NAME=wordpress-db
+              volumes:
+                - ./wp-data:/var/www/html
+                - /etc/localtime:/etc/localtime
+              networks:
+                - wordpress.{{inventory_hostname}}--network
+              working_dir: /var/www/html
+
+            wordpress.{{inventory_hostname}}--db:
+              image: mariadb:lts
+              cap_add:
+                - SYS_NICE
+              restart: unless-stopped
+              networks:
+                - wordpress.{{inventory_hostname}}--network
+              hostname: mysql
+              volumes:
+                - ./db-data:/var/lib/mysql
+                - /etc/localtime:/etc/localtime:ro
+                - /home/docker/_defaults/mariadb/99-server.cnf:/etc/mysql/mariadb.conf.d/99-server.cnf
+              env_file:
+                - env.db
+                - /home/docker/_defaults/mariadb/mariadb.env
+              environment:
+                - MARIADB_DATABASE=wordpress-db
+
+            wordpress.{{inventory_hostname}}--phpmyadmin:
+              image: phpmyadmin:latest
+              restart: unless-stopped
+              env_file: env.phpmyadmin
+              environment:
+                - PMA_ARBITRARY=0
+                - PMA_HOST=wordpress.{{inventory_hostname}}--db
+              volumes:
+                - /etc/localtime:/etc/localtime:ro
+              networks:
+                - wordpress.{{inventory_hostname}}--network
+                - traefik
+              labels:
+                - traefik.enable=true
+                # HTTPS
+                - traefik.http.routers.wordpress-{{ ansible_facts['hostname'] }}--phpmyadmin.rule=Host(`wordpress-phpmyadmin.{{ ansible_facts['nodename'] }}`)
+                - traefik.http.routers.wordpress-{{ ansible_facts['hostname'] }}--phpmyadmin.entrypoints=https
+                - traefik.http.routers.wordpress-{{ ansible_facts['hostname'] }}--phpmyadmin.tls=true
+                # Proxy to service-port
+                - traefik.http.services.wordpress-{{ ansible_facts['hostname'] }}--phpmyadmin.loadbalancer.server.port=80
+                - traefik.http.routers.wordpress-{{ ansible_facts['hostname'] }}--phpmyadmin.service=wordpress-{{ ansible_facts['hostname'] }}--phpmyadmin
+                # cert via letsencrypt
+                - traefik.http.routers.wordpress-{{ ansible_facts['hostname'] }}--phpmyadmin.tls.certresolver=letsencrypt
+                # Auth
+                - traefik.http.routers.wordpress-{{ ansible_facts['hostname'] }}--phpmyadmin.middlewares=secHeaders@file,default-basic-auth@file
+                # Traefik network
+                - traefik.docker.network=traefik
+
+          networks:
+            wordpress.{{inventory_hostname}}--network:
+              driver: bridge
+              driver_opts:
+                com.docker.network.bridge.name: br-wordpress
+            traefik:
+              external: true
+
+        backup: yes
+      notify: Restart wordpress
+
+    - name: Start wordpress
+      ansible.builtin.shell: docker-compose up -d --force-recreate
+      args:
+        chdir: /home/docker/wordpress.{{inventory_hostname}}
+        creates: /home/docker/wordpress.{{inventory_hostname}}/db-data/sys/db.opt
+
+    - name: Wait until wordpress install is finished
+      wait_for:
+        path: /home/docker/wordpress.{{inventory_hostname}}/wp-data/index.php
+
+    - name: /home/docker/wordpress.{{inventory_hostname}}/wordpress.init.sh
+      blockinfile:
+        path: /home/docker/wordpress.{{inventory_hostname}}/wordpress.init.sh
+        mode: "0500"
+        owner: root
+        group: root
+        create: yes
+        marker: "# {mark} ANSIBLE MANAGED BLOCK"
+        block: |
+          # install wordpress Login URL: https://wordpress.{{inventory_hostname}}/wp-login.php
+          cd /home/docker/wordpress.{{inventory_hostname}}
+          if ! docker-compose run wordpress.{{inventory_hostname}}--cli wp core is-installed
+          then
+            until wget -t1 --timeout=15 https://wordpress.{{inventory_hostname}} >/dev/null 2>&1
+            do 
+             sleep 5
+            done
+            cat env | egrep "^WORDPRESS_ADMIN_PASSWORD=" >env.tmp
+            . env.tmp
+            rm -f env.tmp
+            docker-compose run wordpress.{{inventory_hostname}}--cli wp core install --url="https://wordpress.{{inventory_hostname}}" --title="wordpress.{{inventory_hostname}}" --admin_name=wpadmin --admin_password=${WORDPRESS_ADMIN_PASSWORD} --admin_email='admin@{{inventory_hostname}}'
+          fi
+        backup: yes
+        validate: /bin/bash -n %s
+      notify: run wordpress.init
+
+    - name: Run wordpress.init after install
+      ansible.builtin.shell: bash /home/docker/wordpress.{{inventory_hostname}}/wordpress.init.sh
+      args:
+        chdir: /home/docker/wordpress.{{inventory_hostname}}
+        creates: /home/docker/wordpress.{{inventory_hostname}}/wordpress.init.log
+
+
+
+  handlers:
+
+    - name: run genpw.sh
+      ansible.builtin.shell: ./genpw.sh
+      args:
+        chdir: /home/docker/wordpress.{{inventory_hostname}}
+      notify: Restart wordpress
+
+    - name: run wordpress.init
+      ansible.builtin.shell: bash /home/docker/wordpress.{{inventory_hostname}}/wordpress.init.sh
+
+    - name: Restart wordpress
+      ansible.builtin.shell: docker-compose up -d --force-recreate
+      args:
+        chdir: /home/docker/wordpress.{{inventory_hostname}}
+

@@ -1,0 +1,24 @@
+---
+
+- name: element-desktop
+  hosts: all
+  tasks:
+
+    - name: Add signing key
+      ansible.builtin.shell: wget -O /usr/share/keyrings/element-io-archive-keyring.gpg https://packages.element.io/debian/element-io-archive-keyring.gpg
+      args:
+        creates: /usr/share/keyrings/element-io-archive-keyring.gpg
+
+    - name: Add repository into list
+      ansible.builtin.apt_repository:
+        repo: "deb [signed-by=/usr/share/keyrings/element-io-archive-keyring.gpg] https://packages.element.io/debian/ default main"
+        state: present
+        filename: element-io
+
+    - name: Package for element-desktop
+      apt:
+        name:
+          - element-desktop
+        update_cache: yes
+        install_recommends: no
+

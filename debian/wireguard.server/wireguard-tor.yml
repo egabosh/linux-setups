@@ -1,0 +1,332 @@
+---
+- name: wireguard setup
+  hosts: all
+  tasks:
+
+    - name: Packages for wireguard
+      apt:
+        name:
+          - wireguard
+          - ufw
+        update_cache: no
+        install_recommends: no
+
+    - name: activate wireguard logging
+      blockinfile:
+        path: /etc/modprobe.d/wireguard.conf
+        create: yes
+        mode: "0444"
+        owner: root
+        group: root
+        marker: "# {mark} ANSIBLE MANAGED BLOCK for wireguard"
+        insertbefore: BOF
+        block: |
+          options wireguard dyndbg=+p
+          
+    - name: load wireguard module during boot
+      blockinfile:
+        path: /etc/modules-load.d/wireguard.conf
+        create: yes
+        mode: "0444"
+        owner: root
+        group: root
+        marker: "# {mark} ANSIBLE MANAGED BLOCK for wireguard"
+        insertbefore: BOF
+        block: |
+          wireguard
+          
+    - name: ufw firewall rules for routing to the Internet Tor via ipv6
+      blockinfile:
+        path: /etc/ufw/before6.rules
+        create: yes
+        mode: "0440"
+        owner: root
+        group: root
+        marker: "# {mark} ANSIBLE MANAGED BLOCK for wireguard-tor"
+        insertbefore: BOF
+        block: |
+          *nat
+          :POSTROUTING ACCEPT - [0:0]
+          # Redirect DNS to TorDNS
+          -A PREROUTING -i wgtor0 -s fdaa:a192:b168:cd45::/64 -d fdaa:a192:b168:cd45::1 -p udp --dport 53 -j REDIRECT --to-ports 5353
+          # Route network fdaa:a192:b168:cd45::/64 (wgtor0) to transparent Tor-Proxy (udp not supported by Tor)
+          # Activate "normal" routing for non-Internet Networks
+          -A POSTROUTING -s fdaa:a192:b168:cd45::/64 -j MASQUERADE
+          # Redirect all TCP-Connections to transparent Tor-Proxy
+          -A PREROUTING -i wgtor0 -s fdaa:a192:b168:cd45::/64 -p tcp --syn -j REDIRECT --to-ports 9040
+          # Redirect all non TCP-Connections into nirvana because Tor only speaks TCP
+          -A PREROUTING -i wgtor0 -s fdaa:a192:b168:cd45::/64 ! -p tcp -j DNAT --to ::1
+          COMMIT
+      notify:
+      - Restart ufw
+
+    - name: ufw firewall rules for routing to the Internet over Tor
+      blockinfile:
+        path: /etc/ufw/before.rules
+        create: yes
+        mode: "0440"
+        owner: root
+        group: root
+        marker: "# {mark} ANSIBLE MANAGED BLOCK for wireguard-tor"
+        insertbefore: BOF
+        block: |
+          *nat
+          :POSTROUTING ACCEPT - [0:0]
+          # Redirect DNS to TorDNS
+          -A PREROUTING -i wgtor0 -s 192.168.45.0/24 -d 192.168.45.1 -p udp --dport 53 -j REDIRECT --to-ports 5353
+          # Route network 192.168.45.0/24 (wgtor0) to transparent Tor-Proxy (udp not supported by Tor)
+          # Activate "normal" routing for non-Internet Networks
+          -A POSTROUTING -s 192.168.45.0/24 -j MASQUERADE
+          -A PREROUTING -i wgtor0 -d 127.0.0.0/8 -j RETURN
+          -A PREROUTING -i wgtor0 -d 10.0.0.0/8 -j RETURN
+          -A PREROUTING -i wgtor0 -d 192.168.0.0/16 -j RETURN
+          -A PREROUTING -i wgtor0 -d 172.16.0.0/12 -j RETURN
+          -A PREROUTING -i wgtor0 -d 0.0.0.0/8 -j RETURN
+          -A PREROUTING -i wgtor0 -d 100.64.0.0/10 -j RETURN
+          -A PREROUTING -i wgtor0 -d 169.254.0.0/16 -j RETURN
+          -A PREROUTING -i wgtor0 -d 192.0.0.0/24 -j RETURN
+          -A PREROUTING -i wgtor0 -d 192.0.2.0/24 -j RETURN
+          -A PREROUTING -i wgtor0 -d 192.88.99.0/24 -j RETURN
+          -A PREROUTING -i wgtor0 -d 198.18.0.0/15 -j RETURN
+          -A PREROUTING -i wgtor0 -d 198.51.100.0/24 -j RETURN
+          -A PREROUTING -i wgtor0 -d 203.0.113.0/24 -j RETURN
+          -A PREROUTING -i wgtor0 -d 224.0.0.0/4 -j RETURN
+          -A PREROUTING -i wgtor0 -d 240.0.0.0/4 -j RETURN
+          -A PREROUTING -i wgtor0 -d 255.255.255.255/32 -j RETURN
+          # Redirect all TCP-Connections to transparent Tor-Proxy
+          -A PREROUTING -i wgtor0 -s 192.168.45.0/24 -p tcp --syn -j REDIRECT --to-ports 9040
+          # Redirect all non TCP-Connections into nirvana because Tor only speaks TCP
+          -A PREROUTING -i wgtor0 -s 192.168.45.0/24 ! -p tcp -j DNAT --to 127.0.0.1:1
+          COMMIT
+      notify:
+      - Restart ufw
+
+    - name: Allow Routing
+      community.general.ufw:
+        rule: allow
+        route: yes
+        interface_out: wgtor0
+
+    - name: 'add wireguard-tor to startup'
+      command: systemctl enable wg-quick@wgtor0.service
+      args:
+        creates: /etc/systemd/system/multi-user.target.wants/wg-quick@wgtor0.service
+
+    - name: Restart service for config changes
+      copy:
+        dest: "/etc/systemd/system/wg-ui-tor-restart.service"
+        content: |
+          [Unit]
+          Description=Restart WireGuard
+          After=network.target
+          
+          [Service]
+          Type=oneshot
+          ExecStart=/usr/bin/systemctl restart wg-quick@wgtor0.service
+          
+          [Install]
+          RequiredBy=wg-ui-tor-restart.path
+
+    - name: 'start wg-ui-tor-restart.service'
+      systemd:
+        name: wg-ui-tor-restart.service
+        enabled: true
+
+    - name: Restart service for config changes
+      copy:
+        dest: "/etc/systemd/system/wg-ui-tor-restart.path"
+        content: |
+          [Unit]
+          Description=Watch /etc/wireguard/wgtor0.conf for changes
+          
+          [Path]
+          PathModified=/etc/wireguard/wgtor0.conf
+          
+          [Install]
+          WantedBy=multi-user.target
+
+    - name: 'add wg-ui-tor-restart.path to startup'
+      systemd:
+        name: wg-ui-tor-restart.path
+        state: started
+        enabled: true
+
+
+    - name: Create /home/docker/wireguard-tor.{{inventory_hostname}} dir
+      ansible.builtin.file:
+        path: /home/docker/wireguard-tor.{{inventory_hostname}}
+        owner: root
+        group: docker
+        state: directory
+        mode: '0550'
+
+    - name: /home/docker/wireguard-tor.{{inventory_hostname}}/genpw.sh (generate random admin PW)
+      blockinfile:
+        path: /home/docker/wireguard-tor.{{inventory_hostname}}/genpw.sh
+        create: yes
+        mode: 0550
+        owner: root
+        group: docker
+        marker: "# {mark} ANSIBLE MANAGED BLOCK"
+        block: |
+          cd /home/docker/wireguard-tor.{{inventory_hostname}}
+
+          adminpassword=$(pwgen -s 32 1)
+          sessionsecret=$(pwgen -s 32 1)
+
+          [ -f env ] || echo "WGUI_PASSWORD=!ADMINPASSWD!
+          SESSION_SECRET=!SESSIONSECRET!" >env
+
+          chmod 440 env
+          chown root:docker env 
+          sed -i "s/\!ADMINPASSWD\!/$adminpassword/g" env
+          sed -i "s/\!SESSIONSECRET\!/$sessionsecret/g" env
+        backup: yes
+        validate: /bin/bash -n %s
+      notify: run genpw.sh
+
+    - name: /home/docker/wireguard-tor.{{inventory_hostname}}/genpw.sh shebang
+      lineinfile:
+        path: /home/docker/wireguard-tor.{{inventory_hostname}}/genpw.sh
+        insertbefore: BOF
+        line: "#!/bin/bash -e"
+
+    - name: Gen initial passwords if not exists
+      ansible.builtin.shell: ./genpw.sh
+      args:
+        chdir: /home/docker/wireguard-tor.{{inventory_hostname}}
+        creates: /home/docker/wireguard-tor.{{inventory_hostname}}/env
+
+    - name: /home/docker/wireguard-tor.{{inventory_hostname}}/docker-compose.yml Container Configuration
+      blockinfile:
+        path: /home/docker/wireguard-tor.{{inventory_hostname}}/docker-compose.yml
+        create: yes
+        mode: 0440
+        owner: root
+        group: docker
+        marker: "# {mark} ANSIBLE MANAGED BLOCK"
+        block: |
+        
+          services:
+            wireguard-tor.{{inventory_hostname}}:
+              image: ngoduykhanh/wireguard-ui:latest
+              restart: unless-stopped
+              cap_add:
+                - NET_ADMIN
+              network_mode: host
+              env_file: env
+              environment:
+                - BIND_ADDRESS=192.168.41.1:5001
+                - WGUI_ENDPOINT_ADDRESS=wireguard-tor.{{inventory_hostname}}
+                - WGUI_USERNAME=wgadmin
+                - WGUI_MANAGE_START=false
+                - WGUI_MANAGE_RESTART=false
+                - WGUI_DNS=192.168.45.1
+                - WGUI_MTU=1450
+                - WGUI_CONFIG_FILE_PATH=/etc/wireguard/wgtor0.conf
+                - WGUI_LOG_LEVEL=INFO
+                - WGUI_SERVER_INTERFACE_ADDRESSES=fdaa:a192:b168:cd45::1/64,192.168.45.1/24
+                - WGUI_SERVER_LISTEN_PORT=59667
+                - WGUI_SERVER_POST_UP_SCRIPT
+                - WGUI_SERVER_POST_DOWN_SCRIPT
+                - WGUI_DEFAULT_CLIENT_USE_SERVER_DNS=true
+                - WGUI_DEFAULT_CLIENT_ENABLE_AFTER_CREATION=true
+                # route all but priate ipv4 networks (expect 192.168.45.0/24) through wireguard - not working
+                #- WGUI_DEFAULT_CLIENT_ALLOWED_IPS=::/0,0.0.0.0/5,8.0.0.0/7,11.0.0.0/8,12.0.0.0/6,16.0.0.0/4,32.0.0.0/3,64.0.0.0/2,128.0.0.0/3,160.0.0.0/5,168.0.0.0/8,169.0.0.0/9,169.128.0.0/10,169.192.0.0/11,169.224.0.0/12,169.240.0.0/13,169.248.0.0/14,169.252.0.0/15,169.255.0.0/16,170.0.0.0/7,172.0.0.0/12,172.32.0.0/11,172.64.0.0/10,172.128.0.0/9,173.0.0.0/8,174.0.0.0/7,176.0.0.0/4,192.0.0.0/9,192.128.0.0/11,192.160.0.0/13,192.168.45.0/24,192.169.0.0/16,192.170.0.0/15,192.172.0.0/14,192.176.0.0/12,192.192.0.0/10,193.0.0.0/8,194.0.0.0/7,196.0.0.0/6,200.0.0.0/5,208.0.0.0/4,224.0.0.0/3
+              volumes:
+                - ./db:/app/db
+                - /etc/wireguard:/etc/wireguard
+                - /etc/timezone:/etc/timezone:ro
+                - /etc/localtime:/etc/localtime:ro
+        backup: yes
+      notify: Restart wireguard
+
+    - name: Start wireguard
+      ansible.builtin.shell: docker-compose up -d --force-recreate
+      args:
+        chdir: /home/docker/wireguard-tor.{{inventory_hostname}}
+        creates: /home/docker/wireguard-tor.{{inventory_hostname}}/db/server/global_settings.json
+
+    - name: Wait until wireguard install is finished
+      wait_for:
+        path: /etc/wireguard/wgtor0.conf
+
+    - name: /home/docker/traefik/providers/wireguard-tor-ui.yml
+      blockinfile:
+        path: /home/docker/traefik/providers/wireguard-tor-ui.yml
+        create: yes
+        mode: 0444
+        owner: root
+        group: docker
+        marker: "# {mark} ANSIBLE MANAGED BLOCK"
+        block: |
+          http:
+            routers:
+              wireguard-tor:
+                rule: "Host(`wireguard-tor.{{inventory_hostname}}`)"
+                service: wireguard-tor
+                entryPoints:
+                  - "https"
+                tls:
+                  certresolver: letsencrypt
+                middlewares: secHeaders@file
+            services:
+              wireguard-tor:
+                loadBalancer:
+                  servers:
+                    - url: "http://192.168.41.1:5001"
+
+    - name: Allow port 59667
+      community.general.ufw:
+        rule: allow
+        port: '59667'
+        proto: udp
+
+    - name: Allow access to tor
+      community.general.ufw:
+        rule: allow
+        port: '9040'
+        proto: tcp
+        interface: wgtor0
+        direction: in
+
+    - name: Allow all access to tcp port 53/udp (dns)
+      community.general.ufw:
+        rule: allow
+        port: '53'
+        proto: udp
+        interface: wgtor0
+        direction: in
+
+    - name: Allow all access to tcp port 53/udp (dns)
+      community.general.ufw:
+        rule: allow
+        port: '5353'
+        proto: udp
+        interface: wgtor0
+        direction: in
+
+    - name: 'start wireguard-tor'
+      systemd:
+        name: wg-quick@wgtor0.service
+        state: started
+        enabled: true
+
+  handlers:
+
+    - name: Restart ufw
+      service:
+        name: ufw
+        state: restarted
+
+    - name: run genpw.sh
+      ansible.builtin.shell: ./genpw.sh
+      args:
+        chdir: /home/docker/wireguard-tor.{{inventory_hostname}}
+      notify: Restart wireguard
+
+    - name: Restart wireguard
+      ansible.builtin.shell: docker-compose up -d --force-recreate
+      args:
+        chdir: /home/docker/wireguard-tor.{{inventory_hostname}}
+

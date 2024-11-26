@@ -1,0 +1,225 @@
+---
+- name: home-assistant
+  hosts: all
+  tasks:
+
+    - name: Create /home/docker/home-assistant.{{inventory_hostname}} dir
+      ansible.builtin.file:
+        path: /home/docker/home-assistant.{{inventory_hostname}}
+        owner: root
+        group: docker
+        state: directory
+        mode: '0550'
+
+    - name: Create /home/docker/home-assistant.{{inventory_hostname}}/data dir
+      ansible.builtin.file:
+        path: /home/docker/home-assistant.{{inventory_hostname}}/data
+        owner: 3000
+        group: 3000
+        state: directory
+        mode: '0750'
+
+    - name: Edit Home Assistant config
+      blockinfile:
+        path: /home/docker/home-assistant.{{inventory_hostname}}/data/configuration.yaml
+        create: yes
+        mode: 0444
+        owner: root
+        group: docker
+        marker: "# {mark} ANSIBLE MANAGED BLOCK"
+        block: |
+          # Loads default set of integrations. Do not remove.
+          #default_config:
+          
+          assist_pipeline:
+          backup:
+          #bluetooth:
+          config:
+          conversation:
+          counter:
+          dhcp:
+          energy:
+          history:
+          homeassistant_alerts:
+          image_upload:
+          input_boolean:
+          input_button:
+          input_datetime:
+          input_number:
+          input_text:
+          input_select:
+          logger:
+          logbook:
+          map:
+          media_source:
+          mobile_app:
+          my:
+          network:
+          person:
+          schedule:
+          ssdp:
+          stream:
+          sun:
+          system_health:
+          tag:
+          timer:
+          webhook:
+          zeroconf:
+          zone:
+          
+          # Load frontend themes from the themes folder
+          frontend:
+            themes: !include_dir_merge_named themes
+          automation: !include automations.yaml
+          script: !include scripts.yaml
+          scene: !include scenes.yaml
+          
+          http:
+          use_x_forwarded_for: true
+          trusted_proxies:
+            - 127.0.0.1
+            - 172.23.0.222 # Server IP
+            - 192.168.41.0/24 # traefik proxy subnet
+        backup: yes
+      notify: Restart home-assistant
+
+    - name: /home/docker/home-assistant.{{inventory_hostname}}/genpw.sh (generate Random PW for Home Assistant)
+      blockinfile:
+        path: /home/docker/home-assistant.{{inventory_hostname}}/genpw.sh
+        create: yes
+        mode: 0550
+        owner: root
+        group: docker
+        marker: "# {mark} ANSIBLE MANAGED BLOCK"
+        block: |
+          cd /home/docker/home-assistant.{{inventory_hostname}}
+          home-assistantadminpassword=$(pwgen -s 32 1)
+
+          [ -f env ] || echo "HA_ADMIN_PASSWORD=!HA_ADMIN_PASSWORD!
+          " >env
+
+          chmod 440 env
+          chown root:docker env
+          sed -i "s/\!HA_ADMIN_PASSWORD\!/$home-assistantadminpassword/g" env
+          
+        backup: yes
+        validate: /bin/bash -n %s
+      notify: run genpw.sh
+
+    - name: /home/docker/home-assistant.{{inventory_hostname}}/genpw.sh shebang
+      lineinfile:
+        path: /home/docker/home-assistant.{{inventory_hostname}}/genpw.sh
+        insertbefore: BOF
+        line: "#!/bin/bash -e"
+
+    - name: Gen initial passwords if not exists
+      ansible.builtin.shell: ./genpw.sh
+      args:
+        chdir: /home/docker/home-assistant.{{inventory_hostname}}
+        creates: /home/docker/home-assistant.{{inventory_hostname}}/env
+
+    - name: /home/docker/home-assistant.{{inventory_hostname}}/docker-compose.yml Container Configuration
+      blockinfile:
+        path: /home/docker/home-assistant.{{inventory_hostname}}/docker-compose.yml
+        create: yes
+        mode: 0440
+        owner: root
+        group: docker
+        marker: "# {mark} ANSIBLE MANAGED BLOCK"
+        block: |
+          version: '3.6'
+          services:
+            home-assistant.{{inventory_hostname}}:
+              image: "ghcr.io/home-assistant/home-assistant:stable"
+              restart: unless-stopped
+              volumes:
+                - ./config:/config
+                - /etc/localtime:/etc/localtime:ro
+              network_mode: host
+              privileged: true
+
+        backup: yes
+      notify: Restart home-assistant
+
+    - name: Start home-assistant
+      ansible.builtin.shell: docker-compose up -d
+      args:
+        chdir: /home/docker/home-assistant.{{inventory_hostname}}
+        creates: /home/docker/home-assistant.{{inventory_hostname}}/data/home-assistant_v2.db
+
+    - name: /home/docker/traefik/providers/home-assistant.yml Home-Assistant<->Traefik provider
+      blockinfile:
+        path: /home/docker/traefik/providers/home-assistant.yml
+        create: yes
+        mode: 0444
+        owner: root
+        group: docker
+        marker: "# {mark} ANSIBLE MANAGED BLOCK"
+        block: |
+          http:
+            routers:
+              home-assistant:
+                rule: "Host(`home-assistant.{{inventory_hostname}}`)"
+                service: home-assistant
+                entryPoints:
+                  - "https"
+                tls:
+                  certresolver: letsencrypt
+                middlewares: 
+                  - "secHeaders@file"
+            services:
+              home-assistant:
+                loadBalancer:
+                  servers:
+                    - url: "http://192.168.41.1:8123"
+
+    - name: Wait until home-assistant install is finished
+      wait_for:
+        path: /home/docker/home-assistant.{{inventory_hostname}}/data/home-assistant_v2.db
+
+    - name: /home/docker/home-assistant.{{inventory_hostname}}/home-assistant.init.sh
+      blockinfile:
+        path: /home/docker/home-assistant.{{inventory_hostname}}/home-assistant.init.sh
+        mode: "0500"
+        owner: root
+        group: root
+        create: yes
+        marker: "# {mark} ANSIBLE MANAGED BLOCK"
+        block: |
+          # home-assistant
+          sleep 120
+          cd /home/docker/home-assistant.{{inventory_hostname}} || exit 1
+          . ./env
+          curl --location --request POST 'http://192.168.43.1:8123/api/onboarding/users' --header 'Content-Type: application/json' --data-raw "{
+            \"client_id\": \"http://192.168.43.1:8123/\",
+            \"name\": \"admin\",
+            \"username\": \"haadmin\",
+            \"password\": \"${HA_ADMIN_PASSWORD}\",
+            \"language\": \"de\"
+          }"
+        backup: yes
+        validate: /bin/bash -n %s
+      notify: run home-assistant.init
+
+    - name: Run home-assistant.init after install
+      ansible.builtin.shell: bash /home/docker/home-assistant.{{inventory_hostname}}/home-assistant.init.sh
+      args:
+        chdir: /home/docker/home-assistant.{{inventory_hostname}}
+        creates: /home/docker/home-assistant.{{inventory_hostname}}/home-assistant.init.log
+
+  
+  handlers:
+    - name: run genpw.sh
+      ansible.builtin.shell: ./genpw.sh
+      args:
+        chdir: /home/docker/home-assistant.{{inventory_hostname}}
+      notify: Restart home-assistant
+
+    - name: run home-assistant.init
+      ansible.builtin.shell: bash /home/docker/home-assistant.{{inventory_hostname}}/home-assistant.init.sh
+
+    - name: Restart home-assistant
+      ansible.builtin.shell: docker-compose up -d
+      args:
+        chdir: /home/docker/home-assistant.{{inventory_hostname}}
+

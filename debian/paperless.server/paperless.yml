@@ -1,0 +1,180 @@
+---
+- name: paperless
+  hosts: all
+  tasks:
+
+    - name: Create /home/docker/paperless.{{inventory_hostname}} dir
+      ansible.builtin.file:
+        path: /home/docker/paperless.{{inventory_hostname}}
+        owner: root
+        group: docker
+        state: directory
+        mode: '0550'
+
+    - name: /home/docker/paperless.{{inventory_hostname}}/genpw.sh (generate Random PW for Nextcloud and DB)
+      blockinfile:
+        path: /home/docker/paperless.{{inventory_hostname}}/genpw.sh
+        create: yes
+        mode: 0550
+        owner: root
+        group: docker
+        marker: "# {mark} ANSIBLE MANAGED BLOCK"
+        block: |
+          cd /home/docker/paperless.{{inventory_hostname}}
+
+          secretkey=$(pwgen -s 64 1)
+          
+          [ -f docker-compose.env ] || echo "PAPERLESS_SECRET_KEY=$secretkey
+          " >docker-compose.env
+          
+          chmod 440 docker-compose.env
+          chown root:docker docker-compose.env
+        backup: yes
+        validate: /bin/bash -n %s
+      notify: run genpw.sh
+
+    - name: /home/docker/paperless.{{inventory_hostname}}/genpw.sh shebang
+      lineinfile:
+        path: /home/docker/paperless.{{inventory_hostname}}/genpw.sh
+        insertbefore: BOF
+        line: "#!/bin/bash -e"
+
+    - name: Gen initial passwords if not exists
+      ansible.builtin.shell: ./genpw.sh
+      args:
+        chdir: /home/docker/paperless.{{inventory_hostname}}
+        creates: /home/docker/paperless.{{inventory_hostname}}/docker-compose.env
+
+    - name: /home/docker/paperless.{{inventory_hostname}}/docker-compose.yml Container Configuration
+      blockinfile:
+        path: /home/docker/paperless.{{inventory_hostname}}/docker-compose.yml
+        create: yes
+        mode: 0440
+        owner: root
+        group: docker
+        marker: "# {mark} ANSIBLE MANAGED BLOCK"
+        block: |
+        
+          services:
+            paperless.{{inventory_hostname}}:
+              image: ghcr.io/paperless-ngx/paperless-ngx:latest
+              restart: unless-stopped
+              volumes:
+                - ./data:/usr/src/paperless/data
+                - ./media:/usr/src/paperless/media
+                - ./export:/usr/src/paperless/export
+                - ./consume:/usr/src/paperless/consume
+              depends_on:
+                - paperless.{{inventory_hostname}}--broker
+              env_file: docker-compose.env
+              environment:
+                - USERMAP_UID=998
+                - USERMAP_GID=1003
+                - PAPERLESS_REDIS=redis://paperless.{{inventory_hostname}}--broker:6379
+                - PAPERLESS_FILENAME_FORMAT={correspondent}/{created}-{title}
+                - PAPERLESS_TASK_WORKERS=1
+                - PAPERLESS_THREADS_PER_WORKER=1
+                - PAPERLESS_OCR_MODE=skip_noarchive
+                - PAPERLESS_WEBSERVER_WORKERS=1
+                - PAPERLESS_OCR_LANGUAGE=deu
+                - PAPERLESS_TIME_ZONE=Europe/Berlin
+                - PAPERLESS_URL=https://paperless.{{inventory_hostname}}
+                - PAPERLESS_DEBUG=false
+              networks:
+                - paperless.{{inventory_hostname}}--network
+                - traefik
+              labels:
+                - traefik.enable=true
+                # HTTPS
+                - traefik.http.routers.paperless-{{ ansible_facts['hostname'] }}.rule=Host(`paperless.{{ ansible_facts['nodename'] }}`)
+                - traefik.http.routers.paperless-{{ ansible_facts['hostname'] }}.entrypoints=https
+                - traefik.http.routers.paperless-{{ ansible_facts['hostname'] }}.tls=true
+                # Proxy to service-port
+                - traefik.http.services.paperless-{{ ansible_facts['hostname'] }}.loadbalancer.server.port=8000
+                - traefik.http.routers.paperless-{{ ansible_facts['hostname'] }}.service=paperless-{{ ansible_facts['hostname'] }}
+                # cert via letsencrypt
+                - traefik.http.routers.paperless-{{ ansible_facts['hostname'] }}.tls.certresolver=letsencrypt
+                # Traefik network
+                - traefik.docker.network=traefik
+                # activate secHeaders@file and .well.known
+                - traefik.http.routers.paperless-{{ ansible_facts['hostname'] }}.middlewares=secHeaders@file
+            
+            paperless.{{inventory_hostname}}--broker:
+              image: redis:6.0
+              restart: unless-stopped
+              volumes:
+                - ./redisdata:/data
+              networks:
+                - paperless.{{inventory_hostname}}--network
+
+          networks:
+            paperless.{{inventory_hostname}}--network:
+              driver: bridge
+              driver_opts:
+                com.docker.network.bridge.name: br-paperless
+            traefik:
+              external: true
+
+        backup: yes
+      notify: Restart paperless
+
+    - name: Start paperless
+      ansible.builtin.shell: docker-compose up -d --force-recreate
+      args:
+        chdir: /home/docker/paperless.{{inventory_hostname}}
+        creates: /home/docker/paperless.{{inventory_hostname}}/data/db.sqlite3
+
+    - name: Create paperless User
+      ansible.builtin.user:
+        name: paperless
+        comment: Paperless User for samba
+        uid: 998
+        shell: /bin/false
+        group: docker
+
+    - name: Samba Share for incoming documents
+      blockinfile:
+        path: /etc/samba/smb-{{ ansible_facts['hostname'] }}.conf
+        mode: "0444"
+        owner: root
+        group: root
+        marker: "# {mark} paperless ANSIBLE MANAGED BLOCK"
+        block: |
+          [paperless-in]
+            valid users = paperless
+            path = /home/docker/paperless.{{inventory_hostname}}/consume
+            public = no
+            writable = yes
+            read only = no
+            printable = no
+            guest ok = no
+        backup: yes
+      notify:
+      - Restart samba
+
+    - name: Give paperless permissions for consume dir
+      ansible.builtin.file:
+        path: /home/docker/paperless.{{inventory_hostname}}/consume
+        owner: paperless
+        group: root
+        mode: '0770'
+
+
+  handlers:
+    - name: run genpw.sh
+      ansible.builtin.shell: ./genpw.sh
+      args:
+        chdir: /home/docker/paperless.{{inventory_hostname}}
+      notify: Restart paperless
+
+    - name: Restart paperless
+      ansible.builtin.shell: docker-compose up -d --force-recreate
+      args:
+        chdir: /home/docker/paperless.{{inventory_hostname}}
+
+    - name: Restart samba
+      service:
+        name: samba-{{ ansible_facts['hostname'] }}
+        state: restarted
+
+

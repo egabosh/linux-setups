@@ -1,0 +1,45 @@
+---
+- name: Raspberry Debian Linux Setup
+  hosts: all
+  tasks:
+    
+    - name: Remove the grpup pi
+      ansible.builtin.user:
+        name: pi
+        state: absent
+        remove: yes
+
+    - name: Remove the user pi
+      ansible.builtin.user:
+        name: pi
+        state: absent
+        remove: yes
+
+    - name: /usr/local/sbin/raspi-wifi-country.sh
+      blockinfile:
+        path: /usr/local/sbin/raspi-wifi-country.sh
+        create: yes
+        mode: 0500
+        owner: root
+        group: root
+        marker: "# {mark} ANSIBLE MANAGED BLOCK"
+        block: |
+          [ -e /var/log/raspi-wifi-country.log ] && exit 0
+          raspi-config nonint do_wifi_country DE
+          echo "$(date) $$" >> /var/log/raspi-wifi-country.log
+        backup: yes
+        validate: /bin/bash -n %s
+
+    - name: /usr/local/sbin/raspi-wifi-country.sh shebang
+      lineinfile:
+        path: /usr/local/sbin/raspi-wifi-country.sh
+        insertbefore: BOF
+        line: "#!/bin/bash -e"
+
+    - name: run /usr/local/sbin/raspi-wifi-country.sh
+      ansible.builtin.shell: ./raspi-wifi-country.sh
+      args:
+        chdir: /usr/local/sbin
+        creates: /var/log/raspi-wifi-country.log
+        
+

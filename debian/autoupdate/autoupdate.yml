@@ -1,0 +1,89 @@
+---
+- name: Autoupdate
+  hosts: all
+  tasks:
+
+    - name: Create updates dir /usr/local/sbin/autoupdate.d
+      ansible.builtin.file:
+        path: /usr/local/sbin/autoupdate.d
+        owner: root
+        group: root
+        state: directory
+        mode: "0700"
+
+    - name: /usr/local/sbin/autoupdate.sh
+      blockinfile:
+        path: /usr/local/sbin/autoupdate.sh
+        mode: "0500"
+        owner: root
+        group: root
+        create: yes
+        marker: "# {mark} ANSIBLE MANAGED BLOCK"
+        block: |
+          . /etc/bash/gaboshlib.include
+          g_nice
+          g_lockfile
+          g_all-to-syslog
+          DISPLAY=""
+          set -o pipefail
+          for update in $(find /usr/local/sbin/autoupdate.d -name "*.update" -type f | sort)
+          do
+            g_echo "Running: $update"
+            . "$update"
+            #sleep 60
+          done
+        backup: yes
+        validate: /bin/bash -n %s
+
+    - name: /usr/local/sbin/autoupdate.sh shebang
+      lineinfile:
+        path: /usr/local/sbin/autoupdate.sh
+        insertbefore: BOF
+        line: "#!/bin/bash"
+
+    - name: /usr/local/sbin/autoupdate.d/debian.update
+      blockinfile:
+        path: /usr/local/sbin/autoupdate.d/debian.update
+        mode: "0400"
+        owner: root
+        group: root
+        create: yes
+        marker: "# {mark} ANSIBLE MANAGED BLOCK"
+        block: |
+          g_echo_ok "Checking for systemupdates"
+          apt-get update || g_echo_error "apt-get update fehlgeschlagen"
+          if ! hostname | grep -q ".mint."
+          then
+            if ! apt-get -s dist-upgrade 2>&1 | sed -e "s/'/'\\\\''/g; 1s/^/'/; \$s/\$/'/" | tee $g_tmp/sys-updatelist | egrep "^0.+, 0 .+, 0 .+ 0 .+\."
+            then
+              g_echo_warn "Systemupdate wird eingespielt: $(cat $g_tmp/sys-updatelist)"
+              DEBIAN_FRONTEND=noninteractive apt-get -yy dist-upgrade | sed -e "s/'/'\\\\''/g; 1s/^/'/; \$s/\$/'/" | tee $g_tmp/sys-update || g_echo_error "apt-get -yy dist-upgrade failed $($g_tmp/sys-update)"
+              DEBIAN_FRONTEND=noninteractive needrestart -b -r a | egrep -q "^NEEDRESTART-KSTA: [2|3]" && g_echo_warn "Server Reboot benötigt"
+              g_echo_warn $(DEBIAN_FRONTEND=noninteractive apt-get -yy --purge autoremove 2>&1 | egrep -A10 "^The following packages will be REMOVED:")
+              DEBIAN_FRONTEND=noninteractive apt-get -yy autoclean
+              g_echo_warn $(find /etc -name '.dpkg-' -o -name '.ucf-' -o -name '*.merge-error')
+              DEBIAN_FRONTEND=noninteractive apt-get purge '~o'
+              # sed -i 's/bullseye/bookworm/g' /etc/apt/sources.list
+              # sed -i 's/bullseye/bookworm/g' /etc/apt/sources.list.d/*
+              # sed -i 's/non-free/non-free non-free-firmware/g' /etc/apt/sources.list
+              # sed -i 's/non-free/non-free non-free-firmware/g' /etc/apt/sources.list.d/*
+              # DEBIAN_FRONTEND=noninteractive apt-get -yy upgrade --without-new-pkgs
+              # DEBIAN_FRONTEND=noninteractive apt-get -yy full-upgrade
+            fi
+          fi
+          [ -x /usr/bin/flatpak ] && flatpak update --system --noninteractive --force-remove
+        backup: yes
+        validate: /bin/bash -n %s
+
+    - name: /etc/cron.d/autoupdate_local
+      blockinfile:
+        path: /etc/cron.d/autoupdate_local
+        mode: "0400"
+        owner: root
+        group: root
+        create: yes
+        marker: "# {mark} ANSIBLE MANAGED BLOCK"
+        block: |
+          ## Auto-Update
+          5 6 * * * root /usr/local/sbin/autoupdate.sh
+        backup: yes

@@ -1,0 +1,44 @@
+---
+
+- name: Firewall with ufw
+  hosts: all
+  tasks:
+
+    - name: Install Basic Packages
+      apt:
+        name: 
+          - ufw
+        update_cache: no
+        install_recommends: no
+
+    - name: check this system has hardening flag set
+      stat: 
+        path: /etc/dohardening
+      register: hardening
+
+    - name: Allow all access to tcp port 22 (ssh)
+      community.general.ufw:
+        rule: deny
+        port: '22'
+        proto: tcp
+      when: hardening.stat.exists
+
+    - name: Allow all access to tcp port 33 (ssh)
+      community.general.ufw:
+        rule: allow
+        port: '33'
+        proto: tcp
+      when: hardening.stat.exists
+
+    - name: Allow all access to tcp port 22 (ssh)
+      community.general.ufw:
+        rule: allow
+        port: '22'
+        proto: tcp
+      when: hardening.stat.exists == False
+
+    - name: Deny everything per policy and enable UFW
+      community.general.ufw:
+        state: enabled
+        policy: deny
+

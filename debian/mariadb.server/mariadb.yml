@@ -1,0 +1,235 @@
+---
+- name: mariadb
+  hosts: all
+  tasks:
+
+    - name: Create /home/docker/mariadb.{{inventory_hostname}} dir
+      ansible.builtin.file:
+        path: /home/docker/mariadb.{{inventory_hostname}}
+        owner: root
+        group: docker
+        state: directory
+        mode: '0550'
+
+    - name: /usr/local/sbin/autoupdate.d/mariadb-ssl.update
+      blockinfile:
+        path: /usr/local/sbin/autoupdate.d/mariadb-ssl.update
+        create: yes
+        mode: 0550
+        owner: root
+        group: root
+        marker: "# {mark} ANSIBLE MANAGED BLOCK"
+        block: |
+          cd /home/docker/mariadb.{{inventory_hostname}}
+
+          # start phpmyadmin (if not) to force traefik to get a letsencrypt certificate
+          docker compose up -d mariadb.{{inventory_hostname}}--phpmyadmin
+          mkdir -p ssl
+
+          # take letsencrypt-certs from traefik and check for new ones
+          new=0
+          for ssl in key certificate
+          do
+            touch ssl/${ssl}.pem
+            [ -d ssl/${ssl}.pem ] && rm -r ssl/${ssl}.pem
+            
+            # wait if no cert is available
+            until [ -s "ssl/${ssl}.pem.new" ]
+            do
+              cat /home/docker/traefik/letsencrypt/acme.json  | jq -r ".letsencrypt.Certificates[] | select(.domain.main==\"mariadb.{{inventory_hostname}}\") | .${ssl}" | base64 -d >ssl/${ssl}.pem.new
+              sleep 5
+            done
+            old=$(shasum ssl/${ssl}.pem)
+            new=$(shasum ssl/${ssl}.pem.new)
+            if ! [ "$new" = "$old" ]
+            then
+              new=1
+              mv ssl/${ssl}.pem.new >shasum ssl/${ssl}.pem
+            else
+              rm ssl/${ssl}.pem.new
+            fi
+          done
+
+          # make it readable for mysql user in the container
+          chmod 400 ssl/*.pem
+          chown 999:0 ssl/*.pem
+
+          # restart if new cert ist available
+          if [ -n "$new" ]
+          then
+            # start mariadb if not initialized and down
+            notinitilized=""
+            [ -s "db-data/mariadb_upgrade_info" ] || notinitilized=1
+            if [ -n "$notinitilized" ] 
+            then 
+              docker compose up -d mariadb.{{inventory_hostname}}
+              # get sure mariadb is ready with initializing
+              until [ -s "db-data/mariadb_upgrade_info" ]
+              do
+                sleep 5
+              done
+              sleep 120
+            else
+              docker compose up -d --force-recreate mariadb.{{inventory_hostname}}
+            fi
+          fi
+          
+        backup: yes
+        validate: /bin/bash -n %s
+
+    - name: /usr/local/sbin/autoupdate.d/mariadb-ssl.update shebang
+      lineinfile:
+        path: /usr/local/sbin/autoupdate.d/mariadb-ssl.update
+        insertbefore: BOF
+        line: "#!/bin/bash -e"
+
+    - name: /home/docker/mariadb.{{inventory_hostname}}/ssl.cnf (use ssl in mariadb)
+      blockinfile:
+        path: /home/docker/mariadb.{{inventory_hostname}}/ssl.cnf
+        create: yes
+        mode: 0444
+        owner: root
+        group: docker
+        marker: "# {mark} ANSIBLE MANAGED BLOCK"
+        block: |
+          [mariadbd]
+          ssl=1
+          ssl-cert=/etc/mysql/certificate.pem
+          ssl-key=/etc/mysql/key.pem
+        backup: yes
+
+    - name: /home/docker/mariadb.{{inventory_hostname}}/config.user.inc.php (use ssl in phpmyadmin)
+      blockinfile:
+        path: /home/docker/mariadb.{{inventory_hostname}}/phpmyadmin-config.user.inc.php
+        create: yes
+        mode: 0444
+        owner: root
+        group: docker
+        marker: "// {mark} ANSIBLE MANAGED BLOCK"
+        block: |
+          // IP address / host of your instance
+          $cfg['Servers'][$i]['host'] = 'mariadb.{{inventory_hostname}}';
+          // Use SSL for connection
+          $cfg['Servers'][$i]['ssl'] = true;
+          // Disable SSL verification
+          $cfg['Servers'][$i]['ssl_verify'] = false;
+        backup: yes
+
+    - name: /home/docker/mariadb.{{inventory_hostname}}/docker-compose.yml Container Configuration
+      blockinfile:
+        path: /home/docker/mariadb.{{inventory_hostname}}/docker-compose.yml
+        create: yes
+        mode: 0440
+        owner: root
+        group: docker
+        marker: "# {mark} ANSIBLE MANAGED BLOCK"
+        block: |
+        
+          services:
+
+            mariadb.{{inventory_hostname}}:
+              image: mariadb:lts
+              cap_add:
+                - SYS_NICE
+              restart: unless-stopped
+              networks:
+                - mariadb.{{inventory_hostname}}--network
+              volumes:
+                - ./db-data:/var/lib/mysql
+                - /etc/localtime:/etc/localtime:ro
+                - /home/docker/_defaults/mariadb/99-server.cnf:/etc/mysql/mariadb.conf.d/99-server.cnf:ro
+                - ./ssl.cnf:/etc/mysql/mariadb.conf.d/99-ssl.cnf:ro
+                - ./ssl/certificate.pem:/etc/mysql/certificate.pem:ro
+                - ./ssl/key.pem:/etc/mysql/key.pem:ro
+              env_file:
+                - /home/docker/_defaults/mariadb/envroot.db
+                - /home/docker/_defaults/mariadb/mariadb.env
+              ports:
+                - 0.0.0.0:33306:3306
+
+            mariadb.{{inventory_hostname}}--phpmyadmin:
+              image: phpmyadmin:latest
+              restart: unless-stopped
+              env_file: /home/docker/_defaults/mariadb/env.rootphpmyadmin
+              environment:
+                - PMA_ARBITRARY=0
+                - PMA_HOST=mariadb.{{inventory_hostname}}
+              volumes:
+                - /etc/localtime:/etc/localtime:ro
+                - ./phpmyadmin-config.user.inc.php:/etc/phpmyadmin/config.user.inc.php:ro
+              networks:
+                - mariadb.{{inventory_hostname}}--network
+                - traefik
+              labels:
+                - traefik.enable=true
+                # HTTPS
+                - traefik.http.routers.mariadb-{{ ansible_facts['hostname'] }}.rule=Host(`mariadb.{{ ansible_facts['nodename'] }}`)
+                - traefik.http.routers.mariadb-{{ ansible_facts['hostname'] }}.entrypoints=https
+                - traefik.http.routers.mariadb-{{ ansible_facts['hostname'] }}.tls=true
+                # Proxy to service-port
+                - traefik.http.services.mariadb-{{ ansible_facts['hostname'] }}.loadbalancer.server.port=80
+                - traefik.http.routers.mariadb-{{ ansible_facts['hostname'] }}.service=mariadb-{{ ansible_facts['hostname'] }}
+                # cert via letsencrypt
+                - traefik.http.routers.mariadb-{{ ansible_facts['hostname'] }}.tls.certresolver=letsencrypt
+                # Traefik network
+                - traefik.docker.network=traefik
+                # auth
+                - traefik.http.routers.mariadb-{{ ansible_facts['hostname'] }}.middlewares=secHeaders@file,default-basic-auth@file
+
+          networks:
+            mariadb.{{inventory_hostname}}--network:
+              driver: bridge
+              driver_opts:
+                com.docker.network.bridge.name: br-mariadb
+            traefik:
+              external: true
+
+        backup: yes        
+      notify: Restart mariadb
+
+    - name: Get letsencrypt cert from traefik
+      ansible.builtin.shell: /usr/local/sbin/autoupdate.d/mariadb-ssl.update
+      args:
+        chdir: /home/docker/mariadb.{{inventory_hostname}}
+        creates: /home/docker/mariadb.{{inventory_hostname}}/ssl/certificate.pem
+
+    - name: /usr/local/sbin/backup.d/mariadb-docker.backup
+      blockinfile:
+        path: /usr/local/sbin/backup.d/mariadb-docker.backup
+        create: yes
+        mode: 0550 
+        owner: root
+        group: root 
+        marker: "# {mark} ANSIBLE MANAGED BLOCK"
+        block: |
+          . /home/docker/_defaults/mariadb/envroot.db
+          DAYS=7
+          TIMESTAMP=$(date +"%Y%m%d%H%M")
+
+          for i in $(echo "show databases" | mariadb -u root -h mariadb.{{inventory_hostname}} --ssl --ssl-verify-server-cert -P 33306 -p${MARIADB_ROOT_PASSWORD} | grep -v "^Database$")
+          do
+            if mariadb-dump  -u root -h mariadb.{{inventory_hostname}} --ssl --ssl-verify-server-cert -P 33306 -p${MARIADB_ROOT_PASSWORD} $i 2>${g_tmp}/dberr >$BACKUPDIR/MARIADB-$i-$TIMESTAMP.sql
+            then
+              gzip $BACKUPDIR/MARIADB-$i-$TIMESTAMP.sql
+            else
+              g_echo_error "MariaDB Backup failed $(cat ${g_tmp}/dberr)"
+            fi
+            # dont delete last old backups!
+            OLD_BACKUPS=$(ls -1 $BACKUPDIR/MARIADB-$i*.gz | wc -l)
+            if [ $OLD_BACKUPS -gt $DAYS ]
+            then
+              find $BACKUPDIR -name "MARIADB-$i*.gz" -daystart -mtime +$DAYS -delete
+            fi
+          done
+          unset MARIADB_ROOT_PASSWORD
+        backup: yes
+        validate: /bin/bash -n %s
+
+
+  handlers:
+
+    - name: Restart mariadb
+      ansible.builtin.shell: docker-compose up -d --force-recreate
+      args:
+        chdir: /home/docker/mariadb.{{inventory_hostname}}
+

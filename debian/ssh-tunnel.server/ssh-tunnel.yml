@@ -1,0 +1,12 @@
+---
+
+- name: ssh-tunnel
+  hosts: all
+  tasks:
+
+  - name: Allow all access to tcp port 8081
+    community.general.ufw:
+        rule: allow
+        port: '8081'
+        proto: tcp
+
