@@ -4,7 +4,7 @@ set -e
 
 # on fresh install remove cdrom-repo and install sudo if not available
 [ -s /usr/bin/sudo ] || su -c "sed -i '/cdrom/d' /etc/apt/sources.list ; apt update ; apt -y install sudo"
-# add user to sudo group it not
+# add user to sudo group if not
 if ! id | grep -q '(sudo)' 
 then
   su -c "/usr/sbin/usermod -a -G sudo ${USER}"
@@ -15,28 +15,20 @@ fi
 
 apt-get update
 which ansible >/dev/null 2>&1 || sudo apt-get -y install ansible git
-#sudo ansible-galaxy collection list | grep -q community.general || sudo ansible-galaxy collection install community.general
 sudo ansible-galaxy collection install community.general
 
 cd
-rm -rf $(hostname -s)-git
-mkdir $(hostname -s)-git
-cd $(hostname -s)-git
-
+rm -rf linux-setups
+git clone https://github.com/egabosh/linux-setups.git
+cd linux-setups
 
 for playbook in $PLAYBOOKS
 do
-  if [ -z "${GITSRVURL}" ]
+  if [ -s "$playbook" ]
   then
-    git clone https://github/egabosh/linux-setups/debian/${playbook}.git
+    sudo ansible-playbook --connection=local --inventory $(hostname), --limit $(hostname) ${playbook}
   else
-    git clone ${GITSRVURL}/${playbook}.git
-  fi
-  [ -s /etc/dohardening ] || rm -f ${playbook}/hardening.yml
-  if ls ${playbook}/*ansible*.yml >/dev/null 2>&1
-  then
-    sudo ansible-playbook --connection=local --inventory $(hostname), --limit $(hostname) ${playbook}/*ansible*.yml
-  else
-    sudo ansible-playbook --connection=local --inventory $(hostname), --limit $(hostname) ${playbook}/*.yml
+    echo "playbook $playbook not found"
+    exit 1
   fi
 done
