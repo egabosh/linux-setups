@@ -1,0 +1,178 @@
+---
+- name: Kodi Setup
+  hosts: all
+  tasks:
+
+    - name: Install Basic Packages
+      apt:
+        name:
+#          # share desk
+          - x11vnc
+          # tools for android-smartphones/LineageOS
+          - heimdall-flash
+          - adb
+          - fastboot
+          - mkbootimg
+          # desktop specific
+          - cinnamon-desktop-environment
+          - cinnamon-l10n
+          - gnome-terminal
+          - dconf-cli
+          - dphys-swapfile
+          - tsdecrypt
+          - x264
+          - x265
+          - flatpak
+          - ttf-mscorefonts-installer
+          - fonts-terminus
+          - mint-y-icons
+          # kodi
+          - kodi21
+          - kodi21-pvr-iptvsimple
+          - kodi21-vfs-sftp
+          - kodi21-game-libretro
+          - kodi21-peripheral-joystick
+          # useful other stuff
+          - pwgen
+          - arj
+          - p7zip
+          - unace
+          - unadf
+          - bvi
+          - fdupes
+          - debootstrap
+          - geoip-bin
+          - sshfs
+          - speedtest-cli
+          - gnome-characters
+          - blueman
+          # dconf-gui
+          - dconf-editor
+          # Media
+          - vlc
+          - gthumb
+          - mediainfo-gui
+          - easytag
+          - audacity
+          - asunder
+          - mediathekview
+          - audacious
+          - guvcview
+          - easyeffects
+          - calf-plugins
+          # retro
+          - dosbox
+          # brennen
+          - brasero
+          # misc
+          - gpodder
+          - wireguard
+          - wireguard-tools
+          - tinyproxy
+          - hardinfo
+          - rpi-imager
+          - redshift-gtk
+        update_cache: yes
+        install_recommends: no
+
+    - name: 1 GB swap (100MB default)
+      ansible.builtin.lineinfile:
+        path: /etc/dphys-swapfile
+        regexp: '^CONF_SWAPSIZE=.+$'
+        line: 'CONF_SWAPSIZE=1024'
+        backup: yes
+
+#    - name: Install Flatpaks
+#      community.general.flatpak:
+#        name:
+#          - tv.kodi.Kodi
+#        state: present
+#        method: system
+
+#    - name: Raspi /boot/firmware/config.txt comment dtoverlay=vc4-kms-v3d
+#      replace:
+#        path: /boot/firmware/config.txt
+#        regexp: '(^dtoverlay=vc4-kms-v3d$)'
+#        replace: '#\1'
+
+#    - name: Raspi /boot/firmware/config.txt
+#      blockinfile:
+#        path: /boot/firmware/config.txt
+#        insertafter: EOF
+#        marker: "# {mark} ANSIBLE MANAGED BLOCK"
+#        block: |
+#          gpu_mem=256
+#          hdmi_force_hotplug=1
+#          hdmi_mode=4
+#          dtparam=audio=on
+#          hdmi_drive=2
+#          hdmi_ignore_edid=0xa5000080
+#          config_hdmi_boost=4
+#          hdmi_group=1
+#          disable_overscan=1
+# 
+#          [pi2]
+#          dtoverlay=vc4-fkms-v3d,cma-256
+#          arm_freq=1000
+#          sdram_freq=500
+#          core_freq=500
+#          over_voltage=4
+#
+#          [pi3]
+#          dtoverlay=vc4-fkms-v3d,cma-256
+#          arm_freq=1100
+#          core_freq=500
+#          sdram_freq=500
+#          over_voltage=4
+#          
+#          [pi4]
+#          dtoverlay=vc4-kms-v3d,cma-256
+
+
+    - name: lightdm.conf
+      blockinfile:
+        path: /etc/lightdm/lightdm.conf
+        create: yes
+        mode: "0444"
+        owner: root
+        group: root
+        insertafter: "#exit-on-failure=false"
+        marker: "# {mark} ANSIBLE MANAGED BLOCK"
+        block: |
+          session-wrapper=/etc/X11/Xsession
+          user-session=cinnamon
+          autologin-session=cinnamon
+          greeter-session=lightdm-autologin-greeter
+          greeter-hide-users=false
+          greeter-show-manual-login=true
+          allow-guest=false
+          xserver-command=X -core -dpi 96
+          autologin-user=user
+        backup: yes
+
+    - name: 'add lightdm to startup'
+      command: systemctl enable lightdm
+      args:
+        creates: /etc/systemd/system/display-manager.service
+
+    - name: 'remove smartmontools from startup'
+      command: systemctl disable smartmontools
+      args:
+        removes: /etc/systemd/system/smartd.service
+
+    - name: "Get current systemd default"
+      command: "systemctl get-default"
+      changed_when: false
+      register: systemdefault
+    
+    - name: "Set default to graphical target"
+      command: "systemctl set-default graphical.target"
+      when: "'graphical' not in systemdefault.stdout"
+
+    - name: Allow port 8080 for remote control
+      community.general.ufw:
+        rule: allow
+        port: '8080'
+        proto: tcp
+
+

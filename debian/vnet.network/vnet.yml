@@ -1,0 +1,190 @@
+---
+- name: vnet Debian Linux Setup
+  hosts: all
+  tasks:
+
+    - name: Packages for vnet0
+      apt:
+        name:
+          - bridge-utils
+          - ufw
+          - dnsmasq
+          - ifupdown
+        update_cache: no
+        install_recommends: no
+
+    - name: 'remove dnsmasq from startup'
+      command: systemctl disable dnsmasq
+      args:
+        removes: /etc/systemd/system/multi-user.target.wants/dnsmasq.service
+
+    - name: 'stop dnsmasq'
+      command: systemctl stop dnsmasq
+      args:
+        removes: /run/dnsmasq/dnsmasq.pid
+
+    - name: V bridge
+      blockinfile:
+        path: /etc/network/interfaces.d/vnet0
+        create: yes
+        mode: "0444"
+        owner: root
+        group: root
+        marker: "# {mark} ANSIBLE MANAGED BLOCK"
+        block: |
+          auto vnet0
+          iface vnet0 inet static
+            bridge_ports none
+            address 192.168.42.1
+            broadcast 192.168.42.255
+            netmask 255.255.255.0
+      notify:
+      - Restart vnet0
+
+    - name: start vnet0 if not exists
+      ansible.builtin.command: ifup vnet0
+      args:
+        creates: /proc/sys/net/ipv6/conf/vnet0/disable_ipv6
+
+    - ansible.posix.sysctl:
+        name: net.ipv6.conf.vnet0.disable_ipv6
+        value: '1'
+        state: present
+
+    - ansible.posix.sysctl:
+        name: net.ipv4.ip_forward
+        value: '1'
+        state: present
+
+    - name: ufw firewall rules for routing to the Internet
+      blockinfile:
+        path: /etc/ufw/before.rules
+        create: yes
+        mode: "0440"
+        owner: root
+        group: root
+        marker: "# {mark} ANSIBLE MANAGED BLOCK for vnet0"
+        insertbefore: BOF
+        block: |
+          *nat
+          #:POSTROUTING ACCEPT - [0:0]
+          :POSTROUTING ACCEPT
+          # Route network 192.168.42.0/24 (vnet0)
+          -A POSTROUTING -s 192.168.42.0/24 -j MASQUERADE
+          COMMIT
+      notify:
+      - Restart ufw
+
+
+    - name: Allow Routing
+      community.general.ufw:
+        rule: allow
+        route: yes
+        interface_in: vnet0
+  
+    - name: Allow all access to tcp port 53/udp (dns)
+      community.general.ufw:
+        rule: allow
+        port: '53'
+        proto: udp
+        interface: vnet0
+        direction: in
+
+    - name: Allow access to dhcp server
+      community.general.ufw:
+        rule: allow
+        port: '67'
+        proto: udp
+        interface: vnet0
+        direction: in
+
+    - name: Allow access to NTP server
+      community.general.ufw:
+        rule: allow
+        port: '123'
+        proto: udp
+        interface: vnet0
+        direction: in
+
+    - name: Allow access to tor
+      community.general.ufw:
+        rule: allow
+        port: '9040'
+        proto: tcp
+        interface: vnet0
+        direction: in
+
+    - name: dnsmasq DNS and DHCP for vnet0
+      blockinfile:
+        path: /etc/dnsmasq-vnet0.conf
+        create: yes
+        mode: "0444"
+        owner: root
+        group: root
+        marker: "# {mark} ANSIBLE MANAGED BLOCK"
+        block: |
+          port=53
+          interface=vnet0
+          listen-address=192.168.42.1
+          bind-interfaces
+          except-interface=lo
+          domain-needed
+          bogus-priv
+          server=127.0.0.53
+          dhcp-range=192.168.42.100,192.168.42.200,255.255.255.0,12h
+          dhcp-option=option:ntp-server,192.168.42.1
+          log-queries
+          log-dhcp
+      notify:
+      - Restart dnsmasq-vnet0
+
+    - name: dnsmasq DNS and DHCP for vnet0 systemd
+      blockinfile:
+        path: /etc/systemd/system/dnsmasq-vnet0.service
+        create: yes
+        mode: "0444"
+        owner: root
+        group: root
+        marker: "# {mark} ANSIBLE MANAGED BLOCK"
+        block: |
+          [Unit]
+          Description=dnsmasq vnet0 DNS and DHCP
+          After=network.target
+            
+          [Service]
+          Type=forking
+          ExecStart=/usr/sbin/dnsmasq -x /run/dnsmasq/dnsmasq-vnet0.pid -u dnsmasq -r /run/dnsmasq/resolv.conf -C /etc/dnsmasq-vnet0.conf --local-service
+          PIDFile=/run/dnsmasq/dnsmasq-vnet0.pid
+          KillMode=process
+          Restart=on-failure
+          
+          [Install]
+          WantedBy=multi-user.target
+      notify:
+      - Restart dnsmasq-vnet0
+
+    - name: 'add dnsmasq-vnet0 to startup'
+      command: systemctl enable dnsmasq-vnet0
+      args:
+        creates: /etc/systemd/system/multi-user.target.wants/dnsmasq-vnet0.service
+
+    - name: 'start dnsmasq-vnet0'
+      command: systemctl start dnsmasq-vnet0
+      args:
+        creates: /run/dnsmasq/dnsmasq-vnet0.pid
+
+  handlers:
+
+    - name: Restart vnet0
+      ansible.builtin.shell: ifup vnet0
+
+    - name: Restart dnsmasq-vnet0
+      service:
+        name: dnsmasq-vnet0
+        state: restarted
+
+    - name: Restart ufw
+      service:
+        name: ufw
+        state: restarted
+

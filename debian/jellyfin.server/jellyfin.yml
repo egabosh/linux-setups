@@ -1,0 +1,178 @@
+---
+- name: jellyfin
+  hosts: all
+  tasks:
+
+    - name: Create /home/docker/jellyfin.{{inventory_hostname}} dir
+      ansible.builtin.file:
+        path: /home/docker/jellyfin.{{inventory_hostname}}
+        owner: root
+        group: docker
+        state: directory
+        mode: '0550'
+
+#    - name: /home/docker/jellyfin.{{inventory_hostname}}/genpw.sh (generate Random PW for Semaphore and DB)
+#      blockinfile:
+#        path: /home/docker/jellyfin.{{inventory_hostname}}/genpw.sh
+#        create: yes
+#        mode: 0550
+#        owner: root
+#        group: docker
+#        marker: "# {mark} ANSIBLE MANAGED BLOCK"
+#        block: |
+#          cd /home/docker/jellyfin.{{inventory_hostname}}
+#
+#          mysqluser=$(pwgen -s 32 1)
+#          mysqlpassword=$(pwgen -s 32 1)
+#          wpadminpassword=$(pwgen -s 32 1)
+#
+#          [ -f env ] || echo "WORDPRESS_DB_USER=!MYSQLUSER!
+#          WORDPRESS_DB_PASSWORD=!MYSQLPASSWORD!
+#          WORDPRESS_ADMIN_PASSWORD=!WPADMINPASSWD!
+#          " >env
+#
+#          [ -f env.db ] || echo "MARIADB_USER=!MYSQLUSER!
+#          MARIADB_PASSWORD=!MYSQLPASSWORD!
+#          " >env.db
+#
+#          [ -f env.phpmyadmin ] || echo "PMA_USER=!MYSQLUSER!
+#          PMA_PASSWORD=!MYSQLPASSWORD!
+#          " >env.phpmyadmin
+#
+#          chmod 440 env env.db env.phpmyadmin
+#          chown root:docker env env.db env.phpmyadmin
+#          sed -i "s/\!MYSQLUSER\!/$mysqluser/g" env env.db env.phpmyadmin
+#          sed -i "s/\!MYSQLPASSWORD\!/$mysqlpassword/g" env env.db env.phpmyadmin
+#          sed -i "s/\!WPADMINPASSWD\!/$wpadminpassword/g" env
+#        backup: yes
+#        validate: /bin/bash -n %s
+#      notify: run genpw.sh
+#
+#    - name: /home/docker/jellyfin.{{inventory_hostname}}/genpw.sh shebang
+#      lineinfile:
+#        path: /home/docker/jellyfin.{{inventory_hostname}}/genpw.sh
+#        insertbefore: BOF
+#        line: "#!/bin/bash -e"
+#
+#    - name: Gen initial passwords if not exists
+#      ansible.builtin.shell: ./genpw.sh
+#      args:
+#        chdir: /home/docker/jellyfin.{{inventory_hostname}}
+#        creates: /home/docker/jellyfin.{{inventory_hostname}}/env
+
+    - name: /home/docker/jellyfin.{{inventory_hostname}}/docker-compose.yml Container Configuration
+      blockinfile:
+        path: /home/docker/jellyfin.{{inventory_hostname}}/docker-compose.yml
+        create: yes
+        mode: 0440
+        owner: root
+        group: docker
+        marker: "# {mark} ANSIBLE MANAGED BLOCK"
+        block: |
+          
+          services:
+
+            jellyfin.{{inventory_hostname}}:
+              image: jellyfin/jellyfin:latest
+              restart: unless-stopped
+              #env_file: env
+              user: 0:0
+              #environment:
+              volumes:
+                - ./data/config:/config
+                - ./data/cache:/cache
+                - /etc/localtime:/etc/localtime
+              networks:
+                - traefik
+              labels:
+                - traefik.enable=true
+                # HTTPS
+                - traefik.http.routers.jellyfin-{{ ansible_facts['hostname'] }}.rule=Host(`jellyfin.{{ ansible_facts['nodename'] }}`)
+                - traefik.http.routers.jellyfin-{{ ansible_facts['hostname'] }}.entrypoints=https
+                - traefik.http.routers.jellyfin-{{ ansible_facts['hostname'] }}.tls=true
+                #  Access only from local IPs (no internet) - After Install jellyfin is "open" no bootstrap possible. and other sec aspects: https://github.com/jellyfin/jellyfin/issues/5415
+                - traefik.http.routers.jellyfin-{{ ansible_facts['hostname'] }}.middlewares=secHeaders@file,allowlocalipsonly@file
+                # Proxy to service-port
+                - traefik.http.services.jellyfin-{{ ansible_facts['hostname'] }}.loadbalancer.server.port=8096
+                - traefik.http.routers.jellyfin-{{ ansible_facts['hostname'] }}.service=jellyfin-{{ ansible_facts['hostname'] }}
+                # cert via letsencrypt
+                - traefik.http.routers.jellyfin-{{ ansible_facts['hostname'] }}.tls.certresolver=letsencrypt
+                # Traefik network
+                - traefik.docker.network=traefik
+          # optional hardware acceleration
+          #    devices:
+          #      - /dev/dri:/dev/dri
+          #      - /dev/vcsm:/dev/vcsm
+          #      - /dev/vchiq:/dev/vchiq
+          #      - /dev/video10:/dev/video10
+          #      - /dev/video11:/dev/video11
+          #      - /dev/video12:/dev/video12
+
+
+          networks:
+            traefik:
+              external: true
+
+        backup: yes
+      notify: Restart jellyfin
+
+    - name: Start jellyfin
+      ansible.builtin.shell: docker-compose up -d
+      args:
+        chdir: /home/docker/jellyfin.{{inventory_hostname}}
+#        creates: /home/docker/jellyfin.{{inventory_hostname}}/db-data/sys/db.opt
+
+#    - name: Wait until jellyfin install is finished
+#      wait_for:
+#        path: /home/docker/jellyfin.{{inventory_hostname}}/wp-data/index.php
+#
+#    - name: /home/docker/jellyfin.{{inventory_hostname}}/jellyfin.init.sh
+#      blockinfile:
+#        path: /home/docker/jellyfin.{{inventory_hostname}}/jellyfin.init.sh
+#        mode: "0500"
+#        owner: root
+#        group: root
+#        create: yes
+#        marker: "# {mark} ANSIBLE MANAGED BLOCK"
+#        block: |
+#          # install jellyfin Login URL: https://jellyfin.{{inventory_hostname}}/wp-login.php
+#          cd /home/docker/jellyfin.{{inventory_hostname}}
+#          if ! docker-compose run jellyfin.{{inventory_hostname}}--cli wp core is-installed
+#          then
+#            until wget -t1 --timeout=15 https://jellyfin.{{inventory_hostname}} >/dev/null 2>&1
+#            do 
+#             sleep 5
+#            done
+#            cat env | egrep "^WORDPRESS_ADMIN_PASSWORD=" >env.tmp
+#            . env.tmp
+#            rm -f env.tmp
+#            docker-compose run jellyfin.{{inventory_hostname}}--cli wp core install --url="https://jellyfin.{{inventory_hostname}}" --title="jellyfin.{{inventory_hostname}}" --admin_name=wpadmin --admin_password=${WORDPRESS_ADMIN_PASSWORD} --admin_email='admin@{{inventory_hostname}}'
+#          fi
+#        backup: yes
+#        validate: /bin/bash -n %s
+#      notify: run jellyfin.init
+#
+#    - name: Run jellyfin.init after install
+#      ansible.builtin.shell: bash /home/docker/jellyfin.{{inventory_hostname}}/jellyfin.init.sh
+#      args:
+#        chdir: /home/docker/jellyfin.{{inventory_hostname}}
+#        creates: /home/docker/jellyfin.{{inventory_hostname}}/jellyfin.init.log
+
+
+
+  handlers:
+
+#    - name: run genpw.sh
+#      ansible.builtin.shell: ./genpw.sh
+#      args:
+#        chdir: /home/docker/jellyfin.{{inventory_hostname}}
+#      notify: Restart jellyfin
+
+#    - name: run jellyfin.init
+#      ansible.builtin.shell: bash /home/docker/jellyfin.{{inventory_hostname}}/jellyfin.init.sh
+
+    - name: Restart jellyfin
+      ansible.builtin.shell: docker-compose up -d --force-recreate
+      args:
+        chdir: /home/docker/jellyfin.{{inventory_hostname}}
+

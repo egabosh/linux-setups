@@ -1,0 +1,90 @@
+---
+
+- name: basic samba config
+  hosts: all
+  tasks:
+
+    - name: Needed software
+      apt:
+        name:
+          - samba
+        update_cache: no
+        install_recommends: no
+
+
+    - name: Samba Server (CIFS) basic config
+      blockinfile:
+        path: /etc/samba/smb-{{ ansible_facts['hostname'] }}.conf
+        create: yes
+        mode: "0444"
+        owner: root
+        group: root
+        marker: "# {mark} ANSIBLE MANAGED BLOCK"
+        block: |
+          [global]
+            workgroup = smb
+            security = user
+            map to guest = never
+            # Debug Logging
+            #log level = 3
+            # for compatibility to old clients
+            #min protocol = CORE
+            #ntlm auth = yes
+            #lanman auth = yes
+            #client ntlmv2 auth = yes
+            
+        backup: yes
+      notify:
+      - Restart samba
+
+    - name: Samba Server (CIFS) service
+      blockinfile:
+        path: /etc/systemd/system/samba-{{ ansible_facts['hostname'] }}.service
+        create: yes
+        mode: "0444"
+        owner: root
+        group: root
+        marker: "# {mark} ANSIBLE MANAGED BLOCK"
+        block: |
+          [Unit]
+          Description=Samba for {{ ansible_facts['hostname'] }}
+          After=network.target
+
+          [Service]
+          Type=forking
+          ExecStart=/usr/sbin/smbd -s /etc/samba/smb-{{ ansible_facts['hostname'] }}.conf -D
+          KillMode=process
+          Restart=always
+
+          [Install]
+          WantedBy=multi-user.target
+        backup: yes
+      notify:
+      - Restart samba
+
+    - name: add samba-{{ ansible_facts['hostname'] }} to startup
+      command: systemctl enable samba-{{ ansible_facts['hostname'] }}
+      args:
+        creates: /etc/systemd/system/multi-user.target.wants/samba-{{ ansible_facts['hostname'] }}.service
+
+
+    - name: Allow cifs access from RFC1918 (local) networks
+      community.general.ufw:
+        rule: allow
+        port: '445'
+        proto: tcp
+        src: '{{ item }}'
+      loop:
+        - 10.0.0.0/8
+        - 172.16.0.0/12
+        - 192.168.0.0/16
+
+
+  handlers:
+
+    - name: Restart samba
+      service:
+        name: samba-{{ ansible_facts['hostname'] }}
+        state: restarted
+
+

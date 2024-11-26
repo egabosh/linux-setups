@@ -1,0 +1,54 @@
+---
+- name: whoogle
+  hosts: all
+  tasks:
+
+    - name: Create whoogle dir
+      ansible.builtin.file:
+        path: /home/docker/whoogle.{{inventory_hostname}}
+        owner: root
+        group: docker
+        state: directory
+        mode: '0770'
+
+    - name: Whoogle SearchEngine Docker Config
+      blockinfile:
+        path: /home/docker/whoogle.{{inventory_hostname}}/docker-compose.yml
+        create: yes
+        mode: 0440
+        owner: root
+        group: docker
+        marker: "# {mark} ANSIBLE MANAGED BLOCK"
+        block: |
+          
+          services:
+            whoogle:
+              image: benbusby/whoogle-search:latest
+              restart: unless-stopped
+              networks:
+                - traefik
+              labels:
+                - traefik.enable=true
+                - traefik.http.routers.whoogle.rule=Host(`whoogle.{{inventory_hostname}}`)
+                - traefik.http.routers.whoogle.entrypoints=https
+                - traefik.http.routers.whoogle.middlewares=secHeaders@file,default-basic-auth@file
+                - traefik.http.services.whoogle.loadbalancer.server.port=9000
+                - traefik.http.routers.whoogle.service=whoogle
+                - traefik.http.routers.whoogle.tls=true
+                - traefik.http.routers.whoogle.tls.certresolver=letsencrypt
+                - traefik.http.middlewares.to-https.redirectscheme.scheme=https
+              ports:
+                - 5000:5000
+          networks:
+            traefik:
+              external: true          
+        backup: yes
+      notify: Restart whoogle
+
+
+  handlers:
+
+    - name: Restart whoogle
+      ansible.builtin.shell: docker-compose up -d --force-recreate
+      args:
+        chdir: /home/docker/whoogle.{{inventory_hostname}}

@@ -1,0 +1,49 @@
+---
+- name: Basic Debian Linux german localization
+  hosts: all
+  tasks:
+
+    - name: check if we are in an container env by existing systemd
+      stat:
+        path: /usr/bin/systemd
+      register: nocontainer
+
+
+    - name: Set timezone to Europe/Berlin
+      community.general.timezone:
+        name: Europe/Berlin
+      when: nocontainer.stat.exists == true
+
+    - name: German keyboard layout
+      ansible.builtin.lineinfile:
+        path: /etc/default/keyboard
+        regexp: '^XKBLAYOUT=".+$'
+        line: 'XKBLAYOUT="de"'
+        backup: yes
+      notify: setupcon
+      when: nocontainer.stat.exists == true
+
+    - name: nodeadkeys
+      ansible.builtin.lineinfile:
+        path: /etc/default/keyboard
+        regexp: '^XKBVARIANT=".+$'
+        line: 'XKBVARIANT="nodeadkeys"'
+        backup: yes
+      notify: setupcon
+      when: nocontainer.stat.exists == true
+
+    - name: Ensure de_DE.UTF-8 locale exists
+      community.general.locale_gen:
+        name: de_DE.UTF-8
+        state: present
+      notify: localectl
+      when: nocontainer.stat.exists == true
+
+
+  handlers:
+
+    - name: setupcon
+      ansible.builtin.shell: setupcon
+
+    - name: localectl
+      ansible.builtin.shell: localectl set-locale LANG=de_DE.UTF-8

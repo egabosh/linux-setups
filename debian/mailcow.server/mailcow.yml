@@ -1,0 +1,469 @@
+---
+
+- name: mailcow
+  hosts: all
+  tasks:
+
+    - name: Clone mailcow git repo
+      become: yes
+      git:
+        repo: 'https://github.com/mailcow/mailcow-dockerized.git'
+        version: "master"
+        umask: '022'
+        update: false
+        dest: "/home/docker/mailcow-dockerized"
+
+    - name: disable Postfix Port 
+      ansible.builtin.replace:
+        path: /etc/postfix/master.cf
+        regexp: '^smtp *inet'
+        replace: '#smtp     inet'
+        backup: yes
+      notify:
+      - Restart postfix
+
+    - name: Generate mailcow.conf file
+      shell: ./generate_config.sh
+      environment:
+        MAILCOW_HOSTNAME: "mail.{{inventory_hostname}}"
+        MAILCOW_TZ: "Europe/Berlin"
+      args:
+        executable: /bin/bash
+        chdir: "/home/docker/mailcow-dockerized"
+        creates: /home/docker/mailcow-dockerized/mailcow.conf
+      notify: Restart mailcow
+
+    - name: disable mailcow letsencrypt (done by traefik)
+      ansible.builtin.replace:
+        path: /home/docker/mailcow-dockerized/mailcow.conf
+        regexp: '^SKIP_LETS_ENCRYPT=n'
+        replace: 'SKIP_LETS_ENCRYPT=y'
+        backup: yes
+      notify:
+      - Restart mailcow
+
+    - name: disable solr (high memory usage - https://docs.mailcow.email/de/manual-guides/Dovecot/u_e-dovecot-fts/) 
+      ansible.builtin.replace:
+        path: /home/docker/mailcow-dockerized/mailcow.conf
+        regexp: '^SKIP_SOLR=n'
+        replace: 'SKIP_SOLR=y'
+        backup: yes
+      notify:
+      - Restart mailcow
+
+    - name: change http port 80->9080 (needed by traefik)
+      ansible.builtin.replace:
+        path: /home/docker/mailcow-dockerized/mailcow.conf
+        regexp: '^HTTP_PORT=80'
+        replace: 'HTTP_PORT=9080'
+        backup: yes
+      notify:
+      - Restart mailcow
+
+    - name: change http bind to localhost (needed by traefik)
+      ansible.builtin.replace:
+        path: /home/docker/mailcow-dockerized/mailcow.conf
+        regexp: '^HTTP_BIND=.*'
+        replace: 'HTTP_BIND=192.168.41.1'
+        backup: yes
+      notify:
+      - Restart mailcow
+
+    - name: change http port 443->9443 (needed by traefik)
+      ansible.builtin.replace:
+        path: /home/docker/mailcow-dockerized/mailcow.conf
+        regexp: '^HTTPS_PORT=443'
+        replace: 'HTTPS_PORT=9443'
+        backup: yes
+      notify:
+      - Restart mailcow
+
+    - name: change httpd bind to localhost (needed by traefik)
+      ansible.builtin.replace:
+        path: /home/docker/mailcow-dockerized/mailcow.conf
+        regexp: '^HTTPS_BIND=.*'
+        replace: 'HTTPS_BIND=192.168.41.1'
+        backup: yes
+      notify:
+      - Restart mailcow
+
+    - name: Start/initialize mailcow
+      ansible.builtin.shell: docker-compose up -d --force-recreate
+      args:
+        chdir: /home/docker/mailcow-dockerized
+        creates: /home/docker/var-lib-docker/volumes/mailcowdockerized_vmail-vol-1/_data/sieve/global_sieve_after.sieve
+
+    - wait_for:
+        path: /home/docker/var-lib-docker/volumes/mailcowdockerized_vmail-vol-1/_data/sieve/global_sieve_after.sieve
+
+    - name: /home/docker/mailcow-dockerized/adminpw.sh
+      blockinfile:
+        path: /home/docker/mailcow-dockerized/adminpw.sh
+        create: yes
+        mode: 0750
+        owner: root
+        group: docker
+        marker: "# {mark} ANSIBLE MANAGED BLOCK"
+        block: |
+          source /home/docker/mailcow-dockerized/mailcow.conf
+          if [[ -z ${DBUSER} ]] || [[ -z ${DBPASS} ]] || [[ -z ${DBNAME} ]]
+          then
+            echo "Cannot find mailcow.conf, make sure this script is run from within the mailcow folder."
+            exit 1
+          fi
+          # Change password
+          random=$(pwgen -s 32 1)
+          password=$(docker exec -it $(docker ps -qf name=dovecot-mailcow) doveadm pw -s SSHA256 -p ${random} | tr -d '\r')
+          docker exec -it $(docker ps -qf name=mysql-mailcow) mysql -u${DBUSER} -p${DBPASS} ${DBNAME} -e "DELETE FROM admin WHERE username='admin';"
+          docker exec -it $(docker ps -qf name=mysql-mailcow) mysql -u${DBUSER} -p${DBPASS} ${DBNAME} -e "DELETE FROM domain_admins WHERE username='admin';"
+          docker exec -it $(docker ps -qf name=mysql-mailcow) mysql -u${DBUSER} -p${DBPASS} ${DBNAME} -e "INSERT INTO admin (username, password, superadmin, active) VALUES ('admin', '${password}', 1, 1);"
+          docker exec -it $(docker ps -qf name=mysql-mailcow) mysql -u${DBUSER} -p${DBPASS} ${DBNAME} -e "DELETE FROM tfa WHERE username='admin';"
+          
+          echo "${random}" >/home/docker/mailcow-dockerized/.adminpw
+          chmod 400 /home/docker/mailcow-dockerized/.adminpw
+        backup: yes
+        validate: /bin/bash -n %s
+
+    - name: /home/docker/mailcow-dockerized/adminpw.sh shebang
+      lineinfile:
+        path: /home/docker/mailcow-dockerized/adminpw.sh
+        insertbefore: BOF
+        line: "#!/bin/bash"
+
+    - name: Generate mailcow admin password
+      ansible.builtin.shell: /home/docker/mailcow-dockerized/adminpw.sh
+      args:
+        chdir: /home/docker/mailcow-dockerized
+        creates: /home/docker/mailcow-dockerized/.adminpw
+
+    - name: /home/docker/traefik/providers/mailcow.yml Mailcow<->Traefik provider
+      blockinfile:
+        path: /home/docker/traefik/providers/mailcow.yml
+        create: yes
+        mode: 0444
+        owner: root
+        group: docker
+        marker: "# {mark} ANSIBLE MANAGED BLOCK"
+        block: |
+          http:
+            routers:
+              mailcow:
+                rule: "Host(`mail.{{inventory_hostname}}`)"
+                service: mailcow
+                entryPoints:
+                  - "https"
+                tls:
+                  certresolver: letsencrypt
+                middlewares: secHeaders@file
+            services:
+              mailcow:
+                loadBalancer:
+                  servers:
+                    - url: "http://192.168.41.1:9080"
+
+    - name: /usr/local/sbin/autoupdate.d/mailcow.update
+      blockinfile:
+        path: /usr/local/sbin/autoupdate.d/mailcow.update
+        mode: "0400"
+        owner: root
+        group: root
+        create: yes
+        marker: "# {mark} ANSIBLE MANAGED BLOCK"
+        block: |
+          # mailcow-dockerized
+          if [ -f /home/docker/mailcow-dockerized/update.sh ]
+          then
+            g_echo_ok "Prüfe MailCow Update"
+            cd /home/docker/mailcow-dockerized 
+            if ./update.sh -c
+            then
+              g_echo_warn "Installiere MailCow Update $(./update.sh -c)"
+              if ! ./update.sh --no-update-compose -f 2>&1 | sed -e "s/'/'\\\\''/g; 1s/^/'/; \$s/\$/'/" | tee $g_tmp/mailcow-update 
+              then
+                if grep -q "update.sh changed, please run this script again" $g_tmp/mailcow-update
+                then
+                  if ! ./update.sh --no-update-compose -f 2>&1 | sed -e "s/'/'\\\\''/g; 1s/^/'/; \$s/\$/'/" | tee -a $g_tmp/mailcow-update
+                  then
+                    g_echo_error "MailCow Update fehlgeschlagen $(cat $g_tmp/mailcow-update)"
+                  fi
+                else
+                  g_echo_error "MailCow Update fehlgeschlagen $(cat $g_tmp/mailcow-update)"
+                fi
+              fi
+              docker compose up -d --force-recreate
+            fi
+          fi
+          # take letsencrypt-certs from traefik
+          cat /home/docker/traefik/letsencrypt/acme.json  | jq -r ".letsencrypt.Certificates[] | select(.domain.main==\"mail.{{inventory_hostname}}\") | .key" | base64 -d >/home/docker/mailcow-dockerized/data/assets/ssl/key.pem
+          cat /home/docker/traefik/letsencrypt/acme.json  | jq -r ".letsencrypt.Certificates[] | select(.domain.main==\"mail.{{inventory_hostname}}\") | .certificate" | base64 -d >/home/docker/mailcow-dockerized/data/assets/ssl/cert.pem
+          docker restart $(docker ps -qaf name=postfix-mailcow)
+          docker restart $(docker ps -qaf name=dovecot-mailcow)
+        backup: yes
+        validate: /bin/bash -n %s
+
+    - name: /usr/local/sbin/backup.d/mailcow.backup
+      blockinfile:
+        path: /usr/local/sbin/backup.d/mailcow.backup
+        mode: "0400"
+        owner: root
+        group: root
+        create: yes
+        marker: "# {mark} ANSIBLE MANAGED BLOCK"
+        block: |
+          cd /home/docker/mailcow-dockerized
+          mkdir -p ${BACKUPDIR}/mailcow-backup_script
+          BACKUP_LOCATION=${BACKUPDIR}/mailcow-backup_script /home/docker/mailcow-dockerized/helper-scripts/backup_and_restore.sh backup all --delete-days 3 || g_echo_error "MailCow-Backup (mysql crypt redis) war nicht erfolgreich"
+        backup: yes
+        validate: /bin/bash -n %s
+
+    - name: /home/docker/autoconfig.{{inventory_hostname}}/docker-compose.yml Container Configuration
+      blockinfile:
+        path: /home/docker/autoconfig.{{inventory_hostname}}/docker-compose.yml
+        create: yes
+        mode: 0440
+        owner: root
+        group: docker
+        marker: "# {mark} ANSIBLE MANAGED BLOCK"
+        block: |
+          
+          services:
+            autoconfig.{{inventory_hostname}}:
+              image: nginx:latest
+              restart: unless-stopped
+              volumes:
+                - ./htdocs:/usr/share/nginx/html:ro
+                - /etc/localtime:/etc/localtime:ro
+              networks:
+                - traefik
+              labels:
+                - traefik.enable=true
+                # HTTPS
+                - traefik.http.routers.autoconfig-{{ ansible_facts['hostname'] }}.rule=Host(`autoconfig.{{ ansible_facts['nodename'] }}`) || Host(`autodiscover.{{ ansible_facts['nodename'] }}`)
+                - traefik.http.routers.autoconfig-{{ ansible_facts['hostname'] }}.entrypoints=https
+                - traefik.http.routers.autoconfig-{{ ansible_facts['hostname'] }}.tls=true
+                # Proxy to service-port
+                - traefik.http.services.autoconfig-{{ ansible_facts['hostname'] }}.loadbalancer.server.port=80
+                - traefik.http.routers.autoconfig-{{ ansible_facts['hostname'] }}.service=autoconfig-{{ ansible_facts['hostname'] }}
+                # cert via letsencrypt
+                - traefik.http.routers.autoconfig-{{ ansible_facts['hostname'] }}.tls.certresolver=letsencrypt
+                # Traefik network
+                - traefik.docker.network=traefik
+                # activate secHeaders@file
+                - traefik.http.routers.autoconfig-{{ ansible_facts['hostname'] }}.middlewares=secHeaders@file
+          networks:
+            traefik:
+              external: true
+        backup: yes
+      notify: Restart autoconfig
+
+    - name: /home/docker/autoconfig.{{inventory_hostname}}/htdocs/index.html
+      blockinfile:
+        path: /home/docker/autoconfig.{{inventory_hostname}}/htdocs/index.html
+        create: yes
+        mode: 0444
+        owner: root
+        group: root
+        marker: "<!-- {mark} ANSIBLE MANAGED BLOCK -->"
+        block: |
+          OK
+        backup: yes
+
+    - name: /home/docker/autoconfig.{{inventory_hostname}}/htdocs/mail/config-v1.1.xml
+      blockinfile:
+        path: /home/docker/autoconfig.{{inventory_hostname}}/htdocs/mail/config-v1.1.xml
+        create: yes
+        mode: 0444
+        owner: root
+        group: root
+        marker: "<!-- {mark} ANSIBLE MANAGED BLOCK -->" 
+        block: |
+          <clientConfig version="1.1">
+            <emailProvider id="mail.{{inventory_hostname}}">
+              <domain>{{inventory_hostname}}</domain>
+              <displayName>{{inventory_hostname}}</displayName>
+              <displayShortName>{{ ansible_facts['hostname'] }}</displayShortName>
+              <incomingServer type="imap">
+                <hostname>mail.{{inventory_hostname}}</hostname>
+                <port>993</port>
+                <socketType>SSL</socketType>
+                <username>%EMAILADDRESS%</username>
+                <authentication>password-cleartext</authentication>
+              </incomingServer>
+              <outgoingServer type="smtp">
+                <hostname>mail.{{inventory_hostname}}</hostname>
+                <port>465</port>
+                <socketType>SSL</socketType>
+                <username>%EMAILADDRESS%</username>
+                <authentication>password-cleartext</authentication>
+              </outgoingServer>
+            </emailProvider>
+          </clientConfig>
+        backup: yes
+ 
+    - name: Allow all access to tcp port 25 (smtp)
+      community.general.ufw:
+        rule: allow
+        port: '25'
+        proto: tcp
+
+    - name: Allow all access to tcp port 465 (submission/tls)
+      community.general.ufw:
+        rule: allow
+        port: '465'
+        proto: tcp
+
+    - name: Allow all access to tcp port 587 (submission)
+      community.general.ufw:
+        rule: allow
+        port: '587'
+        proto: tcp
+
+    - name: Allow all access to tcp port 993 (imaps)
+      community.general.ufw:
+        rule: allow
+        port: '993'
+        proto: tcp
+
+    - name: /usr/local/sbin/runchecks.d/dnsrbl.check
+      blockinfile:
+        path: /usr/local/sbin/runchecks.d/dnsrbl.check
+        mode: "0400"
+        owner: root
+        group: root
+        create: yes
+        marker: "# {mark} ANSIBLE MANAGED BLOCK"
+        block: |
+          rbllist="0spam-killlist.fusionzero.com
+          access.redhawk.org
+          all.s5h.net
+          all.spamrats.com
+          all.spam-rbl.fr
+          aspews.ext.sorbs.net
+          b.barracudacentral.org
+          backscatter.spameatingmonkey.net
+          badconf.rhsbl.sorbs.net
+          badnets.spameatingmonkey.net
+          ban.zebl.zoneedit.com
+          bb.barracudacentral.org
+          blacklist.woody.ch
+          bl.spamcop.net
+          bl.blocklist.de
+          bogons.cymru.com
+          bsb.spamlookup.net
+          cbl.abuseat.org
+          cdl.anti-spam.org.cn
+          combined.abuse.ch
+          db.wpbl.info
+          dnsbl-1.uceprotect.net
+          dnsbl-2.uceprotect.net
+          dnsbl-3.uceprotect.net
+          dnsbl.anticaptcha.net
+          dnsbl.dronebl.org
+          dnsbl.inps.de
+          dnsbl.sorbs.net
+          dnsbl.spfbl.net
+          drone.abuse.ch
+          duinv.aupads.org
+          dul.dnsbl.sorbs.net
+          dyna.spamrats.com
+          dynip.rothen.com
+          fresh.spameatingmonkey.net
+          http.dnsbl.sorbs.net
+          ips.backscatterer.org
+          ix.dnsbl.manitu.net
+          korea.services.net
+          l1.bbfh.ext.sorbs.net
+          mail-abuse.blacklist.jippg.org
+          multi.surbl.org
+          misc.dnsbl.sorbs.net
+          noptr.spamrats.com
+          orvedb.aupads.org
+          pbl.spamhaus.org
+          problems.dnsbl.sorbs.net
+          proxies.dnsbl.sorbs.net
+          proxy.bl.gweep.ca
+          psbl.surriel.com
+          rbl.abuse.ro
+          rbl.interserver.net
+          relays.bl.gweep.ca
+          relays.nether.net
+          sbl.spamhaus.org
+          short.rbl.jp
+          singular.ttk.pte.hu
+          smtp.dnsbl.sorbs.net
+          socks.dnsbl.sorbs.net
+          spam.abuse.ch
+          spambot.bls.digibase.ca
+          spam.dnsbl.anonmails.de
+          spam.dnsbl.sorbs.net
+          spamrbl.imp.ch
+          spamsources.fabel.dk
+          spam.spamrats.com
+          ubl.lashback.com
+          ubl.unsubscore.com
+          virus.rbl.jp
+          web.dnsbl.sorbs.net
+          wormrbl.imp.ch
+          xbl.spamhaus.org
+          zen.spamhaus.org
+          z.mailspike.net
+          zombie.dnsbl.sorbs.net"
+          
+          #for list in $rbllist
+          #do
+          #  rblopts="$opts -s $list"
+          #done
+          ## only run at 6:2Xh
+          #if date +%H:%M | egrep -q "^06:2"
+          #then
+          #  if ! rblcheck $rblopts -- {{inventory_hostname}} mail.{{inventory_hostname}} $(curl -s https://checkipv4.dedyn.io) $(curl -s https://checkipv6.dedyn.io) >${g_tmp}/rbloutput 2>&1
+          #  then
+          #    g_echo_error "$(grep -v ' not listed by ' ${g_tmp}/rbloutput)"
+          #  fi
+          #fi
+        backup: yes
+        validate: /bin/bash -n %s
+
+    - name: /usr/local/sbin/runchecks.d/danetlsa.check
+      blockinfile:
+        path: /usr/local/sbin/runchecks.d/danetlsa.check
+        mode: "0400"
+        owner: root
+        group: root
+        create: yes
+        marker: "# {mark} ANSIBLE MANAGED BLOCK"
+        block: |
+          cd ${g_tmp}
+          host=mail.{{inventory_hostname}}
+          openssl s_client -showcerts -connect ${host}:443 < /dev/null 2>/dev/null | awk '/BEGIN CERTIFICATE/,/END CERTIFICATE/{ if(/BEGIN CERTIFICATE/){a++}; out="cert"a".pem"; print >out}'
+          for cert in *.pem
+          do 
+            certname=$(openssl x509 -noout -subject -in ${cert} 2>/dev/null | sed -nE 's/.*CN ?= ?(.*)/\1/; s/[ ,*]/_/g; s/__/_/g; s/_-_/-/; s/^_//g;p' | tr '[:upper:]' '[:lower:]').pem
+            [ "${certname}" != "${host}.pem" ] && continue
+            tlsa=$(openssl x509 -in "${cert}" -noout -pubkey 2>/dev/null | openssl rsa -pubin -outform DER 2>/dev/null | openssl dgst -sha256 -hex 2>/dev/null | cut -d" " -f2)
+            dnstlsa=$(host -t TLSA *._tcp.${host} | cut -d" " -f 8,9 | tr '[:upper:]' '[:lower:]' | sed ':a;N;$!ba;s/\n/ /g' | sed 's/ //g')
+            echo ${dnstlsa} | egrep -q "^bereached$" && continue
+            [ "${tlsa}" != "${dnstlsa}" ] && g_echo_error "DNS TLSA incorrect! *._tcp.${host} should be ${tlsa} but is ${dnstlsa} (host -t TLSA *._tcp.${host})"
+          done
+          rm *.pem
+          cd - >/dev/null
+        backup: yes
+        validate: /bin/bash -n %s
+
+  handlers:
+    - name: Restart mailcow
+      ansible.builtin.shell: docker-compose up -d --force-recreate
+      args:
+        chdir: /home/docker/mailcow-dockerized
+
+    - name: Restart autoconfig
+      ansible.builtin.shell: docker-compose up -d --force-recreate
+      args:
+        chdir: /home/docker/autoconfig.{{inventory_hostname}}
+
+
+    - name: Restart postfix
+      service:
+        name: postfix
+        state: restarted
+

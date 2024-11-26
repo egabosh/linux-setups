@@ -1,0 +1,12 @@
+---
+
+- name: syslog-server
+  hosts: all
+  tasks:
+
+  - name: Allow all access to tcp port 514
+    community.general.ufw:
+        rule: allow
+        port: '514'
+        proto: udp
+

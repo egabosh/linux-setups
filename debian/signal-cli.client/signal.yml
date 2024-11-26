@@ -1,0 +1,257 @@
+---
+
+- name: Install signal-cli
+  hosts: all
+  tasks:
+    - name: Install Basic Packages
+      apt:
+        name:
+          - openjdk-17-jdk-headless
+          - libmodern-perl-perl
+        update_cache: no
+        install_recommends: no
+
+    - name: Create Signal Group
+      ansible.builtin.group:
+        name: signal
+        state: present
+        gid: 1002
+
+    - name: Add root to signal group
+      ansible.builtin.user:
+        name: root
+        groups: signal
+        append: yes
+    
+    - name: Hide signal user from login screen
+      blockinfile:
+        path: /var/lib/AccountsService/users/signal
+        mode: "0444"
+        owner: root
+        group: root
+        create: yes
+        block: |
+          [User]
+          SystemAccount=true                    
+        backup: no
+
+    - name: Create Signal User
+      ansible.builtin.user:
+        name: signal
+        comment: Signal User
+        uid: 1002
+        group: signal
+
+    - name: Create ssh dir
+      ansible.builtin.file:
+        path: /home/signal/.ssh
+        owner: signal
+        group: signal
+        state: directory
+        mode: '0700'
+
+    - name: Generate an OpenSSH keypair ed25519
+      community.crypto.openssh_keypair:
+        owner: signal
+        group: signal
+        path: /home/signal/.ssh/id_ed25519
+        type: ed25519
+
+    - name: Put install/update script
+      blockinfile:
+        path: /usr/local/sbin/autoupdate.d/signal-cli.update
+        create: yes
+        mode: 0400
+        owner: root
+        group: root
+        marker: "# {mark} ANSIBLE MANAGED BLOCK"
+        block: |
+          # Install/Update signal-cli script
+          [ -z "$g_tmp" ] && . /etc/bash/gaboshlib.include
+          set -e
+          umask 0077
+          SIGNALCLIVERS=$(wget -q -t1 --timeout=30 https://github.com/AsamK/signal-cli/releases -O - | grep Latest -B 4 | grep /releases/tag/v | head -n1 | cut -d\> -f3 | perl -pe 's/^v(.*)\<.*$/$1/')
+          echo $SIGNALCLIVERS | egrep -q "^[0-9].+[0-9]$" || g_echo_error "No valid signal-cli Version parsed in GitHub: $SIGNALCLIVERS"
+          cd /home/signal
+          if [ -d signal-cli-${SIGNALCLIVERS} ]
+          then
+            echo "signal-cli-${SIGNALCLIVERS} already installed - no Update available"
+          else
+            [ -f signal-cli-${SIGNALCLIVERS}.tar.gz ] || wget -q "https://github.com/AsamK/signal-cli/releases/download/v${SIGNALCLIVERS}/signal-cli-${SIGNALCLIVERS}.tar.gz"
+            [ -f signal-cli-${SIGNALCLIVERS}.tar.gz ] || g_echo_error "Could not download https://github.com/AsamK/signal-cli/releases/download/v${SIGNALCLIVERS}/signal-cli-${SIGNALCLIVERS}.tar.gz"
+            tar --no-same-permissions -xzf signal-cli-${SIGNALCLIVERS}.tar.gz || g_echo_error "Could not extract signal-cli-${SIGNALCLIVERS}.tar.gz"
+            if [ $(uname -m) == aarch64 ]
+            then
+              SIGNALLIBVERS=$(ls signal-cli-${SIGNALCLIVERS}/lib/libsignal-client-*.jar | cut -d'-' -f5 | sed 's/.jar$//')
+              curl -Lo libsignal_jni.so "https://gitlab.com/packaging/libsignal-client/-/jobs/artifacts/v${SIGNALLIBVERS}/raw/libsignal-client/arm64/libsignal_jni.so?job=libsignal-client-arm64" || g_echo_error "Failed to doenload libsignal_jni.so"
+              cp -p libsignal_jni.so libsignal_jni.so-${SIGNALLIBVERS}
+              zip -uj signal-cli-${SIGNALCLIVERS}/lib/libsignal-client-${SIGNALLIBVERS}.jar libsignal_jni.so
+            fi
+            chown -R signal. signal-cli-${SIGNALCLIVERS}
+            rm -f signal-cli
+            ln -s signal-cli-${SIGNALCLIVERS} signal-cli
+          fi
+        validate: /bin/bash -n %s
+        backup: yes
+      notify:
+      - Run Installation/Update
+
+    - name: systemd-service
+      blockinfile:
+        path: /etc/systemd/system/signal-cli.service
+        create: yes
+        mode: 0444
+        owner: root
+        group: root
+        marker: "# {mark} ANSIBLE MANAGED BLOCK"
+        block: |
+          [Unit]
+          Description=Send secure messages to Signal clients
+          Requires=dbus.socket
+          After=dbus.socket
+          Wants=network-online.target
+          After=network-online.target
+          
+          [Service]
+          Type=dbus
+          Environment="SIGNAL_CLI_OPTS=-Xms2m"
+          ExecStart=/home/signal/signal-cli/bin/signal-cli --config /home/signal/.local/share/signal-cli daemon --system
+          User=signal
+          BusName=org.asamk.Signal
+          # JVM always exits with 143 in reaction to SIGTERM signal
+          SuccessExitStatus=143
+          Restart=on-failure
+          
+          [Install]
+          WantedBy=multi-user.target
+          Alias=dbus-org.asamk.Signal.service
+      notify:
+      - Restart signal-cli
+
+    - name: /etc/dbus-1/system.d/org.asamk.Signal.conf signal-dbus-config
+      blockinfile:
+        path: /etc/dbus-1/system.d/org.asamk.Signal.conf
+        create: yes
+        mode: 0444
+        owner: root
+        group: root
+        marker: "<!-- {mark} ANSIBLE MANAGED BLOCK -->"
+        block: |
+          <!DOCTYPE busconfig PUBLIC "-//freedesktop//DTD D-BUS Bus Configuration 1.0//EN"
+          "http://www.freedesktop.org/standards/dbus/1.0/busconfig.dtd">
+          
+          <busconfig>
+            <policy user="signal">
+              <allow own="org.asamk.Signal"/>
+              <allow send_destination="org.asamk.Signal"/>
+              <allow receive_sender="org.asamk.Signal"/>
+            </policy>
+          
+            <policy group="signal">
+              <allow send_destination="org.asamk.Signal"/>
+              <allow receive_sender="org.asamk.Signal"/>
+            </policy>
+          </busconfig>
+      notify:
+      - Restart dbus
+      
+    - name: /etc/dbus-1/system.d/org.asamk.Signal.conf shebang
+      lineinfile:
+        path: /etc/dbus-1/system.d/org.asamk.Signal.conf
+        insertbefore: BOF
+        line: <?xml version="1.0"?> <!--*-nxml-*-->
+
+
+    - name: /etc/dbus-1/system.d/org.asamk.Signal.service signal-dbus-service
+      blockinfile:
+        path: /etc/dbus-1/system.d/org.asamk.Signal.service
+        create: yes
+        mode: 0444
+        owner: root
+        group: root
+        block: |
+          [D-BUS Service]
+          Name=org.asamk.Signal
+          Exec=/bin/false
+          SystemdService=dbus-org.asamk.Signal.service
+      notify:
+      - Restart dbus
+
+    - name: Receive signal messages
+      blockinfile:
+        path: /usr/local/bin/signal-receive.pl
+        create: yes
+        mode: 0550
+        owner: root
+        group: signal
+        marker: "# {mark} ANSIBLE MANAGED BLOCK"
+        block: |
+          use Modern::Perl;
+          use Net::DBus;
+          use Net::DBus::Reactor;
+          
+          sub msgRcv {
+            my ($timestamp, $sender, $groupID, $message, $attachments) = @_;
+            print "Message: $message\nSender: $sender\nTimestamp: $timestamp\nAttachments: $attachments\n";
+            return;
+          }
+          
+          my $bus = Net::DBus->system();
+          my $sig = $bus->get_service("org.asamk.Signal");
+          my $obj = $sig->get_object("/org/asamk/Signal/_4944136198288","org.asamk.Signal");
+          my $sigid = $obj->connect_to_signal('MessageReceived', \&msgRcv);
+          
+          my $reactor=Net::DBus::Reactor->main();
+          $reactor->run();
+           
+          exit 0;
+        backup: yes
+
+    - name: /usr/local/bin/signal-receive.pl shebang
+      lineinfile:
+        path: /usr/local/bin/signal-receive.pl
+        insertbefore: BOF
+        line: "#!/usr/bin/perl"
+
+    #- name: /usr/local/sbin/runchecks.d/services
+    #  lineinfile:
+    #    path: /usr/local/sbin/runchecks.d/services
+    #    create: yes
+    #    line: "signal-cli"
+
+    - name: /etc/cron.d/signal_local - daily selftest
+      blockinfile:
+        path: /etc/cron.d/signal_local
+        create: yes
+        mode: 0644
+        owner: root
+        group: signal
+        marker: "# {mark} ANSIBLE MANAGED BLOCK"
+        block: |
+          0 15 * * *      root    sleep $(shuf -i 1-120 -n 1) ; echo "Dies ist ein täglicher Selbsttest von {{inventory_hostname}}. Falls diese Nachricht mal nicht um 15Uhr eingeht stimmt etwas nicht!" | /usr/local/bin/notify.sh
+        backup: yes
+
+    - name: 'add signal-cli to startup'
+      command: systemctl enable signal-cli
+      args:
+        creates: /etc/systemd/system/multi-user.target.wants/signal-cli.service
+
+  handlers:
+
+    - name: Run Installation/Update
+      ansible.builtin.shell: bash /usr/local/sbin/autoupdate.d/signal-cli.update
+      notify:
+      - Restart signal-cli
+
+    - name: Restart systemd
+      ansible.builtin.shell: systemctl daemon-reload
+
+    - name: Restart dbus
+      service:
+        name: dbus
+        state: restarted
+
+    - name: Restart signal-cli
+      service:
+        name: signal-cli
+        state: restarted
