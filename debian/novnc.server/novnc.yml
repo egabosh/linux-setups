@@ -1,0 +1,126 @@
+---
+- name: novnc
+  hosts: all
+  tasks:
+    
+    - name: Packages for novnc
+      apt:
+        name: 
+          - novnc
+        update_cache: no
+        install_recommends: no
+
+    - name: /etc/systemd/system/websockify-novnc.service
+      blockinfile:
+        path: /etc/systemd/system/websockify-novnc.service
+        create: yes
+        mode: "0444"
+        owner: root
+        group: root
+        marker: "# {mark} ANSIBLE MANAGED BLOCK"
+        block: |
+          [Unit]
+          Description=Websockify NoVNC
+          After=network.target
+          
+          [Service]
+          Type=simple
+          ExecStart=/usr/bin/websockify --web=/usr/share/novnc 0.0.0.0:8000 127.0.0.1:5900
+          KillMode=process
+          Restart=on-failure
+          RestartPreventExitStatus=255
+          RuntimeDirectory=websockify
+          RuntimeDirectoryMode=0755
+          
+          [Install]
+          WantedBy=multi-user.target
+          Alias=websockify-novnc.service
+        backup: yes
+      notify:
+      - Restart websockify-novnc
+
+    - name: 'add websockify-novnc to startup'
+      command: systemctl enable websockify-novnc
+      args:
+        creates: /etc/systemd/system/multi-user.target.wants/websockify-novnc.service
+
+    - name: /home/docker/traefik/providers/novnc.yml noVNC<->Traefik provider
+      blockinfile:
+        path: /home/docker/traefik/providers/novnc.yml
+        create: yes
+        mode: 0444
+        owner: root
+        group: docker
+        marker: "# {mark} ANSIBLE MANAGED BLOCK"
+        block: |
+          http:
+            routers:
+              novnc:
+                rule: "Host(`novnc.{{inventory_hostname}}`)"
+                service: novnc
+                entryPoints:
+                  - "https"
+                tls:
+                  certresolver: letsencrypt
+                middlewares: 
+                  - "secHeaders@file"
+                  - "auth-novnc"
+            services:
+              novnc:
+                loadBalancer:
+                  servers:
+                    - url: "http://192.168.41.1:8000"
+            middlewares:
+              auth-novnc:
+                basicauth:
+                  usersFile: "/etc/traefik/providers.local/novnc.usersfile"
+                  removeHeader: true
+
+    - name: /home/docker/traefik/novnc-genpw.sh (generate Random PW for noVNC basic-auth)
+      blockinfile:
+        path: /home/docker/traefik/novnc-genpw.sh
+        create: yes
+        mode: 0550
+        owner: root
+        group: docker
+        marker: "# {mark} ANSIBLE MANAGED BLOCK"
+        block: |
+          cd /home/docker/traefik
+          user=admin
+          password=$(pwgen -s 32 1)
+
+          [ -f novnc-env ] || echo "USER=!USER!
+          PASSWORD=!PASSWORD!
+          " >novnc-env
+         
+          chmod 440 novnc-env
+          chown root:docker novnc-env
+          sed -i "s/\!USER\!/$user/g" novnc-env
+          sed -i "s/\!PASSWORD\!/$password/g" novnc-env
+          
+          . novnc-env
+          echo $(htpasswd -nb $USER $PASSWORD) >providers/novnc.usersfile
+
+        backup: yes
+        validate: /bin/bash -n %s
+
+    - name: /home/docker/traefik/novnc-genpw.sh shebang
+      lineinfile:
+        path: /home/docker/traefik/novnc-genpw.sh
+        insertbefore: BOF
+        line: "#!/bin/bash -e"
+
+    - name: Gen initial password if not exists
+      ansible.builtin.shell: ./novnc-genpw.sh
+      args:
+        chdir: /home/docker/traefik
+        creates: /home/docker/traefik/providers/novnc.usersfile
+
+
+  handlers:
+
+    - name: Restart websockify-novnc
+      service:
+        name: websockify-novnc
+        state: restarted
+

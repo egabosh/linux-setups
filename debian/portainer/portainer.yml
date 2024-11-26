@@ -1,0 +1,99 @@
+---
+- name: portainer
+  hosts: all
+  tasks:
+
+    - name: Create portainer dir
+      ansible.builtin.file:
+        path: /home/docker/portainer.{{inventory_hostname}}
+        owner: root
+        group: docker
+        state: directory
+        mode: '0770'
+
+    - name: /home/docker/portainer.{{inventory_hostname}}/genpw.sh (generate Random)
+      blockinfile:
+        path: /home/docker/portainer.{{inventory_hostname}}/genpw.sh
+        create: yes
+        mode: 0550
+        owner: root
+        group: docker
+        marker: "# {mark} ANSIBLE MANAGED BLOCK"
+        block: |
+          cd /home/docker/portainer.{{inventory_hostname}}
+
+          if [ -f env ]
+          then
+            . ./env
+            echo "${WEBPASSWDCRYPT}"
+          else
+            webpassword=$(pwgen -s 32 1)
+            webpasswordcrypted=$(htpasswd -nbB foo $webpassword | cut -d: -f2 | sed -e s/\\$/\\$\\$/g)
+ 
+            echo "WEBUSER=admin
+          WEBPASSWD=${webpassword}
+          WEBPASSWDCRYPT=${webpasswordcrypted}
+          " >env
+
+            chmod 440 env
+            chown root:docker env
+            echo "${webpasswordcrypted}"
+          fi
+
+        backup: yes
+        validate: /bin/bash -n %s
+
+    - name: /home/docker/portainer.{{inventory_hostname}}/genpw.sh shebang
+      lineinfile:
+        path: /home/docker/portainer.{{inventory_hostname}}/genpw.sh
+        insertbefore: BOF
+        line: "#!/bin/bash -e"
+
+    - name: Get crypted PW
+      shell: bash /home/docker/portainer.{{inventory_hostname}}/genpw.sh
+      register: cryptpw
+      changed_when: false
+
+    - name: /home/docker/portainer.{{inventory_hostname}}/docker-compose.yml Portainer Container Configuration
+      blockinfile:
+        path: /home/docker/portainer.{{inventory_hostname}}/docker-compose.yml
+        create: yes
+        mode: 0440
+        owner: root
+        group: docker
+        marker: "# {mark} ANSIBLE MANAGED BLOCK"
+        block: |
+          
+          services:
+            portainer:
+              image: portainer/portainer-ce:latest
+              command: --admin-password {{ cryptpw.stdout }}
+              restart: unless-stopped
+              networks:
+                - traefik
+              volumes:
+                - /var/run/docker.sock:/var/run/docker.sock
+                - ./data:/data
+              labels:
+                - traefik.enable=true
+                - traefik.http.routers.portainer.rule=Host(`portainer.{{inventory_hostname}}`)
+                - traefik.http.routers.portainer.entrypoints=https
+                - traefik.http.routers.portainer.middlewares=secHeaders@file
+                - traefik.http.services.portainer.loadbalancer.server.port=9000
+                - traefik.http.routers.portainer.service=portainer
+                - traefik.http.routers.portainer.tls=true
+                - traefik.http.routers.portainer.tls.certresolver=letsencrypt
+                - traefik.http.middlewares.to-https.redirectscheme.scheme=https
+          networks:
+            traefik:
+              external: true
+        backup: yes
+      notify: Restart portainer
+
+
+  handlers:
+
+    - name: Restart portainer
+      ansible.builtin.shell: docker-compose up -d --force-recreate
+      args:
+        chdir: /home/docker/portainer.{{inventory_hostname}}

@@ -1,0 +1,868 @@
+---
+- name: Basic Debian Linux Setup
+  hosts: all
+  tasks:
+
+    #- name: Print all available facts
+    #  ansible.builtin.debug:
+    #    var: ansible_facts
+
+    - name: check if we are in an container env by existing systemd
+      stat: 
+        path: /usr/bin/systemd
+      register: nocontainer
+
+    - name: Install Basic Packages
+      apt:
+        name:
+          - file
+          - bc
+          - psutils
+          - psmisc
+          - procps
+          - htop
+          - iotop
+          - sysstat
+          - strace
+          - net-tools
+          - vim
+          - git
+          - man-db
+          - netcat-traditional
+          - debconf-utils
+          - iputils-ping
+          - lsof
+          - inotify-tools
+          - rsync
+          - dos2unix
+          - locales
+          - iproute2
+          - cryptsetup
+          - curl
+          - moreutils
+          - ffmpeg
+          - mediainfo
+          - telnet
+          - libstring-approx-perl
+          - postfix
+          - zip
+          - nmap
+          - whois
+          - libfile-readbackwards-perl
+          - libcrypt-cbc-perl
+          - libcrypt-des-perl
+          - pwgen
+          - jq
+          - cifs-utils
+          - apt-transport-https
+          - golang
+          - make
+          - sshfs
+          - imagemagick
+          - libimage-exiftool-perl
+          - sqlite3
+          - html-xml-utils
+          - openssh-server
+          - wget
+          - gpg
+          - crudini
+          - rblcheck
+          - bind9-host
+          - kpartx
+        update_cache: yes
+        install_recommends: no
+
+    - name: Install Basic Packages if not running in container
+      apt:
+        name:
+          - hd-idle
+          - jnettop
+          - strace
+          - tmux
+          - ethtool
+          - logrotate
+          - smartmontools
+          - at
+          - certbot
+          - btrfs-progs
+          - mdadm
+          - ufw
+          - btrfsmaintenance
+          - sudo
+          - golang
+          - make
+          - sshfs
+          - ldmtool
+          - traceroute
+          - mailutils
+          - rsyslog
+          - postgresql-client
+          - ntpdate
+        update_cache: yes
+        install_recommends: no
+      when: nocontainer.stat.exists == true
+
+    - name: Install Basic Packages especially for Debian 12 - bookworm
+      apt:
+        name:
+          - systemd-resolved
+        update_cache: yes
+        install_recommends: no
+      when: ansible_distribution_release is match("bookworm") and (nocontainer.stat.exists == true)
+      register: resolved
+
+    - name: Restart systemd-resolved
+      service:
+        name: systemd-resolved
+        state: restarted
+      when: resolved.changed
+
+    - name: set testing repo pinning for Debian 12 - bookworm (needed by dnscrypt-proxy)
+      blockinfile:
+        path: /etc/apt/preferences.d/pinning.pref
+        create: yes
+        mode: "0444"
+        owner: root
+        group: root
+        marker: "# {mark} ANSIBLE MANAGED BLOCK"
+        block: |
+          Package: *
+          Pin: release a=stable
+          Pin-Priority: 900
+          
+          Package: *
+          Pin: release a=testing
+          Pin-Priority: 100
+      when: ansible_distribution_release is match("bookworm") and (nocontainer.stat.exists == true)
+
+    #- name: add testing repo for Debian 12 - bookworm (needed by dnscrypt-proxy)
+    #  ansible.builtin.apt_repository:
+    #    repo: "deb https://deb.debian.org/debian/ testing main"
+    #    state: present
+    #    filename: testing
+    #  when: ansible_distribution_release is match("bookworm")
+
+    - name: check if this is a Mint system
+      stat: 
+        path: /etc/linuxmint/mintSystem.conf
+      register: mintpios
+
+    - name: check if we are in a RaspberryPiOS
+      stat:
+        path: /usr/bin/wayfire-pi
+      register: mintpios
+
+    - name: Install Basic Packages if not running in container/mint or PiOS
+      apt:
+        name:
+          - dhcpcd5
+        update_cache: yes
+        install_recommends: no
+      when: (nocontainer.stat.exists == true) and (mintpios.stat.exists == false)
+
+    - name: add dhcpcd to startup if not running in container/mint or PiOS
+      command: systemctl enable dhcpcd
+      args:
+        creates: /etc/systemd/system/multi-user.target.wants/dhcpcd.service
+      when: (nocontainer.stat.exists == true) and (mintpios.stat.exists == false)
+      
+    - name: No DHCPcd for internal interfaces if not running in container/mint or PiOS
+      ansible.builtin.lineinfile:
+        path: /etc/dhcpcd.conf
+        line: denyinterfaces docker0 virbr0 tornet0 veth* br* eth1
+      when: (nocontainer.stat.exists == true) and (mintpios.stat.exists == false)
+      register: dhcpcd
+
+    - name: Check weather /etc/network/interfaces exists
+      stat:
+        path: /etc/network/interfaces
+      register: stat_result
+
+    - name: Disable all Network-config but source interfaces.d in /etc/network/interfaces because dhcpcd will do the job
+      replace:
+        path: /etc/network/interfaces
+        regexp: '(^iface .*)'
+        replace: '#\1'
+      when: stat_result.stat.exists
+
+    - name: Disable all Network-config but source interfaces.d in /etc/network/interfaces because dhcpcd will do the job
+      replace:
+        path: /etc/network/interfaces
+        regexp: '(^allow-hotplug .*)'
+        replace: '#\1'
+      when: stat_result.stat.exists
+
+    - name: Disable all Network-config but source interfaces.d in /etc/network/interfaces because dhcpcd will do the job
+      replace:
+        path: /etc/network/interfaces
+        regexp: '(^auto .*)'
+        replace: '#\1'
+      when: stat_result.stat.exists
+
+    - name: Restart dhcpcd
+      service:
+        name: dhcpcd
+        state: restarted
+      when: dhcpcd.changed
+
+    - name: Restart systemd-resolved
+      service:
+        name: systemd-resolved
+        state: restarted
+      when: dhcpcd.changed
+
+    - name: Set a hostname
+      ansible.builtin.hostname:
+        name: "{{inventory_hostname}}"
+      when: nocontainer.stat.exists == true
+    
+    - name: Allow the hostnameadm User all sudo commands
+      community.general.sudoers:
+        name: ALL
+        state: present
+        user: "{{ ansible_facts['hostname'] }}adm"
+        commands: ALL
+      when: nocontainer.stat.exists == true
+
+    - name: Prefer ipv4 over ipv6 to avoid problems and waiting times
+      ansible.builtin.lineinfile:
+        path: /etc/gai.conf
+        regexp: '^#precedence ::ffff:0:0/96  100'
+        line: "precedence ::ffff:0:0/96  100  # CHANGED BY ANSIBLE"
+        backup: yes
+
+    - name: Ensure en_US.UTF-8 locale exists
+      community.general.locale_gen:
+        name: en_US.UTF-8 
+        state: present
+    
+    - name: Ensure en_GB.UTF-8 locale exists
+      community.general.locale_gen:
+        name: en_GB.UTF-8
+        state: present
+
+    - name: SSH client settings
+      blockinfile:
+        path: /etc/ssh/ssh_config.d/settings.conf
+        mode: "0444"
+        owner: root
+        group: root
+        create: yes
+        insertbefore: BOF # Beginning of the file
+        marker: "# {mark} ANSIBLE MANAGED BLOCK"
+        block: |
+          Host *
+            StrictHostKeyChecking=accept-new          
+        backup: yes
+      
+    - name: Create .ssh dir
+      ansible.builtin.file:
+        path: /root/.ssh
+        owner: root
+        group: root
+        state: directory
+        mode: '0550'
+      when: nocontainer.stat.exists == true
+
+    - name: Generate an OpenSSH keypair ed25519
+      community.crypto.openssh_keypair:
+        path: /root/.ssh/id_ed25519
+        type: ed25519
+      when: nocontainer.stat.exists == true
+      notify:
+      - Restart ssh
+
+    - ansible.posix.sysctl:
+        name: vm.swappiness
+        value: '0'
+        state: present
+      when: nocontainer.stat.exists == true
+
+    - name: shell profile
+      blockinfile:
+        path: /etc/profile.d/settings-from-ansible.sh
+        create: yes
+        mode: "0444"
+        owner: root
+        group: root
+        marker: "# {mark} ANSIBLE MANAGED BLOCK"
+        block: |
+          if [ "${USER}" = root ]
+          then
+            PS1='\[\033[01;31m\]\h\[\033[01;34m\] \w \$\[\033[00m\] '
+          else
+            PS1='\[\033[01;32m\]\u@\h\[\033[01;34m\] \w \$\[\033[00m\] '
+          fi
+          export EDITOR="/usr/bin/vim"
+          export HISTSIZE=
+          export HISTFILESIZE=
+          export HISTTIMEFORMAT="[%F %T] "
+          if [ -f /etc/debian_version ]
+          then
+            export DEBIAN_FRONTEND='noninteractive'
+            export LANG="en_US.UTF-8"
+            alias ls='ls --color=auto'
+            alias grep='grep --colour=auto'
+            alias egrep='egrep --colour=auto'
+            alias fgrep='fgrep --colour=auto'
+          fi
+          # execute for linuxmint
+          if [ -d /etc/linuxmint ] 
+          then
+            grep -q /etc/profile.d/settings-from-ansible.sh ~/.bashrc || echo '. /etc/profile.d/settings-from-ansible.sh' >> ~/.bashrc
+            export LANG="de_DE.UTF-8"
+            #for rc in ~/.bashrc /etc/skel/.bashrc
+            #do
+            #  grep -q /etc/profile.d/settings-from-ansible.sh $rc || echo '. /etc/profile.d/settings-from-ansible.sh' >> $rc
+            #done
+          fi          
+        backup: yes
+        validate: /bin/bash -n %s
+
+    - name: vim settings
+      blockinfile:
+        path: /etc/vim/vimrc.local
+        mode: "0444"
+        owner: root
+        group: root
+        create: yes
+        marker: "\" {mark} ANSIBLE MANAGED BLOCK"
+        block: |
+          :syntax on
+          let g:skip_defaults_vim = 1
+          set encoding=utf-8
+          set tabstop=2 softtabstop=0 expandtab shiftwidth=2 smarttab
+          syntax match nonascii "[^[:alnum:][:punct:][:space:]]/"
+          highlight nonascii guibg=Red ctermbg=2          
+        backup: yes
+    
+    - name: gaboshlib from git
+      ansible.builtin.git:
+        repo: 'https://github.com/egabosh/gaboshlib.git'
+        dest: /etc/bash
+        force: yes
+
+    - name: systemd-journald settings
+      blockinfile:
+        path: /etc/systemd/journald.conf.d/journald.local.conf
+        create: yes
+        mode: "0444"
+        owner: root
+        group: root
+        marker: "# {mark} ANSIBLE MANAGED BLOCK"
+        block: |
+          [Journal]
+          Storage=persistent
+          SystemMaxUse=30M
+          ForwardToSyslog=yes          
+        backup: yes
+      notify:
+      - Restart journald
+      when: nocontainer.stat.exists == true
+
+    - name: /etc/rsyslog.d/00-services-remote.conf
+      blockinfile:
+        path: /etc/rsyslog.d/00-services-remote.conf
+        create: yes
+        mode: "0444"
+        owner: root
+        group: root
+        marker: "# {mark} ANSIBLE MANAGED BLOCK"
+        block: |
+          # Listen for remote Logging (UDP)
+          module(load="imudp")
+          input(type="imudp" port="514")
+          # Hosts
+          if $hostname startswith '192.168.1.1' and $msg contains 'User admin login from 192.168.1.2 successful' then stop
+          if $hostname != '{{ ansible_facts['hostname'] }}' and $msg contains 'wdGetDidSendCredentials not implemented' and $programname contains 'citrix-wfica' then stop
+          if $hostname != '{{ ansible_facts['hostname'] }}' and $msg contains 'CGPrecv: socket 0x' and $programname contains 'citrix-wfica' then stop
+          if $hostname != '{{ ansible_facts['hostname'] }}' and $msg contains 'doEncryptData inbuffersize: ' and $programname contains 'citrix-wfica' then stop
+          if $hostname != '{{ ansible_facts['hostname'] }}' and $msg contains 'SSLPutDataFn inbuffersize: ' and $programname contains 'citrix-wfica' then stop
+          if $hostname != '{{ ansible_facts['hostname'] }}' and $msg contains 'SRC=192.168.' and $programname contains 'kernel' then stop
+          
+          if $hostname startswith '192.168.1.1' then /var/log/zyxel.log
+          if $hostname startswith '192.168.1.1' then stop
+          if $hostname startswith 'raspberry-' then /var/log/Raspberrys.log
+          if $hostname startswith 'raspberry-' then stop
+          if $hostname startswith 'pi-' then /var/log/Raspberrys.log
+          if $hostname startswith 'pi-' then stop
+          if $hostname startswith 'raspi-' then /var/log/Raspberrys.log
+          if $hostname startswith 'raspi-' then stop
+          if $hostname startswith 'openwrt-' then /var/log/openwrt.log
+          if $hostname startswith 'openwrt-' then stop
+          
+          # Auth success (for share-auth 2FA)
+          #if $programname == 'nextcloud-audit' and $msg contains 'Login successful:' then /var/log/auth-success.log
+          #if $programname == 'imaps' and $msg contains 'TLS User logged in' then /var/log/auth-success.log
+          
+          if $hostname == 'xgabosh' then /var/log/xgabosh.log
+          if $hostname == 'xgabosh' then stop
+          if $hostname != '{{ ansible_facts['hostname'] }}' and $hostname != 'share' and $hostname != 'backup-chroot' then /var/log/GTC-Hosts.log
+          if $hostname != '{{ ansible_facts['hostname'] }}' and $hostname != 'share' and $hostname != 'backup-chroot' then stop          
+        backup: yes
+      when: nocontainer.stat.exists == true
+      notify:
+      - Restart rsyslog
+    
+    - name: /etc/rsyslog.d/01-services-local.conf
+      blockinfile:
+        path: /etc/rsyslog.d/01-services-local.conf
+        create: yes
+        mode: "0444"
+        owner: root
+        group: root
+        marker: "# {mark} ANSIBLE MANAGED BLOCK"
+        block: |
+          # Additional Socket from chroot
+          input(type="imuxsock" HostName="vpn-share" Socket="/data-crypt/dev/log" CreatePath="on")
+          input(type="imuxsock" HostName="share" Socket="/data-crypt/share/dev/log" CreatePath="on")
+          # Auth success (for share-auth 2FA)
+          if $programname == 'nextcloud-audit' and $msg contains 'Login successful:' then /var/log/auth-success.log
+          if $programname == 'imaps' and $msg contains 'TLS User logged in' then /var/log/auth-success.log
+          # Nextcloud
+          if $msg contains '","level":0,"time":"' and $programname contains 'nextcloud' then stop
+          if $msg contains '","level":1,"time":"' and $programname contains 'nextcloud' then stop
+          if $programname == 'nextcloud' then /var/log/nextcloud.log
+          if $programname == 'nextcloud' then stop
+          if $programname == 'nextcloud-audit' then /var/log/nextcloud.log
+          if $programname == 'nextcloud-audit' then stop
+          if $programname == 'nextcloud-test' then /var/log/nextcloud-test.log
+          if $programname == 'nextcloud-test' then stop
+          if $programname == 'nextcloud-test-audit' then /var/log/nextcloud-test.log
+          if $programname == 'nextcloud-test-audit' then stop
+          # USV
+          if $programname == 'apcupsd' and $syslogseverity <= '6' then /var/log/usv-apcupsd.log
+          if $programname == 'apcupsd' then stop
+          # SMART HDD Überwachung
+          if $programname == 'smartd' and $syslogseverity <= '6' then /var/log/smartd.log
+          if $programname == 'smartd' then stop
+          # SSH TUNNEL
+          if $programname == 'sshd-tunnel' and $syslogseverity <= '6' then /var/log/sshd-tunnel.log
+          if $programname == 'sshd-tunnel' then stop
+          # SSH SFTP
+          if $programname == 'sshd-sftp' and $syslogseverity <= '6' then /var/log/sshd-sftp.log
+          if $programname == 'sshd-sftp' then stop
+          # SSH Share
+          if $programname == 'sshd' and $syslogfacility-text == 'local7' then /var/log/sshd-share.log
+          if $programname == 'sshd' and $syslogfacility-text == 'local7' then stop
+          # firewall                                                                                        
+          if $programname == 'kernel' and $msg contains 'PROTO' then /var/log/firewall.log 
+          if $programname == 'kernel' and $msg contains 'PROTO' then stop   
+          # SSH rsyncbackup
+          if $programname == 'sshd-rsyncbackup' and $syslogseverity <= '6' then /var/log/sshd-rsyncbackup.log
+          if $programname == 'sshd-rsyncbackup' then stop
+          # SSH
+          if $programname == 'sshd' and $syslogseverity <= '6' then /var/log/sshd.log
+          if $programname == 'sshd' then stop
+          # SFTP
+          if $programname == 'internal-sftp' and $msg contains 'sent status ' then stop
+          if $programname == 'internal-sftp' and $msg contains 'lstat name ' then stop
+          if $programname == 'internal-sftp' and $msg contains '/.kodi/' then stop
+          if $programname == 'internal-sftp' then /var/log/sftpaccess.log
+          if $programname == 'internal-sftp' then stop
+          # Cron
+          if $programname == 'cron' and $syslogseverity <= '6' then /var/log/cron.log
+          if $programname == 'cron' then stop
+          if $programname == 'CRON' and $syslogseverity <= '6' then /var/log/cron.log
+          if $programname == 'CRON' then stop
+          if $programname == 'run-crons' and $syslogseverity <= '6' then /var/log/cron.log
+          if $programname == 'run-crons' then stop
+          if $programname == 'crontab' and $syslogseverity <= '6' then /var/log/cron.log
+          if $programname == 'crontab' then stop
+          # rsync
+          if $programname == 'rsyncd' and $syslogseverity <= '6' then /var/log/rsyncd.log
+          if $programname == 'rsyncd' then stop
+          # DNS
+          if $programname == 'named' and $msg contains ' 127.0.0.1#' then stop
+          if $programname == 'named' and $msg contains ': sending notifies' then stop
+          if $programname == 'named' and $msg contains ' loaded serial ' then stop
+          if $programname == 'named' and $syslogseverity <= '6' then /var/log/bind.log
+          if $programname == 'named' then stop
+          # DHCP
+          if $programname == 'dhcpd' and $syslogseverity <= '6' then /var/log/dhcpd.log
+          if $programname == 'dhcpd' then stop
+          # NFS
+          if $programname == 'rpc.mountd' and $syslogseverity <= '6' then /var/log/nfs.log
+          if $programname == 'rpc.mountd' then stop
+          if $programname == 'rpc.idmapd' and $syslogseverity <= '6' then /var/log/nfs.log
+          if $programname == 'rpc.idmapd' then stop
+          if $programname == 'rpc.statd' and $syslogseverity <= '6' then /var/log/nfs.log
+          if $programname == 'rpc.statd' then stop
+          if $programname == 'rpcbind' and $syslogseverity <= '6' then /var/log/nfs.log
+          if $programname == 'rpcbind' then stop
+          # NTP
+          if $programname == 'ntpd' and $syslogseverity <= '6' then /var/log/ntp.log
+          if $programname == 'ntpd' then stop
+          if $programname == 'ntpdate' and $syslogseverity <= '6' then /var/log/ntp.log
+          if $programname == 'ntpdate' then stop
+          # Mail
+          if $msg contains 'auxpropfunc error invalid parameter supplied' then stop
+          if $msg contains '_sasl_plugin_load failed on sasl_auxprop_plug_init for plugin: ldapdb' then stop
+          if $msg contains 'seen_db: user ' then stop
+          if $msg contains 'SQUAT ' then stop
+          if $msg contains 'indexing mailbox ' then stop
+          if $msg contains 'fetching user_deny.db' then stop
+          if $programname == 'lmtpunix' and $syslogseverity <= '6' then /var/log/maillog.log
+          if $programname == 'lmtpunix' then stop
+          if $programname == 'imap' and $syslogseverity <= '6' then /var/log/maillog.log
+          if $programname == 'imap' then stop
+          if $programname == 'imaps' and $syslogseverity <= '6' then /var/log/maillog.log
+          if $programname == 'imaps' then stop
+          if $programname == 'master' and $syslogseverity <= '6' then /var/log/maillog.log
+          if $programname == 'master' then stop
+          if $programname == 'ctl_cyrusdb' and $syslogseverity <= '6' then /var/log/maillog.log
+          if $programname == 'ctl_cyrusdb' then stop
+          if $programname == 'pop3' and $syslogseverity <= '6' then /var/log/maillog.log
+          if $programname == 'pop3' then stop
+          if $programname == 'pop3s' and $syslogseverity <= '6' then /var/log/maillog.log
+          if $programname == 'pop3s' then stop
+          if $programname == 'squatter' and $syslogseverity <= '6' then /var/log/maillog.log
+          if $programname == 'squatter' then stop
+          if $programname == 'tls_prune' and $syslogseverity <= '6' then /var/log/maillog.log
+          if $programname == 'tls_prune' then stop
+          if $programname == 'cyr_expire' and $syslogseverity <= '6' then /var/log/maillog.log
+          if $programname == 'cyr_expire' then stop
+          if $programname == 'sieve' and $syslogseverity <= '6' then /var/log/maillog.log
+          if $programname == 'sieve' then stop
+          if $programname == 'deliver' and $syslogseverity <= '6' then /var/log/maillog.log
+          if $programname == 'deliver' then stop
+          if $programname == 'ipurge' and $syslogseverity <= '6' then /var/log/maillog.log
+          if $programname == 'ipurge' then stop
+          if $programname == 'saslauthd' and $syslogseverity <= '6' then /var/log/maillog.log
+          if $programname == 'saslauthd' then stop
+          if $programname == 'amavis' and $syslogseverity <= '6' then /var/log/maillog.log
+          if $programname == 'amavis' then stop
+          if $programname == 'clamd' and $syslogseverity <= '6' then /var/log/maillog.log
+          if $programname == 'clamd' then stop
+          if $programname == 'freshclam' and $syslogseverity <= '6' then /var/log/maillog.log
+          if $programname == 'freshclam' then stop
+          if $programname == 'fetchmail' and $syslogseverity <= '6' then /var/log/maillog.log
+          if $programname == 'fetchmail' then stop
+          if $programname == 'spamd' and $syslogseverity <= '6' then /var/log/maillog.log
+          if $programname == 'spamd' then stop
+          if $programname contains 'postfix' and $syslogseverity <= '6' then /var/log/maillog.log
+          if $programname contains 'postfix' then stop
+          if $programname == 'reconstruct' and $syslogseverity <= '6' then /var/log/maillog.log
+          if $programname == 'reconstruct' then stop
+          if $programname == 'policyd-spf' and $syslogseverity <= '6' then /var/log/maillog.log
+          if $programname == 'policyd-spf' then stop
+          # slapd
+          if $programname == 'slapd' then /var/log/slapd.log
+          if $programname == 'slapd' then stop
+          # PulseAudio
+          if $programname == 'pulseaudio' and $msg contains 'Denied access to client with invalid authentication data' then stop
+          if $programname == 'pulseaudio' then /var/log/pulseaudio.log
+          if $programname == 'pulseaudio' then stop
+          # hostapd
+          if $programname == 'hostapd' then /var/log/hostapd.log
+          if $programname == 'hostapd' then stop
+          # nscd
+          if $programname == 'nscd' then /var/log/nscd.log
+          if $programname == 'nscd' then stop
+          # arpwatch
+          if $programname == 'arpwatch' then /var/log/arpwatch.log
+          if $programname == 'arpwatch' then stop
+          # X
+          if $programname == 'mate-session' then /var/log/x.log
+          if $programname == 'mate-session' then stop
+          if $programname == 'Tor' then /var/log/x.log
+          if $programname == 'Tor' then stop
+          # xinetd
+          if $programname == 'xinetd' then /var/log/xinetd.log
+          if $programname == 'xinetd' then stop
+          # in.tftp
+          if $programname == 'in.tftpd' then /var/log/in.tftpd.log
+          if $programname == 'in.tftpd' then stop
+          # pppd
+          if $programname == 'dhcpcd' then /var/log/pppd.log
+          if $programname == 'dhcpcd' then stop
+          if $programname == 'radvd' then /var/log/pppd.log
+          if $programname == 'radvd' then stop
+          if $programname == 'pppd' then /var/log/pppd.log
+          if $programname == 'pppd' then stop
+          # wlan
+          if $programname == 'wpa_cli' then /var/log/messages
+          if $programname == 'wpa_cli' then stop
+          # cups
+          if $programname == 'cupsd' then /var/log/cupsd.log
+          if $programname == 'cupsd' then stop
+          # bash scripts using g-lib
+          if $programname contains 'g_bash-script' then /var/log/g_bash-scripts.log
+          if $programname contains 'g_bash-script' then stop
+          # runchecks.sh
+          if $programname == 'runchecks.sh' then /var/log/runchecks.sh.log
+          if $programname == 'runchecks.sh' then stop
+          # signal-cli.sh
+          if $programname == 'signal-cli' then /var/log/signal-cli.log
+          if $programname == 'signal-cli' then stop
+          # systemd
+          if $programname contains 'systemd' then /var/log/systemd.log
+          if $programname contains 'systemd' then stop
+          # kernel
+          if $programname == 'kernel' then /var/log/kernel.log
+          if $programname == 'kernel' then stop
+          # docker
+          if $programname contains 'docker' then /var/log/docker.log
+          if $programname contains 'docker' then stop
+          if $programname == 'containerd' then /var/log/docker.log
+          if $programname == 'containerd' then stop
+          # sudo
+          if $programname == 'sudo' then /var/log/sudo.log
+          if $programname == 'sudo' then stop
+          # dnscrypt-proxy
+          if $programname == 'dnscrypt-proxy' then /var/log/dnscrypt-proxy.log
+          if $programname == 'dnscrypt-proxy' then stop
+          # ansible
+          if $programname contains 'ansible' then /var/log/ansible.log
+          if $programname contains 'ansible' then stop
+          # passwd
+          if $programname contains 'passwd' then /var/log/passwd.log
+          if $programname contains 'passwd' then stop      
+          # Rest in messages
+          *.* /var/log/messages
+        backup: yes
+      notify:
+      - Restart rsyslog
+      when: nocontainer.stat.exists == true
+
+    - name: hd-idle for spinning down disks after XXX seconds idle
+      blockinfile:
+        path: /etc/default/hd-idle
+        create: yes
+        mode: "0444"
+        owner: root
+        group: root
+        marker: "# {mark} ANSIBLE MANAGED BLOCK"
+        block: |
+          HD_IDLE_OPTS="-i 300 -l /var/log/hd-idle.log"          
+        backup: yes
+      notify:
+      - Restart hd-idle
+      when: nocontainer.stat.exists == true
+
+    - name: /etc/default/btrfsmaintenance
+      blockinfile:
+        path: /etc/default/btrfsmaintenance
+        mode: "0444"
+        owner: root
+        group: root
+        create: yes
+        insertbefore: EOF
+        marker: "# {mark} ANSIBLE MANAGED BLOCK"
+        block: |
+          BTRFS_LOG_OUTPUT="syslog"
+          BTRFS_BALANCE_MOUNTPOINTS="auto"
+          BTRFS_BALANCE_PERIOD="monthly"
+          BTRFS_SCRUB_MOUNTPOINTS="auto"
+          BTRFS_SCRUB_PERIOD="monthly"          
+        backup: yes
+      when: nocontainer.stat.exists == true
+
+    - name: /etc/logrotate.conf (weekly->daily)
+      ansible.builtin.lineinfile:
+        path: /etc/logrotate.conf
+        regexp: '^weekly$'
+        line: 'daily'
+        backup: yes
+      when: nocontainer.stat.exists == true
+
+    - name: /etc/logrotate.d/apache2 (remove delaycompress)
+      ansible.builtin.lineinfile:
+        path: /etc/logrotate.d/apache2
+        regexp: '.*delaycompress$'
+        state: absent
+      when: nocontainer.stat.exists == true
+
+    - name: /etc/logrotate.d/00-local
+      blockinfile:
+        path: /etc/logrotate.d/00-local
+        mode: "0444"
+        owner: root
+        group: root
+        create: yes
+        marker: "# {mark} ANSIBLE MANAGED BLOCK"
+        block: |
+          /var/log/dmesgcron
+          /var/log/messages
+          /var/log/syslog
+          /var/log/*.log
+          {
+            rotate 7
+            daily
+            missingok
+            notifempty
+            copytruncate
+            compress
+            postrotate
+              /usr/lib/rsyslog/rsyslog-rotate
+            endscript
+          }          
+      when: nocontainer.stat.exists == true
+
+    - name: Remove logrotates
+      ansible.builtin.file:
+        path: /etc/logrotate.d/alternatives
+        state: absent
+      when: nocontainer.stat.exists == true
+
+    - name: Remove logrotates
+      ansible.builtin.file:
+        path: /etc/logrotate.d/dpkg
+        state: absent
+      when: nocontainer.stat.exists == true
+
+    - name: Remove logrotates
+      ansible.builtin.file:
+        path: /etc/logrotate.d/rsyslog
+        state: absent
+      when: nocontainer.stat.exists == true
+
+    - name: /usr/local/bin/notify.sh
+      blockinfile:
+        path: /usr/local/bin/notify.sh
+        mode: "0555"
+        owner: root
+        group: root
+        create: yes
+        marker: "# {mark} ANSIBLE MANAGED BLOCK"
+        block: |
+          if [ -n "$SSH_ORIGINAL_COMMAND" ] 
+          then
+            opts=$SSH_ORIGINAL_COMMAND
+            unset SSH_ORIGINAL_COMMAND
+            eval /usr/bin/bash $(printf '/usr/local/bin/notify.sh %q' "$opts" | sed 's#\\\\##g; s# \\ #  #g; s# \\ #  #g; s#\\ -# -#g')
+            exit $?
+          fi
+          
+          . /etc/bash/gaboshlib.include
+          g_nice
+          g_lockfile
+          
+          if [ -f /usr/local/etc/notify.conf ] 
+          then
+            . /usr/local/etc/notify.conf
+          else
+            exit 1
+          fi
+
+          while getopts s:t:g:h:m: o
+          do
+             case $o in
+                 s) subj="$OPTARG";;
+                 t) to="$OPTARG";;
+                 g) togroup="$OPTARG";;
+                 h) tohost="$OPTARG";;
+                 m) tomail="$OPTARG"
+             esac
+          done
+          
+          [ -z "$to" ] && to="$default_to"
+          [ -z "$togroup" ] && togroup="$default_togroup"
+          message="$(cat)"
+          orig_message="$message"
+          [ "$message" = "''" ] && exit 0
+          [ -z "$message" ] && exit 0
+
+          # If message should be sent by another host
+          if [ -n "$tohost" ]
+          then
+            [[ $@ =~ -g ]] || group="-g $togroup"
+            [ -z "$togroup" ] && group="-g $(hostname)"
+            echo "$message" | ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new -p33 $tohost " $(printf ' %q' "$@ $group")"
+          fi
+
+          # Subject to message
+          if [ -n "$subj" ]
+          then
+            message=$(echo -e "$subj\n$message")
+          fi
+
+          ## MAIL    
+          if [ -n "$tomail" ]
+          then
+            echo "$message" | mail -s "notify.sh: $subj" $tomail
+          fi
+    
+          
+          ## MATRIX      
+          room=$(hostname)
+          [ -n "$togroup" ] && room=$togroup
+          room=${room// /}
+          room=${room//\\/}
+          if ps ax | grep -v grep | grep -q synapse.app.homeserver
+          then
+            if [ -p "/usr/local/share/matrix-room-$(hostname).fifo" ]
+            then
+              matrix_message=$(echo "<h3>${subj}</h3><pre>${orig_message}</pre>")
+              matrix_target="/usr/local/share/matrix-room-$(hostname).fifo"
+              [ -n "$togroup" ] && [ -p "/usr/local/share/matrix-room-${room}.fifo" ] && matrix_target="/usr/local/share/matrix-room-${room}.fifo"
+              echo "$matrix_message" | perl -pe 's/\n/<br>/' | perl -pe 's/\<br\>$/\n/; s/^\<br\>//;' >"$matrix_target"
+            else
+              echo "default group (/usr/local/share/matrix-room-$(hostname).fifo) seems not to exist"
+            fi
+          fi
+
+
+          ## SIGNAL
+          if [ -f /home/signal/.local/share/signal-cli/data/accounts.json ]
+          then
+            
+            account=$(cat /home/signal/.local/share/signal-cli/data/accounts.json | jq -r '.accounts[0].number' | sed 's/+/_/')
+            if [ -z "$account" ]
+            then
+              echo "Didn't get Signal account"
+              exit 1
+            fi
+           
+            if [ -n "$togroup" ]
+            then
+              # Send to group via dbus
+              # Get group ID via dbus according to: https://github.com/AsamK/signal-cli/issues/1046
+              groupid=$(dbus-send --system --type=method_call --print-reply --dest='org.asamk.Signal' /org/asamk/Signal/${account} org.asamk.Signal.listGroups | grep "$togroup" -B3 | head -n2 | perl -pe 's/\n/ /g;' | perl -pe 's/ +/ /g; s/ $//; s/ /,0x/g; s/^,//')
+              if [ -z "$groupid" ]
+              then
+                g_echo_error "Group(ID) $togroup not found (id=$groupid). Does Group really exist? -- Groups $(dbus-send --system --type=method_call --print-reply --dest='org.asamk.Signal' /org/asamk/Signal/${account} org.asamk.Signal.listGroups)"
+                exit 1
+              fi
+              dbus-send --system --type=method_call --print-reply --dest="org.asamk.Signal" /org/asamk/Signal/${account} org.asamk.Signal.sendGroupMessage string:"$message" array:string: array:byte:${groupid} | egrep -v '^method return time=|^   int64 '
+            fi
+            
+            if [ -n "$to" ]
+            then
+              # Sent to a single Number via dbus
+              dbus-send --system --type=method_call --print-reply --dest="org.asamk.Signal" /org/asamk/Signal/${account} org.asamk.Signal.sendMessage string:"${message}" array:string: string:${to} | egrep -v '^method return time=|^   int64 '
+            fi          
+          fi
+        backup: yes
+        validate: /bin/bash -n %s
+
+    - name: /usr/local/bin/notify.sh shebang
+      lineinfile:
+        path: /usr/local/bin/notify.sh
+        insertbefore: BOF
+        line: "#!/bin/bash"
+
+
+  handlers:
+
+    - name: Restart journald
+      service:
+        name: systemd-journald
+        state: restarted
+
+    - name: Restart rsyslog
+      service:
+        name: rsyslog
+        state: restarted
+
+    - name: Restart hd-idle
+      service:
+        name: hd-idle
+        state: restarted
+
+    - name: Restart ssh
+      service:
+        name: ssh
+        state: restarted
+
+

@@ -1,0 +1,99 @@
+- name: Router-WebGUI-Traefik-setup
+  hosts: all
+  tasks:
+
+    - name: /usr/local/sbin/router-over-traefik.sh
+      blockinfile:
+        path: /usr/local/sbin/router-over-traefik.sh
+        create: yes
+        mode: 0550
+        owner: root
+        group: docker
+        marker: "# {mark} ANSIBLE MANAGED BLOCK"
+        block: |
+          . /etc/bash/gaboshlib.include
+          g_lockfile
+          g_nice
+          g_all-to-syslog
+          
+          read _ _ defaultgw _ < <(ip route list match 0/0)
+          if wget -q -t1 --timeout=30  http://${defaultgw} -O /dev/null
+          then
+
+            cd /home/docker/traefik
+            user=admin
+            password=$(pwgen -s 32 1)
+  
+            [ -f router-env ] || echo "USER=!USER!
+            PASSWORD=!PASSWORD!
+            " >router-env          
+         
+            chmod 440 router-env
+            chown root:docker router-env
+            sed -i "s/\!USER\!/$user/g" router-env
+            sed -i "s/\!PASSWORD\!/$password/g" router-env
+          
+            . router-env
+
+            echo $(htpasswd -nb $USER $PASSWORD) >providers/router.usersfile
+            defaultgw=$(ip route | awk '/default/ { print $3 }')
+
+            echo "
+          http:
+            routers:
+              router:
+                rule: \"Host(\`router.{{inventory_hostname}}\`)\"
+                service: router
+                entryPoints:
+                  - \"https\"
+                tls:
+                  certresolver: letsencrypt
+                middlewares: 
+                    - \"secHeaders@file\"
+                    - \"auth-router\"
+            services:
+              router:
+                loadBalancer:
+                  servers:
+                    - url: \"http://${defaultgw}:80\"
+            middlewares:
+              auth-router:
+                basicauth:
+                  usersFile: \"/etc/traefik/providers.local/router.usersfile\"
+                  removeHeader: true       
+          " >/home/docker/traefik/providers/router.yml
+          else
+            rm -f /home/docker/traefik/providers/router.yml
+          fi
+        backup: yes
+        validate: /bin/bash -n %s
+      notify: router-over-traefik
+
+    - name: /usr/local/sbin/router-over-traefik.sh shebang
+      lineinfile:
+        path: /usr/local/sbin/router-over-traefik.sh
+        insertbefore: BOF
+        line: "#!/bin/bash"
+
+    - name: Gen initial passwords if not exists
+      ansible.builtin.shell: /usr/local/sbin/router-over-traefik.sh
+      args:
+        creates: /home/docker/traefik/providers/router.yml
+
+    - name: /etc/cron.d/router-over-traefik_local
+      blockinfile:
+        path: /etc/cron.d/router-over-traefik
+        mode: "0400"
+        owner: root
+        group: root
+        create: yes
+        marker: "# {mark} ANSIBLE MANAGED BLOCK"
+        block: |
+          ## Auto-Update
+          1 1 * * * root /usr/local/sbin/router-over-traefik.sh
+        backup: yes
+
+  handlers:
+    - name: router-over-traefik
+      ansible.builtin.shell: /usr/local/sbin/router-over-traefik.sh
+

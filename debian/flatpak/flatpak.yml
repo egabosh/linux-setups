@@ -1,0 +1,16 @@
+- name: flatpak
+  hosts: all
+  tasks:
+
+  - name: Install Flatpak
+    apt:
+      name:
+        - flatpak
+    notify:
+    - add flatpak flatpub repo
+
+
+  handlers:
+
+    - name: add flatpak flatpub repo
+      command: flatpak --system remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo

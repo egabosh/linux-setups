@@ -1,0 +1,186 @@
+---
+- name: semaphore
+  hosts: all
+  tasks:
+
+    - name: Create /home/docker/semaphore.{{inventory_hostname}} dir
+      ansible.builtin.file:
+        path: /home/docker/semaphore.{{inventory_hostname}}
+        owner: root
+        group: docker
+        state: directory
+        mode: '0550'
+
+    - name: /home/docker/semaphore.{{inventory_hostname}}/genpw.sh (generate Random PW for Semaphore and DB)
+      blockinfile:
+        path: /home/docker/semaphore.{{inventory_hostname}}/genpw.sh
+        create: yes
+        mode: 0550
+        owner: root
+        group: docker
+        marker: "# {mark} ANSIBLE MANAGED BLOCK"
+        block: |
+          cd /home/docker/semaphore.{{inventory_hostname}}
+
+          mysqluser=$(pwgen -s 32 1)
+          mysqlpassword=$(pwgen -s 32 1)
+          spadminpassword=$(pwgen -s 32 1)
+
+          [ -f env ] || echo "SEMAPHORE_DB_USER=!MYSQLUSER!
+          SEMAPHORE_DB_PASS=!MYSQLPASSWORD!
+          SEMAPHORE_ADMIN_PASSWORD=!SPADMINPASSWD!
+          " >env
+
+          [ -f env.db ] || echo "MARIADB_USER=!MYSQLUSER!
+          MARIADB_PASSWORD=!MYSQLPASSWORD!
+          " >env.db
+
+          [ -f env.phpmyadmin ] || echo "PMA_USER=!MYSQLUSER!
+          PMA_PASSWORD=!MYSQLPASSWORD!
+          " >env.phpmyadmin
+
+          chmod 440 env env.db env.phpmyadmin
+          chown root:docker env env.db env.phpmyadmin
+          sed -i "s/\!MYSQLUSER\!/$mysqluser/g" env env.db env.phpmyadmin
+          sed -i "s/\!MYSQLPASSWORD\!/$mysqlpassword/g" env env.db env.phpmyadmin
+          sed -i "s/\!SPADMINPASSWD\!/$spadminpassword/g" env
+        backup: yes
+        validate: /bin/bash -n %s
+      notify: run genpw.sh
+
+    - name: /home/docker/semaphore.{{inventory_hostname}}/genpw.sh shebang
+      lineinfile:
+        path: /home/docker/semaphore.{{inventory_hostname}}/genpw.sh
+        insertbefore: BOF
+        line: "#!/bin/bash -e"
+
+    - name: Gen initial passwords if not exists
+      ansible.builtin.shell: ./genpw.sh
+      args:
+        chdir: /home/docker/semaphore.{{inventory_hostname}}
+        creates: /home/docker/semaphore.{{inventory_hostname}}/env
+    
+    - name: /home/docker/semaphore.{{inventory_hostname}}/docker-compose.yml Container Configuration
+      blockinfile:
+        path: /home/docker/semaphore.{{inventory_hostname}}/docker-compose.yml
+        create: yes
+        mode: 0440
+        owner: root
+        group: docker
+        marker: "# {mark} ANSIBLE MANAGED BLOCK"
+        block: |
+        
+          services:
+
+            semaphore.{{inventory_hostname}}:
+              image: ansiblesemaphore/semaphore:latest
+              restart: unless-stopped
+              env_file: env
+              environment:
+                - SEMAPHORE_DB_HOST=semaphore.{{inventory_hostname}}--db
+                - SEMAPHORE_DB_PORT=3306
+                - SEMAPHORE_DB=semaphore-db
+                - SEMAPHORE_PLAYBOOK_PATH=/tmp/semaphore/
+                - SEMAPHORE_ADMIN_NAME=Semaphore Admin
+                - SEMAPHORE_ADMIN_EMAIL=admin@{{inventory_hostname}}
+                - SEMAPHORE_ADMIN=spadmin
+                #- SEMAPHORE_ACCESS_KEY_ENCRYPTION=gs72mPntFATGJs9qK0pQ0rKtfidlexiMjYCH9gWKhTU=
+              volumes:
+                - ./data:/opt/data/semaphore
+              networks:
+                - semaphore.{{inventory_hostname}}--network
+                - traefik
+              labels:
+                - traefik.enable=true
+                # HTTPS
+                - traefik.http.routers.semaphore-{{ ansible_facts['hostname'] }}.rule=Host(`semaphore.{{ ansible_facts['nodename'] }}`)
+                - traefik.http.routers.semaphore-{{ ansible_facts['hostname'] }}.entrypoints=https
+                - traefik.http.routers.semaphore-{{ ansible_facts['hostname'] }}.tls=true
+                - traefik.http.routers.semaphore-{{ ansible_facts['hostname'] }}.middlewares=secHeaders@file
+                # Proxy to service-port
+                - traefik.http.services.semaphore-{{ ansible_facts['hostname'] }}.loadbalancer.server.port=3000
+                - traefik.http.routers.semaphore-{{ ansible_facts['hostname'] }}.service=semaphore-{{ ansible_facts['hostname'] }}
+                # cert via letsencrypt
+                - traefik.http.routers.semaphore-{{ ansible_facts['hostname'] }}.tls.certresolver=letsencrypt
+                # Traefik network
+                - traefik.docker.network=traefik
+              depends_on:
+                - semaphore.{{inventory_hostname}}--db
+
+            semaphore.{{inventory_hostname}}--db:
+              image: mariadb:lts
+              cap_add:
+                - SYS_NICE
+              restart: unless-stopped
+              networks:
+                - semaphore.{{inventory_hostname}}--network
+              hostname: mysql
+              volumes:
+                - ./db-data:/var/lib/mysql
+                - /etc/localtime:/etc/localtime:ro
+              env_file: env.db
+              environment:
+                - MARIADB_RANDOM_ROOT_PASSWORD=1
+                - MARIADB_DATABASE=semaphore-db
+                - MARIADB_AUTO_UPGRADE=1
+                - MARIADB_INITDB_SKIP_TZINFO=1
+
+            semaphore.{{inventory_hostname}}--phpmyadmin:
+              image: phpmyadmin:latest
+              restart: unless-stopped
+              env_file: env.phpmyadmin
+              environment:
+                - PMA_ARBITRARY=0
+                - PMA_HOST=semaphore.{{inventory_hostname}}--db
+              volumes:
+                - /etc/localtime:/etc/localtime:ro
+              networks:
+                - semaphore.{{inventory_hostname}}--network
+                - traefik
+              labels:
+                - traefik.enable=true
+                # HTTPS
+                - traefik.http.routers.semaphore-{{ ansible_facts['hostname'] }}--phpmyadmin.rule=Host(`semaphore-phpmyadmin.{{ ansible_facts['nodename'] }}`)
+                - traefik.http.routers.semaphore-{{ ansible_facts['hostname'] }}--phpmyadmin.entrypoints=https
+                - traefik.http.routers.semaphore-{{ ansible_facts['hostname'] }}--phpmyadmin.tls=true
+                # Proxy to service-port
+                - traefik.http.services.semaphore-{{ ansible_facts['hostname'] }}--phpmyadmin.loadbalancer.server.port=80
+                - traefik.http.routers.semaphore-{{ ansible_facts['hostname'] }}--phpmyadmin.service=semaphore-{{ ansible_facts['hostname'] }}--phpmyadmin
+                # cert via letsencrypt
+                - traefik.http.routers.semaphore-{{ ansible_facts['hostname'] }}--phpmyadmin.tls.certresolver=letsencrypt
+                # Auth
+                - traefik.http.routers.semaphore-{{ ansible_facts['hostname'] }}--phpmyadmin.middlewares=secHeaders@file,default-basic-auth@file
+                # Traefik network
+                - traefik.docker.network=traefik
+
+          networks:
+            semaphore.{{inventory_hostname}}--network:
+              driver: bridge
+              driver_opts:
+                com.docker.network.bridge.name: br-semaphore
+            traefik:
+              external: true
+
+        backup: yes
+      notify: Restart semaphore
+
+    - name: Start semaphore
+      ansible.builtin.shell: docker-compose up -d --force-recreate
+      args:
+        chdir: /home/docker/semaphore.{{inventory_hostname}}
+        creates: /home/docker/semaphore.{{inventory_hostname}}/db-data/sys/db.opt
+
+
+  handlers:
+
+    - name: run genpw.sh
+      ansible.builtin.shell: ./genpw.sh
+      args:
+        chdir: /home/docker/semaphore.{{inventory_hostname}}
+      notify: Restart semaphore
+
+    - name: Restart semaphore
+      ansible.builtin.shell: docker-compose up -d --force-recreate
+      args:
+        chdir: /home/docker/semaphore.{{inventory_hostname}}
+
