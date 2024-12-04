@@ -10,5 +10,5 @@ rm -rf $(hostname -s)-git
 mkdir $(hostname -s)-git
 cd $(hostname -s)-git
 
-curl https://github/olli/basics/basics.yml >basics.yml
+curl https://github.com/egabosh/linux-setups/raw/refs/heads/main/debian/basics/basics.yml >basics.yml
 ansible-playbook --connection=local --inventory $(hostname), --limit $(hostname) basics.yml

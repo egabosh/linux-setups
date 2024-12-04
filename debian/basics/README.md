@@ -23,12 +23,12 @@ Simply download an run install.sh and run it on you Debian(based) System:
 
 ## 1. Download Installation-Script
 ``` 
-wget https://github/install.sh
+wget https://github.com/egabosh/linux-setups/raw/refs/heads/main/debian/install.sh
 ```
 
 ## 2. Run the Script
 This runs the defined playbooks.
 ```
-export PLAYBOOKS="debian.ansible.basics"
+export PLAYBOOKS="debian/basics/basics.yml"
 bash install.sh
 ```

@@ -13,7 +13,7 @@ then
   exit $?
 fi
 
-apt-get update
+sudo apt-get update
 which ansible >/dev/null 2>&1 || sudo apt-get -y install ansible git
 sudo ansible-galaxy collection install community.general
 
@@ -24,11 +24,23 @@ cd linux-setups
 
 for playbook in $PLAYBOOKS
 do
+  echo "=== $playbook"
   if [ -s "$playbook" ]
   then
-    sudo ansible-playbook --connection=local --inventory $(hostname), --limit $(hostname) ${playbook}
+    sudo ansible-playbook --connection=local --inventory $(hostname), --limit $(hostname) "${playbook}" || exit 2
+  elif [[ $playbook =~ https:// ]]
+  then
+    playbookfile=$(basename "$playbook")
+    if curl "$playbook" > ~/"$playbookfile"
+    then
+      sudo ansible-playbook --connection=local --inventory $(hostname), --limit $(hostname) "${playbookfile}" || exit 2
+    else
+      echo "Playbook $playbook could not be downloaded"
+      exit 1
+    fi
   else
-    echo "playbook $playbook not found"
+    echo "Playbook $playbook not found"
     exit 1
   fi
 done
+
