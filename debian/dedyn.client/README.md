@@ -43,7 +43,7 @@ doipv6="yes"' >/usr/local/etc/dedyn.conf
 
 ## 6. Download
 ``` 
-wget https://github/install.sh
+wget https://github.com/egabosh/linux-setups/raw/refs/heads/main/debian/install.sh
 ```
 
 ## 7. Run the Script
