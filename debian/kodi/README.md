@@ -46,7 +46,7 @@ systemctl restart systemd-hostnamed.service
 ```
 #### run installation/configuration (as root)
 ```
-wget https://github/olli/debian.ansible.kodi/raw/branch/main/raspi.sh
+wget https://github.com/egabosh/linux-setups/raw/refs/heads/main/debian/kodi/raspi.sh
 bash -ex raspi.sh
 ```
 #### Optional: Wireguard VPN client for "mobile clients"

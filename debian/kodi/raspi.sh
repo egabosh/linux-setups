@@ -46,7 +46,7 @@ echo "@reboot root /usr/local/sbin/autoupdate.sh" >>/etc/crontab
 
 cd /root
 rm -f install.sh
-wget https://github/olli/debian.ansible.basics/raw/branch/main/install.sh
+wget https://github.com/egabosh/linux-setups/raw/refs/heads/main/debian/install.sh
 
 
 export PLAYBOOKS="debian.ansible.basics
@@ -215,9 +215,9 @@ fi
 ## create (new) kodi presets
 cd /home/${user}
 [ -d debian.ansible.kodi ] && rm -r debian.ansible.kodi
-git clone https://github/olli/debian.ansible.kodi.git
-chown -R ${user}: debian.ansible.kodi
-rsync -av --ignore-existing  debian.ansible.kodi/kodi-settings/ /home/${user}/.kodi/
+git clone https://github.com/egabosh/linux-setups.git
+chown -R ${user}: linux-setups
+rsync -av --ignore-existing  linux-setups/debian/kodi/kodi-settings/ /home/${user}/.kodi/
 
 # rights kodi
 chown -R ${user}: /home/${user}/.kodi

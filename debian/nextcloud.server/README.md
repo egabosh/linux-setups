@@ -21,14 +21,14 @@ Change the hostname with the following command for example with dedyn/deSEC to m
 ```
 su -c "hostnamectl hostname myhost.dedyn.io"
 ```
-More informations can be found here: https://github/olli/debian.ansible.dedyn.client
+More informations can be found here: https://github.com/egabosh/linux-setups/tree/main/debian/dedyn.client
 
 # Quick-Install
 Simply download an run install.sh and run it on you Debian(based) System:
 
 ## 1. Download Installation-Script
 ``` 
-wget https://github/olli/debian.ansible.basics/raw/branch/main/install.sh
+wget https://github.com/egabosh/linux-setups/raw/refs/heads/main/debian/install.sh
 ```
 
 ## 2. Run the Script
