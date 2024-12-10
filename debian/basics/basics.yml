@@ -117,6 +117,12 @@
         state: restarted
       when: resolved.changed
 
+    - name: Restart networking when systemd-resolved is new installed
+      service:
+        name: networking
+        state: restarted
+      when: resolved.changed
+
     - name: set testing repo pinning for Debian 12 - bookworm (needed by dnscrypt-proxy)
       blockinfile:
         path: /etc/apt/preferences.d/pinning.pref
@@ -134,13 +140,6 @@
           Pin: release a=testing
           Pin-Priority: 100
       when: ansible_distribution_release is match("bookworm") and (nocontainer.stat.exists == true)
-
-    #- name: add testing repo for Debian 12 - bookworm (needed by dnscrypt-proxy)
-    #  ansible.builtin.apt_repository:
-    #    repo: "deb https://deb.debian.org/debian/ testing main"
-    #    state: present
-    #    filename: testing
-    #  when: ansible_distribution_release is match("bookworm")
 
     - name: check if this is a Mint system
       stat: 
@@ -202,12 +201,6 @@
     - name: Restart dhcpcd
       service:
         name: dhcpcd
-        state: restarted
-      when: dhcpcd.changed
-
-    - name: Restart systemd-resolved
-      service:
-        name: systemd-resolved
         state: restarted
       when: dhcpcd.changed
 
