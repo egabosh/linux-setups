@@ -31,7 +31,7 @@ do
   elif [[ $playbook =~ https:// ]]
   then
     playbookfile=$(basename "$playbook")
-    if curl "$playbook" > ~/"$playbookfile"
+    if curl -L "$playbook" >~/"$playbookfile"
     then
       sudo ansible-playbook --connection=local --inventory $(hostname), --limit $(hostname) "${playbookfile}" || exit 2
     else
