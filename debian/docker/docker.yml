@@ -336,3 +336,11 @@
         path: /usr/local/sbin/docker-compose
         insertbefore: BOF
         line: "#!/bin/bash -e"
+
+
+    - name: Restart docker
+      service:
+        name: docker
+        state: restarted
+
+
