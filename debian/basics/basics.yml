@@ -12,6 +12,10 @@
         path: /usr/bin/systemd
       register: nocontainer
 
+    - name: check if we are in a lxc env
+      shell: grep -a container=lxc /proc/1/environ
+      register: lxc
+
     - name: Install Basic Packages
       apt:
         name:
@@ -172,31 +176,31 @@
       when: (nocontainer.stat.exists == true) and (mintpios.stat.exists == false)
       register: dhcpcd
 
-    - name: Check weather /etc/network/interfaces exists
-      stat:
-        path: /etc/network/interfaces
-      register: stat_result
-
-    - name: Disable all Network-config but source interfaces.d in /etc/network/interfaces because dhcpcd will do the job
-      replace:
-        path: /etc/network/interfaces
-        regexp: '(^iface .*)'
-        replace: '#\1'
-      when: stat_result.stat.exists
-
-    - name: Disable all Network-config but source interfaces.d in /etc/network/interfaces because dhcpcd will do the job
-      replace:
-        path: /etc/network/interfaces
-        regexp: '(^allow-hotplug .*)'
-        replace: '#\1'
-      when: stat_result.stat.exists
-
-    - name: Disable all Network-config but source interfaces.d in /etc/network/interfaces because dhcpcd will do the job
-      replace:
-        path: /etc/network/interfaces
-        regexp: '(^auto .*)'
-        replace: '#\1'
-      when: stat_result.stat.exists
+#    - name: Check weather /etc/network/interfaces exists
+#      stat:
+#        path: /etc/network/interfaces
+#      register: stat_result
+#
+#    - name: Disable all Network-config but source interfaces.d in /etc/network/interfaces because dhcpcd will do the job
+#      replace:
+#        path: /etc/network/interfaces
+#        regexp: '(^iface .*)'
+#        replace: '#\1'
+#      when: stat_result.stat.exists
+#
+#    - name: Disable all Network-config but source interfaces.d in /etc/network/interfaces because dhcpcd will do the job
+#      replace:
+#        path: /etc/network/interfaces
+#        regexp: '(^allow-hotplug .*)'
+#        replace: '#\1'
+#      when: stat_result.stat.exists
+#
+#    - name: Disable all Network-config but source interfaces.d in /etc/network/interfaces because dhcpcd will do the job
+#      replace:
+#        path: /etc/network/interfaces
+#        regexp: '(^auto .*)'
+#        replace: '#\1'
+#      when: stat_result.stat.exists
 
     - name: Restart dhcpcd
       service:
@@ -269,7 +273,14 @@
         name: vm.swappiness
         value: '0'
         state: present
-      when: nocontainer.stat.exists == true
+      when: (nocontainer.stat.exists == true) and (lxc.stdout == '')
+
+    # stop low-level messages on console (tty)
+    - ansible.posix.sysctl:
+        name: kernel.printk
+        value: '3 4 1 3'
+        state: present
+      when: (nocontainer.stat.exists == true) and (lxc.stdout == '')
 
     - name: shell profile
       blockinfile:
