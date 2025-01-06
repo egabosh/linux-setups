@@ -142,18 +142,18 @@ for playbook in debian/basics/basics.yml \
  debian/autoupdate/autoupdate.yml \
  debian/docker/docker.yml \
  debian/traefik.server/traefik.yml \
- debian/whoogle \
- debian/tornet.network \
- debian/vnet.network \
+ debian/whoogle/whoogle.yml \
+ debian/tornet.network/tornet.yml \
+ debian/vnet.network/vnet.yml \
  https://raw.githubusercontent.com/egabosh/gtc-crypt/refs/heads/main/gtc-crypt.yml \
  https://raw.githubusercontent.com/egabosh/gtc-rename/refs/heads/main/gtc-rename.yml \
  https://raw.githubusercontent.com/egabosh/gtc-media-compress/refs/heads/main/gtc-media-compress.yml \
- gtc-x11vnc \
- mint \
- debian/firefox \
- debian/chromium \
- debian/signal-desktop \
- debian/element-desktop
+ x11vnc-ssh/x11vnc-ssh.yml \
+ mint/mint.yml \
+ debian/firefox/firefox.yml \
+ debian/chromium/chromium.yml \
+ debian/signal-desktop/signal-desktop.yml \
+ debian/element-desktop/element-desktop.yml
 do
   echo "=== $playbook"
   if [ -s "$playbook" ]
