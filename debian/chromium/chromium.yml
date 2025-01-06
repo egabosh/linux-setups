@@ -39,7 +39,6 @@
        owner: root
        group: root
        mode: '0444'
-       follow: yes
        backup: yes
      with_items:
        - "/etc/chromium/policies/managed/chrome.json"
@@ -51,7 +50,6 @@
        owner: root
        group: root
        mode: '0444'
-       follow: yes
        backup: yes
      with_items:
        - "/etc/chromium/policies/recommended/chrome.json"
