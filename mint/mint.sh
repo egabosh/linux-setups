@@ -148,7 +148,7 @@ for playbook in debian/basics/basics.yml \
  https://raw.githubusercontent.com/egabosh/gtc-crypt/refs/heads/main/gtc-crypt.yml \
  https://raw.githubusercontent.com/egabosh/gtc-rename/refs/heads/main/gtc-rename.yml \
  https://raw.githubusercontent.com/egabosh/gtc-media-compress/refs/heads/main/gtc-media-compress.yml \
- x11vnc-ssh/x11vnc-ssh.yml \
+ debian/x11vnc-ssh/x11vnc-ssh.yml \
  mint/mint.yml \
  debian/firefox/firefox.yml \
  debian/chromium/chromium.yml \
