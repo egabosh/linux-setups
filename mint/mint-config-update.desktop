@@ -1,0 +1,10 @@
+[Desktop Entry]
+Name=Mint Config Update
+Comment=Mint Config Update
+Exec=gnome-terminal --window -- /usr/local/sbin/mint-config-update.sh
+Path=
+Icon=configure
+Terminal=false
+StartupNotify=false
+Type=Application
+Categories=System;
