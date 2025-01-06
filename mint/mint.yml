@@ -154,7 +154,7 @@
 
     - name: mint-config-update
       ansible.builtin.get_url:
-        url: mint-config-update.sh
+        url: https://raw.githubusercontent.com/egabosh/linux-setups/refs/heads/main/mint/mint-config-update.sh
         dest: /usr/local/sbin/mint-config-update.sh
         mode: '0555'
         owner: root
@@ -164,7 +164,7 @@
 
     - name: mint-config-update startmenu
       ansible.builtin.get_url:
-        url: mint-config-update.desktop
+        url: https://raw.githubusercontent.com/egabosh/linux-setups/refs/heads/main/mint/mint-config-update.desktop
         dest: /usr/share/applications/mint-config-update.desktop
         mode: '0444'
         owner: root

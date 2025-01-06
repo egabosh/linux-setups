@@ -4,7 +4,7 @@
 
     - name: x11vnc-ssh
       ansible.builtin.get_url:
-        url: 
+        url: https://raw.githubusercontent.com/egabosh/linux-setups/refs/heads/main/debian/x11vnc-ssh/x11vnc-ssh.sh
         dest: /usr/local/bin/x11vnc-ssh.sh
         mode: 0555
         owner: root
@@ -14,7 +14,7 @@
 
     - name: x11vnc-ssh startmenu
       ansible.builtin.get_url:
-        url: 
+        url: https://raw.githubusercontent.com/egabosh/linux-setups/refs/heads/main/debian/x11vnc-ssh/x11vnc-ssh.desktop
         dest: /usr/share/applications/x11vnc-ssh.desktop
         mode: 0444
         owner: root

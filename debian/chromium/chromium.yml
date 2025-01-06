@@ -34,7 +34,7 @@
 
    - name: Chromium managed policy
      ansible.builtin.get_url:
-       url: 
+       url: https://raw.githubusercontent.com/egabosh/linux-setups/refs/heads/main/debian/chromium/chromium-managed.json
        dest: "{{ item }}"
        owner: root
        group: root
@@ -46,7 +46,7 @@
 
    - name: Chromium recommended policy
      ansible.builtin.get_url:
-       url: 
+       url: https://raw.githubusercontent.com/egabosh/linux-setups/refs/heads/main/debian/chromium/chromium-recommended.json
        dest: "{{ item }}"
        owner: root
        group: root
