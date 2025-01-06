@@ -147,6 +147,7 @@ for playbook in debian/basics/basics.yml \
  debian/vnet.network \
  https://raw.githubusercontent.com/egabosh/gtc-crypt/refs/heads/main/gtc-crypt.yml \
  https://raw.githubusercontent.com/egabosh/gtc-rename/refs/heads/main/gtc-rename.yml \
+ https://raw.githubusercontent.com/egabosh/gtc-media-compress/refs/heads/main/gtc-media-compress.yml \
  gtc-x11vnc \
  mint \
  debian/firefox \
