@@ -1,7 +1,7 @@
 [Desktop Entry]
 Name=Desktopfreigabe (x11vnc+ssh)
 Comment=X11VNC über SSH-Tunnel
-Exec=gnome-terminal --window -- /usr/local/bin/x11vnc.sh
+Exec=gnome-terminal --window -- /usr/local/bin/x11vnc-ssh.sh
 Path=
 Icon=screen-shared-symbolic
 Terminal=false
