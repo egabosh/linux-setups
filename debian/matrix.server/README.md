@@ -22,7 +22,7 @@ docker compose -f /home/docker/matrix.$(hostname)/docker-compose.yml exec -ti ma
 List users
 ```
 . /home/docker/matrix.$(hostname)/env
-docker compose -f /home/docker/matrix.$(hostname)/docker-compose.yml exec -ti matrix.defiant.$(hostname)--db psql -U $POSTGRES_USER -d synapse -c "SELECT name from users"
+docker compose -f /home/docker/matrix.$(hostname)/docker-compose.yml exec -ti matrix.$(hostname)--db psql -U $POSTGRES_USER -d synapse -c "SELECT name from users"
 ```
 
 # Debugging

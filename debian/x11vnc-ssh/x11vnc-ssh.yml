@@ -1,0 +1,22 @@
+- name: Desktop sharing via x11vnc/SSH
+  hosts: all
+  tasks:
+
+    - name: x11vnc-ssh
+      ansible.builtin.get_url:
+        url: 
+        dest: /usr/local/bin/x11vnc-ssh.sh
+        mode: 0555
+        owner: root
+        group: root
+        force: yes
+        backup: yes
+
+    - name: x11vnc-ssh startmenu
+      ansible.builtin.get_url:
+        url: 
+        dest: /usr/share/applications/x11vnc-ssh.desktop
+        mode: 0444
+        owner: root
+        group: root
+        force: yes
