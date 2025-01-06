@@ -19,7 +19,7 @@ tmux kill-session -t x11vnc2ssh >/dev/null 2>&1
 sshopts="-p $port -o BatchMode=yes -o ConnectTimeout=10 -o StrictHostKeyChecking=accept-new -o LogLevel=ERROR -o PreferredAuthentications=publickey $userathost"
 
 g_echo "Testing SSH-Connection to $userathost:$port"
-ssh $sshopts >/dev/null 2>&1
+ssh $sshopts #>/dev/null 2>&1
 if [ $? == 255 ];then
   g_echo_error "SSH connection could not be established!!"
   if ! [ -e ~/.ssh/id_ed25519.pub  ]
