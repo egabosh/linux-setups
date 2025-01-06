@@ -14,7 +14,7 @@
 
     - name: Firefox policy
       ansible.builtin.get_url:
-        url: 
+        url: https://raw.githubusercontent.com/egabosh/linux-setups/refs/heads/main/debian/firefox/policies.json
         dest: "{{ item }}"
         owner: root
         group: root

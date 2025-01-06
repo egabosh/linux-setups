@@ -15,7 +15,7 @@ then
 fi
 
 # download and run
-until wget mint.sh -O /tmp/mint.sh
+until wget https://raw.githubusercontent.com/egabosh/linux-setups/refs/heads/main/mint/mint.sh -O /tmp/mint.sh
 do
   echo "mint.sh could not be downloaded trying again in 5 seconds"
   sleep 5
