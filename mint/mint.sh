@@ -1,6 +1,11 @@
 #!/bin/bash
 
-mydomain="ds9.dedyn.io"
+mydomain="$1"
+if [ -z "$mydomain" ] 
+then
+  [ -s "/etc/mydomain" ] && mydomain=$(head -n1 /etc/mydomain)
+  [ -z "$mydomain" ] && mydomain=$(hostname)
+fi
 
 echo "!!! ACHTUNG !!!
 
