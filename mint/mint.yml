@@ -1,0 +1,222 @@
+---
+- name: Mint Packages
+  hosts: all
+  tasks:
+
+    - name: Install Basic Packages
+      apt:
+        name:
+          # powersave
+          - tlp
+          - tlp-rdw
+          # Speed up program start
+          - preload
+          # mediacodecs and fonts
+          - mint-meta-codecs
+          - ubuntu-restricted-extras
+          - libavcodec-extra
+          - libdvd-pkg
+          - fonts-terminus
+          # share desk
+          - x11vnc
+          # useful other stuff
+          - spectre-meltdown-checker
+          - pwgen
+          - arj
+          - p7zip
+          - unace
+          - unadf
+          - bvi
+          - fdupes
+          - radeontop
+          - debootstrap
+          - geoip-bin
+          - sshfs
+          - speedtest-cli
+          - gnome-characters
+          # tools for android-smartphones/LineageOS
+          - heimdall-flash
+          - android-tools-adb
+          - android-tools-fastboot
+          # OnlineBanking
+          - hibiscus
+          # dconf-gui
+          - dconf-editor
+          # Media
+          - vlc
+          - gthumb
+          - mediainfo-gui
+          - easytag
+          - audacity
+          - asunder
+          - mediathekview
+          - audacious
+          - guvcview
+          - calf-plugins
+          - lame
+          - vorbis-tools
+          - fdkaac
+          - flac
+          - opus-tools
+          - wavpack
+          - musepack-tools
+          # retro
+          - dosbox
+          # brennen
+          - brasero
+          # misc
+          - openoffice.org-hyphenation
+          - gpodder
+          - wireguard
+          - wireguard-tools
+          - tinyproxy
+          - hardinfo
+          - rpi-imager
+          - redshift-gtk
+          # virtualization
+          - virtualbox
+          - virtualbox-qt
+          - virtualbox-guest-additions-iso
+          # screenshot
+          - flameshot
+          # groupware
+          - evolution
+          # nextcloud
+          - nextcloud-desktop
+          - nemo-nextcloud
+        update_cache: yes
+        install_recommends: no
+        
+    - name: Install Flatpaks
+      community.general.flatpak:
+        name:
+          - org.gtk.Gtk3theme.Mint-Y-Dark
+          - com.github.tchx84.Flatseal
+        state: present
+        method: system
+
+    - name: mint-config-update
+      blockinfile:
+        path: /etc/systemd/system/mint-config-update.service
+        create: yes
+        mode: 0444
+        owner: root
+        group: root
+        marker: "# {mark} ANSIBLE MANAGED BLOCK"
+        block: |
+          [Unit]
+          Description=Mint Upgrade Service
+          # star after and on shutdown dont stop before script has terminated
+          After=network.target dnscrypt-proxy.service systemd-resolved.service sshd.service tor@default.service
+                    
+          [Service]
+          Type=oneshot
+          User=root
+          ExecStart=bash -x /usr/local/sbin/mint-config-update.sh
+          # Wait for "normal" exit of the script SIGCONT doesnt kill/terminate it
+          KillSignal=SIGCONT
+          # wait a maximum of 30 minutes
+          TimeoutStopSec=1800
+          StandardOutput=append:/var/log/mint-config-update.sh.log
+          StandardError=append:/var/log/mint-config-update.sh.log
+          
+          [Install]
+          WantedBy=multi-user.target
+
+    - name: 'add mint-config-update to startup'
+      command: systemctl enable mint-config-update.service
+      args:
+        creates: /etc/systemd/system/multi-user.target.wants/mint-config-update.service
+
+    - name: remove dhcpcd because NetworkManager is doing the job
+      command: systemctl disable dhcpcd
+      args:
+        removes: /etc/systemd/system/multi-user.target.wants/dhcpcd.service
+
+    - name: /etc/default/grub nonquiet nosplash
+      ansible.builtin.lineinfile:
+        path: /etc/default/grub
+        regexp: '^GRUB_CMDLINE_LINUX_DEFAULT=.*$'
+        line: "GRUB_CMDLINE_LINUX_DEFAULT=\"nosplash\""
+        backup: yes
+      notify:
+      - update-grub
+
+    - name: enable Mint Autoupdate 
+      command: systemctl enable mintupdate-automation-upgrade.timer
+      args:
+        creates: /etc/systemd/system/timers.target.wants/mintupdate-automation-upgrade.timer
+
+    - name: enable Mint Autoupdate Cleanup
+      command: systemctl enable mintupdate-automation-autoremove.timer
+      args:
+        creates: /etc/systemd/system/timers.target.wants/mintupdate-automation-autoremove.timer
+
+    - name: mint-config-update
+      ansible.builtin.get_url:
+        url: mint-config-update.sh
+        dest: /usr/local/sbin/mint-config-update.sh
+        mode: '0555'
+        owner: root
+        group: root
+        force: yes
+        backup: yes
+
+    - name: mint-config-update startmenu
+      ansible.builtin.get_url:
+        url: mint-config-update.desktop
+        dest: /usr/share/applications/mint-config-update.desktop
+        mode: '0444'
+        owner: root
+        group: root
+        force: yes
+
+    - name: gtc-media-compress
+      ansible.builtin.get_url:
+        url: gtc-media-compress.sh
+        dest: /usr/local/bin/gtc-media-compress.sh
+        mode: '0555'
+        owner: root
+        group: root
+        force: yes
+        backup: yes
+
+    - name: gtc-media-compress startmenu
+      ansible.builtin.get_url:
+        url: gtc-media-compress.desktop
+        dest: /usr/share/applications/gtc-media-compress.desktop
+        mode: '0444'
+        owner: root
+        group: root
+        force: yes
+
+    - name: Allow Mint warpinator in firewall to tcp port 42000
+      community.general.ufw:
+        rule: allow
+        port: '42000'
+        proto: tcp
+
+    - name: Allow Mint warpinator in firewall to udp port 42000
+      community.general.ufw:
+        rule: allow
+        port: '42000'
+        proto: udp
+
+    # no more pulse since Mint 22
+    #- name: force samplerate to 44100 to avoid problems with additional audio hardware for live streams
+    #  blockinfile:
+    #    path: /etc/pulse/daemon.conf
+    #    owner: root
+    #    group: root
+    #    create: no
+    #    marker: "; {mark} ANSIBLE MANAGED BLOCK"
+    #    block: |
+    #      default-sample-rate = 44100
+    #      alternate-sample-rate = 44100
+    #    backup: yes
+
+
+  handlers:
+
+    - name: update-grub
+      ansible.builtin.shell: update-grub

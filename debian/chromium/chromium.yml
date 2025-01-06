@@ -1,0 +1,58 @@
+- name: Chromium setup
+  hosts: all
+  tasks:
+
+   - name: check if we are in a RaspberryPiOS
+     stat:
+       path: /usr/bin/wayfire-pi
+     register: raspi
+   
+   - name: Install Chromium
+     apt:
+       name:
+         - chromium
+     when: (raspi.stat.exists == false)
+
+   - name: Install Chromium on Raspi
+     apt:
+       name:
+         - chromium-browser
+         - rpi-chromium-mods
+         - chromium-codecs-ffmpeg-extra
+     when: (raspi.stat.exists == true)
+
+   - name: Create a directory if it does not exist
+     ansible.builtin.file:
+       path: "{{ item }}"
+       state: directory
+       owner: root
+       group: root
+       mode: '0755'
+     with_items:
+       - "/etc/chromium/policies/managed"
+       - "/etc/chromium/policies/recommended"
+
+   - name: Chromium managed policy
+     ansible.builtin.get_url:
+       url: 
+       dest: "{{ item }}"
+       owner: root
+       group: root
+       mode: '0444'
+       follow: yes
+       backup: yes
+     with_items:
+       - "/etc/chromium/policies/managed/chrome.json"
+
+   - name: Chromium recommended policy
+     ansible.builtin.get_url:
+       url: 
+       dest: "{{ item }}"
+       owner: root
+       group: root
+       mode: '0444'
+       follow: yes
+       backup: yes
+     with_items:
+       - "/etc/chromium/policies/recommended/chrome.json"
+
