@@ -260,7 +260,7 @@ fi
 EOF
 
 sudo chmod 700 "${defaultuserhome}"/.xsessionrc 
-sudo chown ${defaultuser}. "${defaultuserhome}"/.xsessionrc
+sudo chown ${defaultuser}: "${defaultuserhome}"/.xsessionrc
 
 date
 echo done
