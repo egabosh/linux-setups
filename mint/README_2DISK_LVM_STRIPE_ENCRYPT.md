@@ -42,7 +42,7 @@ lvcreate -l 100%FREE -i 2 -I 64 -n lv_root vg_mint
 5. use /dev/sda1 as EFI
 6. format /dev/sda2 with ext4 and mount /boot
 7. go on normal installation
-8. possibly user autologin and without encryption because the lvm volume underneath is already encrypted
+8. possibly use user autologin and home without encryption because the LVM volume underneath is already encrypted.
 9. reboot
 
 # Lower root reserve
