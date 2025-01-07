@@ -23,3 +23,4 @@ echo "user@target-ssh-server-for-x11vnc-ssh" | sudo tee /etc/x11vnc-ssh-target
 wget https://raw.githubusercontent.com/egabosh/linux-setups/refs/heads/main/mint/mint.sh
 bash mint.sh
 ```
+better reboot after first run to see more verbose boot progress and load changed Cinnamon design
