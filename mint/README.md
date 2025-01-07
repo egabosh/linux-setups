@@ -1,3 +1,4 @@
+# WARNING: All your data will be deleted!!!
 # install mint
 - boot from Mint medium
 - click on install
