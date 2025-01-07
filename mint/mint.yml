@@ -34,6 +34,8 @@
           - sshfs
           - speedtest-cli
           - gnome-characters
+          - gparted
+          - handbrake
           # tools for android-smartphones/LineageOS
           - heimdall-flash
           - android-tools-adb
