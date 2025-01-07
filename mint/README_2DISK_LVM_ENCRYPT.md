@@ -4,38 +4,34 @@
 
 # Shell
 
-## become root
-```
-sudo -i
-```
 ## get disks (in thix examle sda and sdb
 ```
-fdisk -l
+sudo fdisk -l
 ```
 # Delete partition tables and boot sectors of the existing disks
 ```
-dd if=/dev/zero of=/dev/sda bs=1M count=1
-dd if=/dev/zero of=/dev/sdb bs=1M count=1
+sudo dd if=/dev/zero of=/dev/sda bs=1M count=1
+sudo dd if=/dev/zero of=/dev/sdb bs=1M count=1
 ```
 Maybe a reboot here is better to get easily rid of opened devices
 ## partitions withparted
 ```
 # /dev/sda
-parted -s /dev/sda mklabel gpt
-parted -s /dev/sda mkpart primary fat32 1MiB 513MiB
-parted -s /dev/sda set 1 esp on
-parted -s /dev/sda mkpart primary ext4 513MiB 1537MiB
-parted -s /dev/sda mkpart primary 1537MiB 100%
-parted -s /dev/sda set 3 lvm on
+sudo parted -s /dev/sda mklabel gpt
+sudo parted -s /dev/sda mkpart primary fat32 1MiB 513MiB
+sudo parted -s /dev/sda set 1 esp on
+sudo parted -s /dev/sda mkpart primary ext4 513MiB 1537MiB
+sudo parted -s /dev/sda mkpart primary 1537MiB 100%
+sudo parted -s /dev/sda set 3 lvm on
 
 # /dev/sdb
-parted -s /dev/sdb mklabel gpt
-parted -s /dev/sdb mkpart primary 1MiB 100%
-parted -s /dev/sdb set 1 lvm on
+sudo parted -s /dev/sdb mklabel gpt
+sudo parted -s /dev/sdb mkpart primary 1MiB 100%
+sudo parted -s /dev/sdb set 1 lvm on
 
 # reload of kernel partitiontable
-partprobe /dev/sda
-partprobe /dev/sdb
+sudo partprobe /dev/sda
+sudo partprobe /dev/sdb
 ```
 
 ## format EFI
@@ -44,10 +40,10 @@ sudo mkfs.fat -F32 /dev/sda1
 ```
 ## add both drives to one logical drive with LVM
 ```
-pvcreate /dev/sda3
-pvcreate /dev/sdb1
-vgcreate vg_mint /dev/sda3 /dev/sdb1
-lvcreate -l 100%FREE -n lv_root vg_mint
+sudo pvcreate /dev/sda3
+sudo pvcreate /dev/sdb1
+sudo vgcreate vg_mint /dev/sda3 /dev/sdb1
+sudo lvcreate -l 100%FREE -n lv_root vg_mint
 ```
 # Linux Mint installer
 1. Start the Linux Mint installer.
@@ -62,5 +58,5 @@ lvcreate -l 100%FREE -n lv_root vg_mint
 
 # Lower root reserve
 ```
-tune2fs -m0.1 /dev/mapper/vg_mint-lv_root_crypt
+sudo tune2fs -m0.1 /dev/mapper/vg_mint-lv_root_crypt
 ```
