@@ -1,3 +1,10 @@
+# install mint
+- boot from Mint medium
+- click on install
+
+## for encrypted disk
+
+
 # prepare your ENV
 ```
 # domain for the system
