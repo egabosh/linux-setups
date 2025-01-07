@@ -1,6 +1,6 @@
 # WARNING: All your data will be deleted!!!
 # install mint
-- boot from Mint medium
+- boot from Mint medium (https://linuxmint-installation-guide.readthedocs.io/en/latest/burn.html)
 - click on install
 
 ## for encrypted disk
