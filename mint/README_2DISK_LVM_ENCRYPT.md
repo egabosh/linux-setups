@@ -14,8 +14,8 @@ fdisk -l
 ```
 # Delete partition tables and boot sectors of the existing disks
 ```
-dd if=/dev/zero of=/dev/sda bs_1m count=1
-dd if=/dev/zero of=/dev/sdb bs_1m count=1
+dd if=/dev/zero of=/dev/sda bs=1m count=1
+dd if=/dev/zero of=/dev/sdb bs=1m count=1
 ```
 ## gparted
 ```
