@@ -1,3 +1,5 @@
+# WARNING: All your data will be deleted!!!
+
 # boot from Mint medium
 
 # Shell
