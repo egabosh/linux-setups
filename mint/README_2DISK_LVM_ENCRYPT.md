@@ -44,8 +44,8 @@ sudo mkfs.fat -F32 /dev/sda1
 ```
 ## add both drives to one logical drive with LVM
 ```
-pvcreate /dev/mapper/sda3
-pvcreate /dev/mapper/sdb1
+pvcreate /dev/sda3
+pvcreate /dev/sdb1
 vgcreate vg_mint /dev/mapper/sda3 /dev/mapper/sdb1
 lvcreate -l 100%FREE -n lv_root vg_mint
 ```
