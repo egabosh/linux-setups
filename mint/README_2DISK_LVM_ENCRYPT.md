@@ -46,7 +46,7 @@ sudo mkfs.fat -F32 /dev/sda1
 ```
 pvcreate /dev/sda3
 pvcreate /dev/sdb1
-vgcreate vg_mint /dev/mapper/sda3 /dev/mapper/sdb1
+vgcreate vg_mint /dev/sda3 /dev/sdb1
 lvcreate -l 100%FREE -n lv_root vg_mint
 ```
 # Linux Mint installer
