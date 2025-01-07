@@ -4,7 +4,7 @@
 
 # Shell
 
-## get disks (in thix examle sda and sdb
+## get disks (in this examle sda and sdb)
 ```
 sudo fdisk -l
 ```
@@ -14,7 +14,7 @@ sudo dd if=/dev/zero of=/dev/sda bs=1M count=1
 sudo dd if=/dev/zero of=/dev/sdb bs=1M count=1
 ```
 Maybe a reboot here is better to get easily rid of opened devices
-## partitions withparted
+## partitions with parted
 ```
 # /dev/sda
 sudo parted -s /dev/sda mklabel gpt
