@@ -19,7 +19,7 @@ polkit.addRule(function(action, subject) {
 });' | sudo tee /etc/polkit-1/rules.d/adm.rules
 sudo chmod 644 /etc/polkit-1/rules.d/adm.rules
 ```
-## Additional Deactivat keystore passwords prompts on autologin
+## Additional deactivate keystore passwords prompts on autologin
 I strongly recommend encrypting the hard disks if you want to turn this off to reduce the security loss
 - search seahorse (passwords and keys) in the star menu and start it
 - right click on default keyring (only exists if you use the keyring) -> Change Password
