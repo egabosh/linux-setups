@@ -14,15 +14,28 @@ fdisk -l
 ```
 # Delete partition tables and boot sectors of the existing disks
 ```
-dd if=/dev/zero of=/dev/sda bs=1m count=1
-dd if=/dev/zero of=/dev/sdb bs=1m count=1
+dd if=/dev/zero of=/dev/sda bs=1M count=1
+dd if=/dev/zero of=/dev/sdb bs=1M count=1
 ```
-## gparted
+Maybe a reboot here is better to get easily rid of opened devices
+## partitions withparted
 ```
-# dev   size  type
-- sda1  512M  EFI
-- sda2  1G    Linux
-- sda3  REST  LVM
+# /dev/sda
+parted -s /dev/sda mklabel gpt
+parted -s /dev/sda mkpart primary fat32 1MiB 513MiB
+parted -s /dev/sda set 1 esp on
+parted -s /dev/sda mkpart primary ext4 513MiB 1537MiB
+parted -s /dev/sda mkpart primary 1537MiB 100%
+parted -s /dev/sda set 3 lvm on
+
+# /dev/sdb
+parted -s /dev/sdb mklabel gpt
+parted -s /dev/sdb mkpart primary 1MiB 100%
+parted -s /dev/sdb set 1 lvm on
+
+# reload of kernel partitiontable
+partprobe /dev/sda
+partprobe /dev/sdb
 ```
 
 ## format EFI
