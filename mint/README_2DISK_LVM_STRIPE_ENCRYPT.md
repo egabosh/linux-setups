@@ -3,30 +3,37 @@
 # Shell
 
 ## become root
+```
 sudo -i
-
+```
 ## get disks (in thix examle sda and sdb
+```
 fdisk -l
-
+```
 # Delete partition tables and boot sectors of the existing disks
+```
 dd if=/dev/zero of=/dev/sda bs_1m count=1
 dd if=/dev/zero of=/dev/sdb bs_1m count=1
-
+```
 ## gparted
-dev size type
-- sda1 512M EFI
-- sda2 1G Linux
-- sda3 REST LVM
+```
+# dev   size  type
+- sda1  512M  EFI
+- sda2  1G    Linux
+- sda3  REST  LVM
+```
 
 ## format EFI
+```
 sudo mkfs.fat -F32 /dev/sda1
-
+```
 ## stripe/raid0 with lvm
+```
 pvcreate /dev/mapper/sda3
 pvcreate /dev/mapper/sdb1
 vgcreate vg_mint /dev/mapper/sda3 /dev/mapper/sdb1
 lvcreate -l 100%FREE -i 2 -I 64 -n lv_root vg_mint
-
+```
 # Linux Mint installer
 1. Start the Linux Mint installer.
 2. Select “Something else” for partitioning.
@@ -39,5 +46,6 @@ lvcreate -l 100%FREE -i 2 -I 64 -n lv_root vg_mint
 9. reboot
 
 # Lower root reserve
+```
 tune2fs -m0.1 /dev/mapper/vg_mint-lv_root_crypt
-
+```
