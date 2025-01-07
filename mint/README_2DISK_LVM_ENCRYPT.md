@@ -56,7 +56,7 @@ sudo lvcreate -l 100%FREE -n lv_root vg_mint
 8. possibly use "Log in automatically" without "Encrypt my home folder" because the LVM volume underneath is already encrypted and asking for password.
 10. reboot
 
-# Lower root reserve
+# Optional: Lower root reserve
 ```
 sudo tune2fs -m0.1 /dev/mapper/vg_mint-lv_root_crypt
 ```
