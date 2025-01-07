@@ -48,10 +48,10 @@ sudo lvcreate -l 100%FREE -n lv_root vg_mint
 # Linux Mint installer
 1. Start the Linux Mint installer.
 2. Select “Something else” for partitioning.
-3. Right click on 2nd /dev/mapper/vg_mint-lv_root -> Change -> Use as: "Physical volume for encryption" -> Set PW
-4. Right click on 2nd /dev/mapper/vg_mint-lv_root_crypt -> Change -> Use as: "Ext4 journaling file system" -> Mount point: "/"
+3. Right click on 2nd `/dev/mapper/vg_mint-lv_root` -> Change -> Use as: "Physical volume for encryption" -> Set PW
+4. Right click on 2nd `/dev/mapper/vg_mint-lv_root_crypt` -> Change -> Use as: "Ext4 journaling file system" -> Mount point: `/`
 5. /dev/sda1 should already be defined as EFI
-6. Right click on /dev/sda2 -> Change -> Use as: "Ext4 journaling file system" -> Mount point: "/boot" -> check "Format the partition"
+6. Right click on `/dev/sda2` -> Change -> Use as: "Ext4 journaling file system" -> Mount point: `/boot` -> check "Format the partition"
 7. go on normal installation
 8. possibly use "Log in automatically" without "Encrypt my home folder" because the LVM volume underneath is already encrypted and asking for password.
 10. reboot
