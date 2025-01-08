@@ -159,13 +159,6 @@ chown ${user}: /home/${user} /home/${user}/.xsessionrc /home/${user}/.config /ho
 [ -d /home/${user}/.kodi/addons ] || mkdir -p /home/${user}/.kodi/addons
 cd /home/${user}/.kodi/addons
 
-# jellyfin repo
-if ! [ -d repository.jellyfin.kodi ]
-then
-  wget https://kodi.jellyfin.org/repository.jellyfin.kodi.zip
-  unzip repository.jellyfin.kodi.zip
-fi
-
 # mediathekview repo
 if ! [ -d  repository.mediathekview ]
 then
@@ -210,6 +203,12 @@ if ! [ -d plugin.video.fosdem ]
 then
   wget https://mirrors.kodi.tv/addons/omega/plugin.video.fosdem/plugin.video.fosdem-0.0.8+matrix.1.zip
   unzip plugin.video.fosdem-0.0.8+matrix.1.zip
+fi
+# ampache
+if ! [ -d plugin.audio.ampache ]
+then
+  wget https://mirrors.kodi.tv/addons/omega/plugin.audio.ampache/plugin.audio.ampache-3.1.0+matrix.1.zip
+  unzip plugin.audio.ampache-3.1.0+matrix.1.zip
 fi
 
 ## create (new) kodi presets
