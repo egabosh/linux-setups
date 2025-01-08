@@ -1,0 +1,227 @@
+---
+- name: ampache
+  hosts: all
+  tasks:
+
+    - name: Create /home/docker/ampache.{{inventory_hostname}} dir
+      ansible.builtin.file:
+        path: /home/docker/ampache.{{inventory_hostname}}
+        owner: root
+        group: docker
+        state: directory
+        mode: '0550'
+
+    - name: /home/docker/ampache.{{inventory_hostname}}/genpw.sh (generate Random PWs)
+      blockinfile:
+        path: /home/docker/ampache.{{inventory_hostname}}/genpw.sh
+        create: yes
+        mode: 0550
+        owner: root
+        group: docker
+        marker: "# {mark} ANSIBLE MANAGED BLOCK"
+        block: |
+          cd /home/docker/ampache.{{inventory_hostname}}
+        
+          mkdir -p ampache-data/config ampache-data/log ampache-data/media/music
+          chown -R 33:33 ampache-data          
+
+          mysqluser=$(pwgen -s 32 1)
+          mysqlpassword=$(pwgen -s 32 1)
+          apacheadminpassword=$(pwgen -s 32 1)
+
+          [ -f env ] || echo "MYSQL_USER=!MYSQLUSER!
+          MYSQL_PASSWORD=!MYSQLPASSWORD!
+          AMPACHE_ADMIN_PW='!AMPACHEADMINPASSWD!'
+          " >env
+
+          [ -f env.db ] || echo "MARIADB_USER=!MYSQLUSER!
+          MARIADB_PASSWORD=!MYSQLPASSWORD!
+          " >env.db
+
+          [ -f env.phpmyadmin ] || echo "PMA_USER=!MYSQLUSER!
+          PMA_PASSWORD=!MYSQLPASSWORD!
+          " >env.phpmyadmin
+
+          chmod 440 env env.db env.phpmyadmin
+          chown root:docker env env.db env.phpmyadmin
+          sed -i "s/\!MYSQLUSER\!/$mysqluser/g" env env.db env.phpmyadmin
+          sed -i "s/\!MYSQLPASSWORD\!/$mysqlpassword/g" env env.db env.phpmyadmin
+          sed -i "s/\!AMPACHEADMINPASSWD\!/$apacheadminpassword/g" env
+        backup: yes
+        validate: /bin/bash -n %s
+      notify: run genpw.sh
+
+    - name: /home/docker/ampache.{{inventory_hostname}}/genpw.sh shebang
+      lineinfile:
+        path: /home/docker/ampache.{{inventory_hostname}}/genpw.sh
+        insertbefore: BOF
+        line: "#!/bin/bash -e"
+
+    - name: Gen initial passwords if not exists
+      ansible.builtin.shell: ./genpw.sh
+      args:
+        chdir: /home/docker/ampache.{{inventory_hostname}}
+        creates: /home/docker/ampache.{{inventory_hostname}}/env
+
+    - name: /home/docker/ampache.{{inventory_hostname}}/docker-compose.yml Container Configuration
+      blockinfile:
+        path: /home/docker/ampache.{{inventory_hostname}}/docker-compose.yml
+        create: yes
+        mode: 0440
+        owner: root
+        group: docker
+        marker: "# {mark} ANSIBLE MANAGED BLOCK"
+        block: |
+        
+          services:
+
+            ampache.{{inventory_hostname}}:
+              image: ampache/ampache:nosql
+              restart: unless-stopped
+              environment:
+                DISABLE_INOTIFYWAIT_CLEAN: ${DISABLE_INOTIFYWAIT_CLEAN-0}
+              volumes:
+                - ./ampache-data/config:/var/www/config
+                - ./ampache-data/log:/var/log/ampache
+                - ./ampache-data/media:/media
+                - /etc/localtime:/etc/localtime
+              networks:
+                - ampache.{{inventory_hostname}}--network
+                - traefik
+              labels:
+                - traefik.enable=true
+                # HTTPS
+                - traefik.http.routers.ampache-{{ ansible_facts['hostname'] }}.rule=Host(`ampache.{{ ansible_facts['nodename'] }}`)
+                - traefik.http.routers.ampache-{{ ansible_facts['hostname'] }}.entrypoints=https
+                - traefik.http.routers.ampache-{{ ansible_facts['hostname'] }}.tls=true
+                - traefik.http.routers.ampache-{{ ansible_facts['hostname'] }}.middlewares=secHeaders@file,allowlocalipsonly@file
+                # Proxy to service-port
+                - traefik.http.services.ampache-{{ ansible_facts['hostname'] }}.loadbalancer.server.port=80
+                - traefik.http.routers.ampache-{{ ansible_facts['hostname'] }}.service=ampache-{{ ansible_facts['hostname'] }}
+                # cert via letsencrypt
+                - traefik.http.routers.ampache-{{ ansible_facts['hostname'] }}.tls.certresolver=letsencrypt
+                # Traefik network
+                - traefik.docker.network=traefik
+              depends_on:
+                - ampache.{{inventory_hostname}}--db
+
+            ampache.{{inventory_hostname}}--db:
+              image: mariadb:lts
+              cap_add:
+                - SYS_NICE
+              restart: unless-stopped
+              networks:
+                - ampache.{{inventory_hostname}}--network
+              hostname: mysql
+              volumes:
+                - ./db-data:/var/lib/mysql
+                - /etc/localtime:/etc/localtime:ro
+                - /home/docker/_defaults/mariadb/99-server.cnf:/etc/mysql/mariadb.conf.d/99-server.cnf
+              env_file:
+                - env.db
+                - /home/docker/_defaults/mariadb/mariadb.env
+                - /home/docker/_defaults/mariadb/envroot.db
+              environment:
+                - MARIADB_DATABASE=ampache-db
+            
+            ampache.{{inventory_hostname}}--phpmyadmin:
+              image: phpmyadmin:latest
+              restart: unless-stopped
+              env_file: env.phpmyadmin
+              environment:
+                - PMA_ARBITRARY=0
+                - PMA_HOST=ampache.{{inventory_hostname}}--db
+              volumes:
+                - /etc/localtime:/etc/localtime:ro
+              networks:
+                - ampache.{{inventory_hostname}}--network
+                - traefik
+              labels:
+                - traefik.enable=true
+                # HTTPS
+                - traefik.http.routers.ampache-{{ ansible_facts['hostname'] }}--phpmyadmin.rule=Host(`ampache-phpmyadmin.{{ ansible_facts['nodename'] }}`)
+                - traefik.http.routers.ampache-{{ ansible_facts['hostname'] }}--phpmyadmin.entrypoints=https
+                - traefik.http.routers.ampache-{{ ansible_facts['hostname'] }}--phpmyadmin.tls=true
+                # Proxy to service-port
+                - traefik.http.services.ampache-{{ ansible_facts['hostname'] }}--phpmyadmin.loadbalancer.server.port=80
+                - traefik.http.routers.ampache-{{ ansible_facts['hostname'] }}--phpmyadmin.service=ampache-{{ ansible_facts['hostname'] }}--phpmyadmin
+                # cert via letsencrypt
+                - traefik.http.routers.ampache-{{ ansible_facts['hostname'] }}--phpmyadmin.tls.certresolver=letsencrypt
+                # Auth
+                - traefik.http.routers.ampache-{{ ansible_facts['hostname'] }}--phpmyadmin.middlewares=secHeaders@file,default-basic-auth@file
+                # Traefik network
+                - traefik.docker.network=traefik
+
+          networks:
+            ampache.{{inventory_hostname}}--network:
+              driver: bridge
+              driver_opts:
+                com.docker.network.bridge.name: br-ampache
+            traefik:
+              external: true
+
+        backup: yes
+      notify: Restart ampache
+
+    - name: Start ampache
+      ansible.builtin.shell: docker-compose up -d --force-recreate
+      args:
+        chdir: /home/docker/ampache.{{inventory_hostname}}
+        creates: /home/docker/ampache.{{inventory_hostname}}/ampache-data/config/ampache.cfg.php.dist
+
+    - name: Wait until ampache install is finished
+      wait_for:
+        path: /home/docker/ampache.{{inventory_hostname}}/db-data/ib_logfile0
+
+    - name: /home/docker/ampache.{{inventory_hostname}}/ampache.init.sh
+      blockinfile:
+        path: /home/docker/ampache.{{inventory_hostname}}/ampache.init.sh
+        mode: "0500"
+        owner: root
+        group: root
+        create: yes
+        marker: "# {mark} ANSIBLE MANAGED BLOCK"
+        block: |
+          # install ampache Login URL: https://ampache.{{inventory_hostname}}/wp-login.php
+          cd /home/docker/ampache.{{inventory_hostname}}
+
+          if ! [ -s ampache-data/config/ampache.cfg.php ]
+          then
+            sleep 10
+            source ./env
+            until ! docker compose exec -T ampache.defiant.dedyn.io php ./var/www/bin/installer install --dbname=ampache-db  --dbuser=$MYSQL_USER --dbpassword=$MYSQL_PASSWORD --dbhost=ampache.{{inventory_hostname}}--db --webpath=/ -f 2>&1 | grep failed
+            do 
+              sleep 5
+            done
+            docker compose exec -T ampache.defiant.dedyn.io php ./var/www/bin/cli admin:addUser ampadmin -p $AMPACHE_ADMIN_PW -l 100
+            docker compose exec -T ampache.defiant.dedyn.io php ./var/www/bin/cli run:addCatalog Music /media/music music
+            docker compose exec -T ampache.defiant.dedyn.io php ./var/www/bin/cli run:updateCatalog
+          fi
+        backup: yes
+        validate: /bin/bash -n %s
+      notify: run ampache.init
+
+    - name: Run ampache.init after install
+      ansible.builtin.shell: bash /home/docker/ampache.{{inventory_hostname}}/ampache.init.sh
+      args:
+        chdir: /home/docker/ampache.{{inventory_hostname}}
+        creates: /home/docker/ampache.{{inventory_hostname}}/ampache-data/config/ampache.cfg.php
+
+
+
+  handlers:
+
+    - name: run genpw.sh
+      ansible.builtin.shell: ./genpw.sh
+      args:
+        chdir: /home/docker/ampache.{{inventory_hostname}}
+      notify: Restart ampache
+
+    - name: run ampache.init
+      ansible.builtin.shell: bash /home/docker/ampache.{{inventory_hostname}}/ampache.init.sh
+
+    - name: Restart ampache
+      ansible.builtin.shell: docker-compose up -d --force-recreate
+      args:
+        chdir: /home/docker/ampache.{{inventory_hostname}}
+
