@@ -202,7 +202,7 @@
         create: yes
         block: |
           [mariadbd]
-          max_connections=10
+          max_connections=300
           query_cache_size=512K
           thread_cache_size=0
           sort_buffer_size=64K
