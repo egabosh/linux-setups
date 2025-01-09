@@ -89,7 +89,7 @@
             echo "ALTER USER '${db_user}'@'%' REQUIRE SSL;" \
              | mariadb -u root -h $db_host --ssl --ssl-verify-server-cert -P 3307 -p${MARIADB_ROOT_PASSWORD}
             
-            echo 'show databases;' | mariadb -u $db_user -h $db_host --ssl --ssl-verify-server-cert -P 3307 -p${db_user_pwa}
+            echo 'show databases;' | mariadb -u $db_user -h $db_host --ssl --ssl-verify-server-cert -P 3307 -p${db_user_pw}
 
             echo "<advancedsettings>
             <videodatabase>
@@ -97,7 +97,7 @@
               <host>${dbhost}</host>
               <port>3307</port>
               <user>kodidb</user>
-              <pass>${db_user_pwa}</pass>
+              <pass>${db_user_pw}</pass>
               <name>myKodiVideo</name>
             </videodatabase> 
             <musicdatabase>
@@ -105,7 +105,7 @@
               <host>${dbhost}</host>
               <port>3307</port>
               <user>kodidb</user>
-              <pass>${db_user_pwa}</pass>
+              <pass>${db_user_pw}</pass>
               <name>myKodiMusic</name>
             </musicdatabase>
             <videolibrary>
@@ -185,7 +185,7 @@
                 - /home/docker/_defaults/mariadb/envroot.db
                 - /home/docker/_defaults/mariadb/mariadb.env
               ports:
-                - 0.0.0.0:33306:3306
+                - 0.0.0.0:3307:3306
 
             kodidb.{{inventory_hostname}}--phpmyadmin:
               image: phpmyadmin:latest
@@ -246,9 +246,9 @@
           DAYS=7
           TIMESTAMP=$(date +"%Y%m%d%H%M")
 
-          for i in $(echo "show databases" | mariadb -u root -h kodidb.{{inventory_hostname}} --ssl --ssl-verify-server-cert -P 33306 -p${MARIADB_ROOT_PASSWORD} | grep -v "^Database$")
+          for i in $(echo "show databases" | mariadb -u root -h kodidb.{{inventory_hostname}} --ssl --ssl-verify-server-cert -P 3307 -p${MARIADB_ROOT_PASSWORD} | grep -v "^Database$")
           do
-            if kodidb-dump  -u root -h kodidb.{{inventory_hostname}} --ssl --ssl-verify-server-cert -P 33306 -p${MARIADB_ROOT_PASSWORD} $i 2>${g_tmp}/dberr >$BACKUPDIR/MARIADB-$i-$TIMESTAMP.sql
+            if kodidb-dump  -u root -h kodidb.{{inventory_hostname}} --ssl --ssl-verify-server-cert -P 3307 -p${MARIADB_ROOT_PASSWORD} $i 2>${g_tmp}/dberr >$BACKUPDIR/MARIADB-$i-$TIMESTAMP.sql
             then
               gzip $BACKUPDIR/MARIADB-$i-$TIMESTAMP.sql
             else
