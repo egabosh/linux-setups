@@ -337,7 +337,7 @@
           :syntax on
           let g:skip_defaults_vim = 1
           set encoding=utf-8
-          set tabstop=2 softtabstop=0 expandtab shiftwidth=2 smarttab
+          set tabstop=2 softtabstop=0 expandtab shiftwidth=1 smarttab
           syntax match nonascii "[^[:alnum:][:punct:][:space:]]/"
           highlight nonascii guibg=Red ctermbg=2          
         backup: yes
