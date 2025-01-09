@@ -94,7 +94,7 @@
             echo "<advancedsettings>
             <videodatabase>
               <type>mysql</type>
-              <host>${dbhost}</host>
+              <host>${db_host}</host>
               <port>3307</port>
               <user>kodidb</user>
               <pass>${db_user_pw}</pass>
@@ -102,7 +102,7 @@
             </videodatabase> 
             <musicdatabase>
               <type>mysql</type>
-              <host>${dbhost}</host>
+              <host>${db_host}</host>
               <port>3307</port>
               <user>kodidb</user>
               <pass>${db_user_pw}</pass>
@@ -265,6 +265,11 @@
         backup: yes
         validate: /bin/bash -n %s
 
+    - name: Allow mysql/kodidb over network
+      community.general.ufw:
+        rule: allow
+        port: '3307'
+        proto: tcp
 
   handlers:
 
