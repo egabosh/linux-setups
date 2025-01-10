@@ -193,9 +193,8 @@
             do 
               sleep 5
             done
-            docker compose exec -T ampache.defiant.dedyn.io php ./var/www/bin/cli admin:addUser ampadmin -p $AMPACHE_ADMIN_PW -l 100
-            docker compose exec -T ampache.defiant.dedyn.io php ./var/www/bin/cli run:addCatalog Music /media/music music
-            docker compose exec -T ampache.defiant.dedyn.io php ./var/www/bin/cli run:updateCatalog
+            docker compose exec -T -u 33 ampache.defiant.dedyn.io php ./var/www/bin/cli admin:addUser ampadmin -p $AMPACHE_ADMIN_PW -l 100
+            docker compose exec -T -u 33 ampache.defiant.dedyn.io php ./var/www/bin/cli run:addCatalog Music /media/music music
           fi
         backup: yes
         validate: /bin/bash -n %s
@@ -207,6 +206,20 @@
         chdir: /home/docker/ampache.{{inventory_hostname}}
         creates: /home/docker/ampache.{{inventory_hostname}}/ampache-data/config/ampache.cfg.php
 
+
+    - name: individual ampache config
+      blockinfile:
+        path: /home/docker/ampache.defiant.dedyn.io/ampache-data/config/ampache.cfg.php
+        mode: "0640"
+        owner: 33
+        marker: "; {mark} ANSIBLE MANAGED BLOCK"
+        block: |
+          ; log
+          debug = "true"
+          debug_level = 2
+          ; streaming
+          local_web_path = "http://localhost/"
+        backup: yes
 
 
   handlers:
