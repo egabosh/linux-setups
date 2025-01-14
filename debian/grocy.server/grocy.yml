@@ -1,0 +1,71 @@
+---
+- name: grocy
+  hosts: all
+  tasks:
+
+    - name: Create /home/docker/grocy.{{inventory_hostname}} dir
+      ansible.builtin.file:
+        path: /home/docker/grocy.{{inventory_hostname}}
+        owner: root
+        group: docker
+        state: directory
+        mode: '0550'
+
+    - name: /home/docker/grocy.{{inventory_hostname}}/docker-compose.yml Container Configuration
+      blockinfile:
+        path: /home/docker/grocy.{{inventory_hostname}}/docker-compose.yml
+        create: yes
+        mode: 0440
+        owner: root
+        group: docker
+        marker: "# {mark} ANSIBLE MANAGED BLOCK"
+        block: |
+
+
+          services:
+
+            grocy.{{inventory_hostname}}:
+              image: lscr.io/linuxserver/grocy:latest
+              cap_add:
+                - SYS_NICE
+              restart: unless-stopped
+              networks:
+                - grocy.{{inventory_hostname}}--network
+                - traefik
+              volumes:
+                - ./grocy-data:/config
+                - /etc/localtime:/etc/localtime:ro
+              labels:
+                - traefik.enable=true
+                # HTTPS
+                - traefik.http.routers.grocy-{{ ansible_facts['hostname'] }}.rule=Host(`grocy.{{ ansible_facts['nodename'] }}`)
+                - traefik.http.routers.grocy-{{ ansible_facts['hostname'] }}.entrypoints=https
+                - traefik.http.routers.grocy-{{ ansible_facts['hostname'] }}.tls=true
+                # Proxy to service-port
+                - traefik.http.services.grocy-{{ ansible_facts['hostname'] }}.loadbalancer.server.port=80
+                - traefik.http.routers.grocy-{{ ansible_facts['hostname'] }}.service=grocy-{{ ansible_facts['hostname'] }}
+                # cert via letsencrypt
+                - traefik.http.routers.grocy-{{ ansible_facts['hostname'] }}.tls.certresolver=letsencrypt
+                # Traefik network
+                - traefik.docker.network=traefik
+                # auth
+                - traefik.http.routers.grocy-{{ ansible_facts['hostname'] }}.middlewares=secHeaders@file
+
+          networks:
+            grocy.{{inventory_hostname}}--network:
+              driver: bridge
+              driver_opts:
+                com.docker.network.bridge.name: br-grocy
+            traefik:
+              external: true
+
+        backup: yes        
+      notify: Restart grocy
+
+  handlers:
+
+    - name: Restart grocy
+      ansible.builtin.shell: docker-compose up -d --force-recreate
+      args:
+        chdir: /home/docker/grocy.{{inventory_hostname}}
+

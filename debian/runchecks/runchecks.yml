@@ -156,7 +156,7 @@
         marker: "# {mark} ANSIBLE MANAGED BLOCK"
         block: |
           # dns3.digitalcourage.de
-          testip=5.9.164.112
+          testip=8.8.8.8
           if ! ping -c3 ${testip} >/dev/null 2>&1
           then
             g_echo_error "No Internet connection? ping $testip failed!"
