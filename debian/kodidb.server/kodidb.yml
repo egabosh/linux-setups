@@ -243,22 +243,23 @@
         marker: "# {mark} ANSIBLE MANAGED BLOCK"
         block: |
           . /home/docker/_defaults/mariadb/envroot.db
+
           DAYS=7
           TIMESTAMP=$(date +"%Y%m%d%H%M")
 
-          for i in $(echo "show databases" | mariadb -u root -h kodidb.{{inventory_hostname}} --ssl --ssl-verify-server-cert -P 3307 -p${MARIADB_ROOT_PASSWORD} | grep -v "^Database$")
+          for i in $(echo "show databases" | mariadb -u root -h kodidb.defiant.dedyn.io --ssl --ssl-verify-server-cert -P 3307 -p${MARIADB_ROOT_PASSWORD} | egrep -v "^Database$|^performance_schema$|^information_schema$")
           do
-            if kodidb-dump  -u root -h kodidb.{{inventory_hostname}} --ssl --ssl-verify-server-cert -P 3307 -p${MARIADB_ROOT_PASSWORD} $i 2>${g_tmp}/dberr >$BACKUPDIR/MARIADB-$i-$TIMESTAMP.sql
+            if mariadb-dump  -u root -h kodidb.defiant.dedyn.io --ssl --ssl-verify-server-cert -P 3307 -p${MARIADB_ROOT_PASSWORD} $i 2>${g_tmp}/dberr >$BACKUPDIR/KODIDB-$i-$TIMESTAMP.sql
             then
-              gzip $BACKUPDIR/MARIADB-$i-$TIMESTAMP.sql
+              gzip $BACKUPDIR/KODIDB-$i-$TIMESTAMP.sql
             else
               g_echo_error "MariaDB Backup failed $(cat ${g_tmp}/dberr)"
             fi
             # dont delete last old backups!
-            OLD_BACKUPS=$(ls -1 $BACKUPDIR/MARIADB-$i*.gz | wc -l)
-            if [ $OLD_BACKUPS -gt $DAYS ]
+            OLD_BACKUPS=$(ls -1 $BACKUPDIR/KODIDB-$i*.gz 2>/dev/null | wc -l)
+            [ -n "$OLD_BACKUPS" ] && if [ $OLD_BACKUPS -gt $DAYS ]
             then
-              find $BACKUPDIR -name "MARIADB-$i*.gz" -daystart -mtime +$DAYS -delete
+              find $BACKUPDIR -name "KODIDB-$i*.gz" -daystart -mtime +$DAYS -delete
             fi
           done
           unset MARIADB_ROOT_PASSWORD
