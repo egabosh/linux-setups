@@ -38,6 +38,14 @@ do
       echo "Playbook $playbook could not be downloaded"
       exit 1
     fi
+  elif [[ $playbook =~ ssh:// ]]
+  then
+    mkdir tmpplaybooks-$$
+    cd tmpplaybooks-$$
+    git clone $playbook
+    sudo ansible-playbook --connection=local --inventory $(hostname), --limit $(hostname) */*.yml
+    cd ..
+    rm -r tmpplaybooks-$$
   else
     echo "Playbook $playbook not found"
     exit 1
