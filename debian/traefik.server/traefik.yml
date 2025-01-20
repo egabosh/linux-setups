@@ -300,6 +300,7 @@
           >$g_tmp/hosts
           find /home/docker -maxdepth 1 -mindepth 1 -type d  | egrep -v ".del$|.bak$|.old$|var-lib-docker$" | while read dir
           do
+            [ -s "$dir"/.downok ] && continue
             if grep -q Host "$dir"/docker-compose.override.yml >/dev/null 2>&1
             then
               grep Host "$dir"/docker-compose.override.yml >>$g_tmp/hosts
