@@ -1,0 +1,87 @@
+---
+- name: navidrome
+  hosts: all
+  tasks:
+
+    - name: Create /home/docker/navidrome.{{inventory_hostname}} dir
+      ansible.builtin.file:
+        path: /home/docker/navidrome.{{inventory_hostname}}
+        owner: root
+        group: docker
+        state: directory
+        mode: '0550'
+
+    - name: Create /home/docker/navidrome.{{inventory_hostname}}/navidrome-data dir
+      ansible.builtin.file:
+        path: /home/docker/navidrome.{{inventory_hostname}}/navidrome-data
+        owner: 33
+        group: docker
+        state: directory
+        mode: '0750'
+
+
+    - name: /home/docker/navidrome.{{inventory_hostname}}/docker-compose.yml Container Configuration
+      blockinfile:
+        path: /home/docker/navidrome.{{inventory_hostname}}/docker-compose.yml
+        create: yes
+        mode: 0440
+        owner: root
+        group: docker
+        marker: "# {mark} ANSIBLE MANAGED BLOCK"
+        block: |
+
+
+          services:
+
+            navidrome.{{inventory_hostname}}:
+              image: deluan/navidrome:latest
+              restart: unless-stopped
+              environment:
+                ND_SCANSCHEDULE: 24h
+                ND_LOGLEVEL: warn
+                ND_SESSIONTIMEOUT: 24h
+                ND_ENABLEINSIGHTSCOLLECTOR: false
+                ND_LASTFM_ENABLED: false
+                ND_LISTENBRAINZ_ENABLED: false
+              networks:
+                - navidrome.{{inventory_hostname}}--network
+                - traefik
+              user: 33
+              volumes:
+                - /data-crypt/share/Musik/Uploaddatum:/music:ro
+                - ./navidrome-data:/data
+                - /etc/localtime:/etc/localtime:ro
+              labels:
+                - traefik.enable=true
+                # HTTPS
+                - traefik.http.routers.navidrome-{{ ansible_facts['hostname'] }}.rule=Host(`navidrome.{{ ansible_facts['nodename'] }}`)
+                - traefik.http.routers.navidrome-{{ ansible_facts['hostname'] }}.entrypoints=https
+                - traefik.http.routers.navidrome-{{ ansible_facts['hostname'] }}.tls=true
+                # Proxy to service-port
+                - traefik.http.services.navidrome-{{ ansible_facts['hostname'] }}.loadbalancer.server.port=4533
+                - traefik.http.routers.navidrome-{{ ansible_facts['hostname'] }}.service=navidrome-{{ ansible_facts['hostname'] }}
+                # cert via letsencrypt
+                - traefik.http.routers.navidrome-{{ ansible_facts['hostname'] }}.tls.certresolver=letsencrypt
+                # Traefik network
+                - traefik.docker.network=traefik
+                # auth
+                - traefik.http.routers.jellyfin-{{ ansible_facts['hostname'] }}.middlewares=secHeaders@file,allowlocalipsonly@file
+
+          networks:
+            navidrome.{{inventory_hostname}}--network:
+              driver: bridge
+              driver_opts:
+                com.docker.network.bridge.name: br-navidrome
+            traefik:
+              external: true
+
+        backup: yes        
+      notify: Restart navidrome
+
+  handlers:
+
+    - name: Restart navidrome
+      ansible.builtin.shell: docker-compose up -d --force-recreate
+      args:
+        chdir: /home/docker/navidrome.{{inventory_hostname}}
+
