@@ -75,6 +75,7 @@
           - hardinfo
           - rpi-imager
           - redshift-gtk
+          - clamtk
           # virtualization
           - virtualbox
           - virtualbox-qt

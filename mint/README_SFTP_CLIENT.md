@@ -17,8 +17,8 @@ Then write the public-key to /home/user/.ssh/authorized_keys on the server
 `cat ~/.ssh/id_ed25519.pub`
 
 create the mount directory:
-`mkdir -p /share/Media`
-`chown -R deinuser /share/Media`
+`sudo mkdir -p /share`
+`chown -R youruser /share`
 
 Reload systemd
 `sudo systemctl daemon-reload`
