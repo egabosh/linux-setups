@@ -744,11 +744,9 @@
           g_nice
           g_lockfile
           
-          if [ -f /usr/local/etc/notify.conf ] 
+          if [ -s /usr/local/etc/notify.conf ] 
           then
             . /usr/local/etc/notify.conf
-          else
-            exit 1
           fi
 
           while getopts s:t:g:h:m: o
