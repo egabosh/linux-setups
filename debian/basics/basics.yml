@@ -147,6 +147,13 @@
           Pin-Priority: 100
       when: ansible_distribution_release is match("bookworm") and (nocontainer.stat.exists == true)
 
+    - name: Add Debian testing repository
+      ansible.builtin.apt_repository:
+        repo: deb http://deb.debian.org/debian testing main
+        state: present
+        update_cache: yes
+      when: ansible_distribution_release is match("bookworm") and (nocontainer.stat.exists == true)
+
     - name: check if this is a Mint system
       stat: 
         path: /etc/linuxmint/mintSystem.conf
