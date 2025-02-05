@@ -160,56 +160,30 @@ chown ${user}: /home/${user} /home/${user}/.xsessionrc /home/${user}/.config /ho
 [ -d /home/${user}/.kodi/addons ] || mkdir -p /home/${user}/.kodi/addons
 cd /home/${user}/.kodi/addons
 
+function install_kodi_addon {
+  local addon=$1
+  [ -d /home/${user}/.kodi/addons ] || mkdir -p /home/${user}/.kodi/addons
+  cd /home/${user}/.kodi/addons
+  if ! [ -d  "${addon}" ]
+  then
+     addonvers=$(wget -q https://mirrors.kodi.tv/addons/omega/${addon}/ -O - | egrep "${addon}-.+\.zip" | tail -n1 | cut -d\" -f2)
+     wget https://kodirepo.mediathekview.de/repo-mv/${addon}/${addonvers}
+     unzip repository.mediathekview-1.0.0.zip
+  fi
+}
+
+install_kodi_addon resource.language.de_de
+install_kodi_addon plugin.video.invidious
+install_kodi_addon plugin.audio.podcasts
+install_kodi_addon plugin.video.ctuplinkrss
+install_kodi_addon plugin.video.vimeo
+install_kodi_addon plugin.video.fosdem
+
 # mediathekview repo
 if ! [ -d  repository.mediathekview ]
 then
   wget https://kodirepo.mediathekview.de/repo-mv/repository.mediathekview/repository.mediathekview-1.0.0.zip
   unzip repository.mediathekview-1.0.0.zip
-fi
-
-## officiall addons
-# german lang
-if ! [ -d resource.language.de_de ]
-then
-  wget https://mirrors.kodi.tv/addons/omega/resource.language.de_de/resource.language.de_de-11.0.80.zip
-  unzip resource.language.de_de-11.0.80.zip
-fi
-
-# invidious
-if ! [ -d plugin.video.invidious ]
-then
-  wget https://mirrors.kodi.tv/addons/omega/plugin.video.invidious/plugin.video.invidious-0.2.7+nexus.0.zip
-  unzip plugin.video.invidious-0.2.7+nexus.0.zip
-fi
-# podcasts
-if ! [ -d plugin.audio.podcasts ]
-then
-  wget https://mirrors.kodi.tv/addons/omega/plugin.audio.podcasts/plugin.audio.podcasts-2.3.2.zip
-  unzip plugin.audio.podcasts-2.3.2.zip
-fi
-# ct uplink
-if ! [ -d plugin.video.ctuplinkrss ]
-then
-  wget https://mirrors.kodi.tv/addons/omega/plugin.video.ctuplinkrss/plugin.video.ctuplinkrss-1.3.zip
-  unzip plugin.video.ctuplinkrss-1.3.zip
-fi
-# vimeo
-if ! [ -d plugin.video.vimeo ]
-then
-  wget https://mirrors.kodi.tv/addons/omega/plugin.video.vimeo/plugin.video.vimeo-6.0.1.zip
-  unzip plugin.video.vimeo-6.0.1.zip
-fi
-# fosdem
-if ! [ -d plugin.video.fosdem ]
-then
-  wget https://mirrors.kodi.tv/addons/omega/plugin.video.fosdem/plugin.video.fosdem-0.0.8+matrix.1.zip
-  unzip plugin.video.fosdem-0.0.8+matrix.1.zip
-fi
-# ampache
-if ! [ -d plugin.audio.ampache ]
-then
-  wget https://mirrors.kodi.tv/addons/omega/plugin.audio.ampache/plugin.audio.ampache-3.1.0+matrix.1.zip
-  unzip plugin.audio.ampache-3.1.0+matrix.1.zip
 fi
 
 ## create (new) kodi presets
