@@ -167,7 +167,7 @@ function install_kodi_addon {
   if ! [ -d  "${addon}" ]
   then
      addonvers=$(wget -q https://mirrors.kodi.tv/addons/omega/${addon}/ -O - | egrep "${addon}-.+\.zip" | tail -n1 | cut -d\" -f2)
-     wget https://kodirepo.mediathekview.de/repo-mv/${addon}/${addonvers}
+     wget https://mirrors.kodi.tv/addons/omega/${addon}/${addonvers}
      unzip repository.mediathekview-1.0.0.zip
   fi
 }
