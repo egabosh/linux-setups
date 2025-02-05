@@ -20,21 +20,6 @@ Nutzung auf einene Gefahr!!! Nur mit Enter/Return fortfahren wenn dieses Skript 
 
 whoami | grep -q ^root$ || read x
 
-## sudo without password
-#echo '%adm ALL=(ALL) NOPASSWD:ALL' | sudo tee /etc/sudoers.d/adm
-#sudo chmod 640 /etc/sudoers.d/adm
-
-## admin actions without password
-#echo '/* Allow members of the adm group to execute any actions
-# * without password authentication, similar to "sudo NOPASSWD:"
-# */
-#polkit.addRule(function(action, subject) {
-#    if (subject.isInGroup("adm")) {
-#        return polkit.Result.YES;
-#    }
-#});' | sudo tee /etc/polkit-1/rules.d/adm.rules
-#sudo chmod 644 /etc/polkit-1/rules.d/adm.rules
-
 # Check for using DoHoT
 if [ -s /etc/dnscrypt-proxy/blocked-names.txt ]
 then
