@@ -44,24 +44,25 @@ apt-get update
 # autoupdate after startup
 echo "@reboot root /usr/local/sbin/autoupdate.sh" >>/etc/crontab
 
-cd /root
-rm -f install.sh
-wget https://github.com/egabosh/linux-setups/raw/refs/heads/main/debian/install.sh
+wget https://raw.githubusercontent.com/egabosh/linux-setups/refs/heads/main/debian/install.sh -O /usr/local/sbin/linux_setups_debian_install.sh
+chmod 700 /usr/local/sbin/linux_setups_debian_install.sh
 
+export PLAYBOOKS="debian/basics/basics.yml
+debian/basics/localization-de.yml
+https://raw.githubusercontent.com/egabosh/gtc-rename/refs/heads/main/gtc-rename.yml 
+https://raw.githubusercontent.com/egabosh/gtc-crypt/refs/heads/main/gtc-crypt.yml
+debian/firewall/firewall.yml
+debian/kodi/kodi.yml
+debian/autoupdate/autoupdate.yml
+debian/docker/docker.yml
+debian/traefik.server/traefik.yml
+debian/whoogle/whoogle.yml
+debian/flatpak/flatpak.yml
+debian/firefox/firefox.yml
+debian/chromium/chromium.yml"
 
-export PLAYBOOKS="debian.ansible.basics
-gtc-rename
-gtc-crypt
-debian.ansible.firewall
-debian.ansible.kodi
-debian.ansible.autoupdate
-debian.ansible.docker
-debian.ansible.traefik.server
-debian.ansible.whoogle
-debian.ansible.flatpak
-firefox
-chromium"
-bash install.sh
+echo $PLAYBOOKS >/usr/local/etc/playbooks
+/usr/local/sbin/linux_setups_debian_install.sh
 
 # get user
 user=$(id -u 1000 -n)
