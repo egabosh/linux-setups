@@ -130,54 +130,33 @@ sudo sed -i 's/ vanessa / virginia /g' /etc/apt/sources.list.d/official-package-
 sudo sed -i 's/ victoria / virginia /g' /etc/apt/sources.list.d/official-package-repositories.list
 
 # run ansible playbooks
-cd
-rm -rf linux-setups
-git clone https://github.com/egabosh/linux-setups.git
-cd linux-setups
 
-for playbook in debian/basics/basics.yml \
- debian/firewall/firewall.yml \
- debian/runchecks/runchecks.yml \
- debian/backup/backup.yml \
- debian/autoupdate/autoupdate.yml \
- debian/docker/docker.yml \
- debian/traefik.server/traefik.yml \
- debian/whoogle/whoogle.yml \
- debian/tornet.network/tornet.yml \
- debian/vnet.network/vnet.yml \
- https://raw.githubusercontent.com/egabosh/gtc-crypt/refs/heads/main/gtc-crypt.yml \
- https://raw.githubusercontent.com/egabosh/gtc-rename/refs/heads/main/gtc-rename.yml \
- https://raw.githubusercontent.com/egabosh/gtc-media-compress/refs/heads/main/gtc-media-compress.yml \
- debian/x11vnc-ssh/x11vnc-ssh.yml \
- mint/mint.yml \
- debian/firefox/firefox.yml \
- debian/chromium/chromium.yml \
- debian/signal-desktop/signal-desktop.yml \
- debian/element-desktop/element-desktop.yml
-do
-  echo "=== $playbook"
-  if [ -s "$playbook" ]
-  then
-    sudo ansible-playbook -e ansible_distribution=${DISTRIB_ID} -e ansible_distribution_release=${DISTRIB_CODENAME} --connection=local --inventory $(hostname), --limit $(hostname) "${playbook}" || exit 2
-  elif [[ $playbook =~ https:// ]]
-  then
-    playbookfile=$(basename "$playbook")
-    if curl -L "$playbook" >~/"${playbookfile}"
-    then
-      sudo ansible-playbook -e ansible_distribution=${DISTRIB_ID} -e ansible_distribution_release=${DISTRIB_CODENAME} --connection=local --inventory $(hostname), --limit $(hostname) ~/"${playbookfile}" || exit 2
-    else
-      echo "Playbook $playbook could not be downloaded"
-      exit 1
-    fi
-  else
-    echo "Playbook $playbook not found"
-    exit 1
-  fi
-#  sudo rm -rf ${playbook}
-#  git clone https://XXXX.${mydomain}/olli/${playbook}.git
-#  sudo ansible-playbook -e ansible_distribution=${DISTRIB_ID} -e ansible_distribution_release=${DISTRIB_CODENAME} --connection=local --inventory $(hostname), --limit $(hostname) ${playbook}/*.yml || exit 1
-#  sudo rm -rf ${playbook}
-done
+sudo wget https://raw.githubusercontent.com/egabosh/linux-setups/refs/heads/main/debian/install.sh -O /usr/local/sbin/linux_setups_debian_install.sh
+sudo chmod 700 /usr/local/sbin/linux_setups_debian_install.sh
+
+export PLAYBOOKS="debian/basics/basics.yml
+debian/firewall/firewall.yml
+debian/runchecks/runchecks.yml
+debian/backup/backup.yml
+debian/autoupdate/autoupdate.yml
+debian/docker/docker.yml
+debian/traefik.server/traefik.yml
+debian/whoogle/whoogle.yml
+debian/tornet.network/tornet.yml
+debian/vnet.network/vnet.yml
+https://raw.githubusercontent.com/egabosh/gtc-crypt/refs/heads/main/gtc-crypt.yml
+https://raw.githubusercontent.com/egabosh/gtc-rename/refs/heads/main/gtc-rename.yml
+https://raw.githubusercontent.com/egabosh/gtc-media-compress/refs/heads/main/gtc-media-compress.yml
+debian/x11vnc-ssh/x11vnc-ssh.yml
+mint/mint.yml
+debian/firefox/firefox.yml
+debian/chromium/chromium.yml
+debian/signal-desktop/signal-desktop.yml
+debian/element-desktop/element-desktop.yml"
+
+echo $PLAYBOOKS | sudo tee /usr/local/etc/playbooks >/dev/null
+sudo -E bash -ex /usr/local/sbin/linux_setups_debian_install.sh
+
 
 sudo bash /usr/local/sbin/autoupdate.sh
 
