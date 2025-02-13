@@ -49,17 +49,6 @@ systemctl restart systemd-hostnamed.service
 wget https://github.com/egabosh/linux-setups/raw/refs/heads/main/debian/kodi/raspi.sh
 bash -ex raspi.sh
 ```
-#### Optional: Wireguard VPN client for "mobile clients"
-- copy the wireguard config file on your Pi (scp/USB-Stick,..)
-replace \<wireguard-config-file.conf\> with your wireguard-config file
-```
-# configure connection
-nmcli connection import type wireguard file <wireguard-config-file.conf>
-# (re)connect VPN on error - check every minute
-echo '* * * * * root ping -c4 192.168.44.1 >/dev/null || ( nmcli connection down pi-kodi-mobile ; nmcli connection up pi-kodi-mobile )'
-# redirect some services for example a jellyfin hostname
-echo "192.168.44.1 jellyfin.myhost.tld" >>/etc/hosts
-```
 ## Reboot and Kodi should start
 ```
 reboot
