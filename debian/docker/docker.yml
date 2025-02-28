@@ -74,15 +74,20 @@
         update_cache: no
         install_recommends: no
 
-    - name: Add signing key
-      ansible.builtin.shell: curl -fsSL https://download.docker.com/linux/{{ ansible_distribution | lower }}/gpg | gpg --output  "/usr/share/keyrings/gpg-pub-docker.gpg" --dearmor
-      args:
-        creates: /usr/share/keyrings/gpg-pub-docker.gpg
+    - name: Change ansible_distribution to Ubuntu if it's Linux Mint
+      set_fact:
+        ansible_distribution: "ubuntu"
+      when: ansible_distribution == "Linux Mint"
 
-    #- name: Add signing key
-    #  ansible.builtin.apt_key:
-    #    url: "https://download.docker.com/linux/{{ ansible_distribution | lower }}/gpg"
-    #    state: present
+#    - name: Add signing key
+#      ansible.builtin.shell: curl -fsSL https://download.docker.com/linux/{{ ansible_distribution | lower }}/gpg | gpg --output  "/usr/share/keyrings/gpg-pub-docker.gpg" --dearmor
+#      args:
+#        creates: /usr/share/keyrings/gpg-pub-docker.gpg
+
+    - name: Add docker signing key
+      ansible.builtin.apt_key:
+        url: https://download.docker.com/linux/{{ ansible_distribution | lower }}/gpg
+        state: present
 
     - name: Remove old repository from sources if exists
       ansible.builtin.apt_repository:
@@ -94,11 +99,6 @@
       shell: dpkg --print-architecture
       register: deb_architecture
       changed_when: false
-
-    - name: Change ansible_distribution to Ubuntu if it's Linux Mint
-      set_fact:
-        ansible_distribution: "ubuntu"
-      when: ansible_distribution == "Linux Mint"
 
     - name: Change ansible_distribution_release to noble (Ubuntu) if its wilma (Mint)
       set_fact:
