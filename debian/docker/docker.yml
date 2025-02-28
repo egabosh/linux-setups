@@ -79,11 +79,6 @@
         ansible_distribution: "ubuntu"
       when: ansible_distribution == "Linux Mint"
 
-#    - name: Add signing key
-#      ansible.builtin.shell: curl -fsSL https://download.docker.com/linux/{{ ansible_distribution | lower }}/gpg | gpg --output  "/usr/share/keyrings/gpg-pub-docker.gpg" --dearmor
-#      args:
-#        creates: /usr/share/keyrings/gpg-pub-docker.gpg
-
     - name: Add docker signing key
       ansible.builtin.apt_key:
         url: https://download.docker.com/linux/{{ ansible_distribution | lower }}/gpg
