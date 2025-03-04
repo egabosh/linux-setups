@@ -91,6 +91,12 @@
         state: absent
         filename: docker       
 
+    - name: remove old repo with old key
+      lineinfile:
+        path: /etc/apt/sources.list.d/docker.list
+        regexp: '.*signed-by=/usr/share/keyrings/gpg-pub-docker.gpg.*'
+        state: absent
+
     - name: Get DEB architecture
       shell: dpkg --print-architecture
       register: deb_architecture
