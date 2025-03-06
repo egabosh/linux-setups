@@ -1,7 +1,5 @@
 #!/bin/bash
 
-set -e
-
 # on fresh install remove cdrom-repo and install sudo if not available
 [ -s /usr/bin/sudo ] || su -c "sed -i '/cdrom/d' /etc/apt/sources.list ; apt update ; apt -y install sudo"
 # add user to sudo group if not
@@ -21,6 +19,8 @@ cd
 rm -rf linux-setups
 git clone https://github.com/egabosh/linux-setups.git
 cd linux-setups
+
+set -e
 
 for playbook in $PLAYBOOKS
 do
