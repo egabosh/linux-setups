@@ -20,8 +20,6 @@ rm -rf linux-setups
 git clone https://github.com/egabosh/linux-setups.git
 cd linux-setups
 
-set -e
-
 for playbook in $PLAYBOOKS
 do
   echo "=== $playbook"
