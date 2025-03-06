@@ -25,13 +25,13 @@ do
   echo "=== $playbook"
   if [ -s "$playbook" ]
   then
-    sudo ansible-playbook --connection=local --inventory $(hostname), --limit $(hostname) "${playbook}" || exit 2
+    sudo ansible-playbook --connection=local --inventory $(hostname), --limit $(hostname) "${playbook}"
   elif [[ $playbook =~ https:// ]]
   then
     playbookfile=$(basename "$playbook")
     if curl -L "$playbook" >~/"${playbookfile}"
     then
-      sudo ansible-playbook --connection=local --inventory $(hostname), --limit $(hostname) ~/"${playbookfile}" || exit 2
+      sudo ansible-playbook --connection=local --inventory $(hostname), --limit $(hostname) ~/"${playbookfile}"
     else
       echo "Playbook $playbook could not be downloaded"
       exit 1
