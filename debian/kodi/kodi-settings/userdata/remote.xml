@@ -1,0 +1,7 @@
+<keymap>
+  <global>
+    <remote>
+      <power>ActivateWindow(ShutdownMenu)</power>
+    </remote>
+  </global>
+</keymap>
