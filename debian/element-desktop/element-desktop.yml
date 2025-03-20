@@ -4,14 +4,29 @@
   hosts: all
   tasks:
 
-    - name: Add signing key
-      ansible.builtin.shell: wget -O /usr/share/keyrings/element-io-archive-keyring.gpg https://packages.element.io/debian/element-io-archive-keyring.gpg
-      args:
-        creates: /usr/share/keyrings/element-io-archive-keyring.gpg
+    - name: download Element.io APT Key
+      ansible.builtin.get_url:
+        url: https://packages.element.io/debian/element-io-archive-keyring.gpg
+        dest: /tmp/element-io-archive-keyring.gpg
+        mode: '0644'
+      register: apt_key_download
+
+    - name: add Element.io APT Key
+      ansible.builtin.apt_key:
+        file: /tmp/element-io-archive-keyring.gpg
+        state: present
+        keyring: /etc/apt/trusted.gpg.d/element-io.gpg
+      when: apt_key_download.changed
+
+    - name: remove old repo with old key
+      lineinfile:
+        path: /etc/apt/sources.list.d/element-io.list
+        regexp: '.*signed-by=/usr/share/keyrings/element-io-archive-keyring.gpg.*'
+        state: absent
 
     - name: Add repository into list
       ansible.builtin.apt_repository:
-        repo: "deb [signed-by=/usr/share/keyrings/element-io-archive-keyring.gpg] https://packages.element.io/debian/ default main"
+        repo: "deb [signed-by=/etc/apt/trusted.gpg.d/element-io.gpg] https://packages.element.io/debian/ default main"
         state: present
         filename: element-io
 
@@ -21,4 +36,5 @@
           - element-desktop
         update_cache: yes
         install_recommends: no
+
 
