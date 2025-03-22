@@ -75,6 +75,7 @@
           - rblcheck
           - bind9-host
           - kpartx
+          - python3.11-venv
         update_cache: yes
         install_recommends: no
 
