@@ -140,7 +140,7 @@ debian/signal-desktop/signal-desktop.yml
 debian/element-desktop/element-desktop.yml"
 
 echo $PLAYBOOKS | sudo tee /usr/local/etc/playbooks >/dev/null
-sudo -E bash -ex /usr/local/sbin/linux_setups_debian_install.sh
+sudo -E bash -x /usr/local/sbin/linux_setups_debian_install.sh
 
 
 sudo bash /usr/local/sbin/autoupdate.sh
