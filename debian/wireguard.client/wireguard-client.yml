@@ -35,12 +35,6 @@
         block: |
           wireguard
           
-    - name: 'add wg-ui-restart.path to startup'
-      systemd:
-        name: wg-ui-restart.path
-        state: started
-        enabled: true
-
     - name: /usr/local/sbin/wireguard.sh shebang
       lineinfile:
         path: /usr/local/sbin/wireguard.sh
