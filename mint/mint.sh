@@ -137,7 +137,8 @@ mint/mint.yml
 debian/firefox/firefox.yml
 debian/chromium/chromium.yml
 debian/signal-desktop/signal-desktop.yml
-debian/element-desktop/element-desktop.yml"
+debian/element-desktop/element-desktop.yml
+debian/wireguard.client/wireguard-client.yml"
 
 echo $PLAYBOOKS | sudo tee /usr/local/etc/playbooks >/dev/null
 sudo -E bash -x /usr/local/sbin/linux_setups_debian_install.sh
