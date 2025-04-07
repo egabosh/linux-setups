@@ -1,0 +1,104 @@
+---
+- name: wireguard client
+  hosts: all
+  tasks:
+
+    - name: Packages for wireguard
+      apt:
+        name:
+          - wireguard
+          - network-manager
+        update_cache: no
+        install_recommends: no
+
+    - name: activate wireguard logging
+      blockinfile:
+        path: /etc/modprobe.d/wireguard.conf
+        create: yes
+        mode: "0444"
+        owner: root
+        group: root
+        marker: "# {mark} ANSIBLE MANAGED BLOCK for wireguard"
+        insertbefore: BOF
+        block: |
+          options wireguard dyndbg=+p
+          
+    - name: load wireguard module during boot
+      blockinfile:
+        path: /etc/modules-load.d/wireguard.conf
+        create: yes
+        mode: "0444"
+        owner: root
+        group: root
+        marker: "# {mark} ANSIBLE MANAGED BLOCK for wireguard"
+        insertbefore: BOF
+        block: |
+          wireguard
+          
+    - name: 'add wg-ui-restart.path to startup'
+      systemd:
+        name: wg-ui-restart.path
+        state: started
+        enabled: true
+
+    - name: /usr/local/sbin/wireguard.sh shebang
+      lineinfile:
+        path: /usr/local/sbin/wireguard.sh
+        insertbefore: BOF
+        line: "#!/bin/bash -e"
+
+    - name: /usr/local/sbin/wireguard.sh
+      blockinfile:
+        path: /usr/local/sbin/wireguard.sh
+        create: yes
+        mode: 0500
+        owner: root
+        group: root
+        marker: "# {mark} ANSIBLE MANAGED BLOCK"
+        block: |
+          wireguard_config="/usr/local/etc/wg-client.conf"
+
+          [ -s $wireguard_config ] || exit 0
+
+          if ping -c4 192.168.44.1 >/dev/null 2>&1
+          then
+            echo "wireguard connection OK"
+            exit 0
+          fi
+
+          echo "No wireguard connection"
+
+          if ! host wireguard.defiant.dedyn.io
+          then
+            echo "DNS for wireguard.defiant.dedyn.io not working"
+            exit 1
+          fi
+
+          nmcli connection | grep -q "^wg-client" || \
+          if ! sudo nmcli connection import type wireguard file $wireguard_config
+          then
+            echo "Failed to import Wireguard VPN file $wireguard_config"
+            exit 2
+          fi
+
+          # (re)connect wireguard if not deactivated in nm
+          if nmcli connection | grep -q " wg-client"
+          then
+            nmcli connection down wg-client
+            nmcli connection up wg-client
+            exit 3
+          fi
+        backup: yes
+        validate: /bin/bash -n %s
+
+    - name: Schedule WireGuard script in cron
+      ansible.builtin.cron:
+        name: "WireGuard Script"
+        minute: "*"
+        hour: "*"
+        day: "*"
+        month: "*"
+        weekday: "*"
+        user: "root"
+        job: "/usr/local/sbin/wireguard.sh"
+
