@@ -59,7 +59,8 @@ debian/traefik.server/traefik.yml
 debian/whoogle/whoogle.yml
 debian/flatpak/flatpak.yml
 debian/firefox/firefox.yml
-debian/chromium/chromium.yml"
+debian/chromium/chromium.yml
+debian/wireguard.client/wireguard-client.yml"
 
 echo $PLAYBOOKS >/usr/local/etc/playbooks
 /usr/local/sbin/linux_setups_debian_install.sh
