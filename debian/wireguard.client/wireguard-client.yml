@@ -48,7 +48,8 @@
 
           [ -s $wireguard_config ] || exit 0
 
-          if ping -c4 192.168.44.1 >/dev/null 2>&1
+          testip=$(grep "^DNS" /usr/local/etc/wg-client.conf | cut -d= -f2 | cut -d, -f1)
+          if ping -c3 $testip >/dev/null 2>&1
           then
             echo "wireguard connection OK"
             exit 0
@@ -56,9 +57,17 @@
 
           echo "No wireguard connection"
 
-          if ! host wireguard.defiant.dedyn.io
+          wghost=$(grep "^Endpoint" /usr/local/etc/wg-client.conf | cut -d= -f2 | cut -d: -f1)
+          if ! host -W 3 $wghost
           then
             echo "DNS for wireguard.defiant.dedyn.io not working"
+            # maybe wpn is blocking dns - if active remove
+            if nmcli connection | grep -q " wg-client"
+             then
+              echo "removing wg-client - maybe its blocking DNS/Internet access"
+              nmcli connection down wg-client
+              nmcli connection delete wg-client
+            fi
             exit 1
           fi
 
