@@ -67,6 +67,7 @@
               echo "removing wg-client - maybe its blocking DNS/Internet access"
               nmcli connection down wg-client
               nmcli connection delete wg-client
+              systemctl restart tor.service
             fi
             exit 1
           fi
@@ -83,6 +84,7 @@
           then
             nmcli connection down wg-client
             nmcli connection up wg-client
+            systemctl restart tor.service
             exit 3
           fi
         backup: yes
