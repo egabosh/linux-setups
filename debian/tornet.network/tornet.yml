@@ -58,31 +58,22 @@
       notify:
       - Restart tor
 
-    - name: restart tor after acpi sleep/resume
-      blockinfile:
-        path: /etc/systemd/system/tor-resume-restart.service
-        create: yes
-        mode: "0444"
+    - name: restart tor after suspend/sleep
+      copy:
+        dest: /usr/lib/systemd/system-sleep/tor
+        mode: "755"
         owner: root
         group: root
-        marker: "# {mark} ANSIBLE MANAGED BLOCK"
-        block: |
-          # restart tor after acpi sleep/resume
-          [Unit]
-          Description=Restart Tor after acpi resume
-          After=suspend.target
-          
-          [Service]
-          Type=simple
-          ExecStart=/usr/bin/systemctl --no-block restart tor.service
-          
-          [Install]
-          WantedBy=suspend.target
-      
-    - name: enable restart tor after acpi sleep/resume
-      command: systemctl enable tor-resume-restart.service
-      args:
-        creates: /etc/systemd/system/suspend.target.wants/tor-resume-restart.service
+        content: |
+          #!/bin/sh
+          case "$1" in
+              pre)
+                  systemctl stop tor.service
+                  ;;
+              post)
+                  systemctl start tor.service
+                  ;;
+          esac
 
     - name: Privoxy Config
       blockinfile:
