@@ -1,17 +1,16 @@
 #!/bin/bash
 
+if [ -d $(cat /run/mint-config-update.sh.lock) ]
+then
+  echo "Lockfile /run/mint-config-update.sh.lock exists"
+  exit 0
+fi
+
 if whoami | grep -q ^root$
 then
   # lockfile for systemd-service
   trap "rm -f /run/mint-config-update.sh.lock" EXIT
   echo $$ >/run/mint-config-update.sh.lock
-  #if find /var/log/mint-config-update.sh.log -mmin -60 | grep -q /var/log/mint-config-update.sh.log
-  #then
-  #  echo "$0 was running already in the last 60 minutes"
-  #  rm -f /run/mint-config-update.sh.lock
-  #  sleep 60
-  #  exit 0
-  #fi
 fi
 
 # download and run
