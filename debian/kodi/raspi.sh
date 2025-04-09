@@ -149,8 +149,11 @@ fi
 EOF
 
 # autostart kodi in desktop
-mkdir -p /home/${user}/.config/autostart
-cp /usr/share/applications/kodi.desktop /home/${user}/.config/autostart/kodi.desktop
+if ! [ -s /home/${user}/.config/autostart/kodi.desktop ]
+then
+  mkdir -p /home/${user}/.config/autostart
+  cp /usr/share/applications/kodi.desktop /home/${user}/.config/autostart/kodi.desktop
+fi
 
 # rights
 chmod 700 /home/${user} /home/${user}/.xsessionrc /home/${user}/.config /home/${user}/.config/autostart /home/${user}/.config/autostart/kodi.desktop
