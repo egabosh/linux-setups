@@ -1,6 +1,6 @@
 #!/bin/bash
 
-[ -s /run/mint-config-update.sh.lock ] && if [ -d $(cat /run/mint-config-update.sh.lock) ]
+[ -s /run/mint-config-update.sh.lock ] && if [ -d "/proc/$(cat /run/mint-config-update.sh.lock)" ]
 then
   echo "Lockfile /run/mint-config-update.sh.lock exists"
   exit 0
