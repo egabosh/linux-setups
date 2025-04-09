@@ -4,7 +4,7 @@ mydomain="$1"
 if [ -z "$mydomain" ] 
 then
   [ -s "/etc/mydomain" ] && mydomain=$(head -n1 /etc/mydomain)
-  [ -z "$mydomain" ] && mydomain=$(hostname)
+  [ -z "$mydomain" ] && mydomain=nodomain
 fi
 
 echo "!!! ACHTUNG !!!
@@ -48,29 +48,14 @@ then
 fi
 
 # hostname
-if hostname | grep -q "^${defaultuser}-"
-then
-  # remove old whoogle path if available
-  if [ -f /home/docker/whoogle.$(hostname)/docker-compose.yml ]
-  then
-    docker-compose -f /home/docker/whoogle.$(hostname)/docker-compose.yml down
-    rm -rf /home/docker/whoogle.$(hostname)
-  fi
-  host=$(cat /etc/hostname | sudo sed "s/^${defaultuser}-//")
-  hostnamectl set-hostname ${host}
-fi  
+host=$(cat /etc/hostname | sed "s/^${defaultuser}-//" | cut  -d. -f1)
+hostnamectl set-hostname ${host}.mint.${mydomain}
 
-# domainname
-if ! egrep -q "\.mint.${mydomain}$" /etc/hostname
+# cleanup whoogle
+if ! [ -s /home/docker/whoogle.$(hostname)/docker-compose.yml ]
 then
-  # remove old whoogle path if available
-  if [ -f /home/docker/whoogle.$(hostname)/docker-compose.yml ]
-  then
-    docker-compose -f /home/docker/whoogle.$(hostname)/docker-compose.yml down
-    rm -rf /home/docker/whoogle.$(hostname)
-  fi
-  host=$(cat /etc/hostname | cut -d. -f1)
-  hostnamectl set-hostname ${host}.mint.${mydomain}
+  find /home/docker/whoogle.* -name docker-compose.yml -exec docker compose -f {} down \;
+  rm -rf /home/docker/whoogle.*
 fi
 
 # fix for creating notify.sh dir from docker start if file not present
