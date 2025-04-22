@@ -21,8 +21,9 @@
         mode: '0444'
         backup: yes
       with_items:
-        - "/usr/lib/firefox/distribution/policies.json"
+        - "/etc/firefox/policies/policies.json"
         - "/etc/librewolf/policies/policies.json"
+        #- "/usr/lib/firefox/distribution/policies.json"
     
     - name: Get sha256
       shell: wget -q https://gitlab.com/api/v4/projects/24386000/packages/generic/librewolf/latest/LibreWolf.{{ ansible_architecture }}.AppImage.sha256 -O - | cut -d" " -f1
