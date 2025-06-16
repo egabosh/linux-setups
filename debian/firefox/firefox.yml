@@ -12,6 +12,17 @@
         path: /etc/librewolf/policies
         state: directory
 
+    - name: Ensure Firefox policy directories exist
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        owner: root
+        group: root
+        mode: '0755'
+      with_items:
+        - "/etc/firefox/policies"
+        - "/etc/librewolf/policies"
+
     - name: Firefox policy
       ansible.builtin.get_url:
         url: https://raw.githubusercontent.com/egabosh/linux-setups/refs/heads/main/debian/firefox/policies.json
