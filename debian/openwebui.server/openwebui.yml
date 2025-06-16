@@ -1,0 +1,119 @@
+---
+- name: openwebui
+  hosts: all
+  tasks:
+
+    - name: Create /home/docker/openwebui.{{inventory_hostname}} dir
+      ansible.builtin.file:
+        path: /home/docker/openwebui.{{inventory_hostname}}
+        owner: root
+        group: docker
+        state: directory
+        mode: '0550'
+
+#    - name: /usr/local/sbin/autoupdate.d/openwebui-ssl.update
+#      blockinfile:
+#        path: /usr/local/sbin/autoupdate.d/openwebui-ssl.update
+#        create: yes
+#        mode: 0550
+#        owner: root
+#        group: root
+#        marker: "# {mark} ANSIBLE MANAGED BLOCK"
+#        block: |
+#          cd /home/docker/openwebui.{{inventory_hostname}}
+#
+#        backup: yes
+#        validate: /bin/bash -n %s
+#
+#    - name: /usr/local/sbin/autoupdate.d/openwebui-ssl.update shebang
+#      lineinfile:
+#        path: /usr/local/sbin/autoupdate.d/openwebui-ssl.update
+#        insertbefore: BOF
+#        line: "#!/bin/bash -e"
+#
+#    - name: /home/docker/openwebui.{{inventory_hostname}}/ssl.cnf (use ssl in mariadb)
+#      blockinfile:
+#        path: /home/docker/openwebui.{{inventory_hostname}}/ssl.cnf
+#        create: yes
+#        mode: 0444
+#        owner: root
+#        group: docker
+#        marker: "# {mark} ANSIBLE MANAGED BLOCK"
+#        block: |
+#          [mariadbd]
+#          ssl=1
+#          ssl-cert=/etc/mysql/certificate.pem
+#          ssl-key=/etc/mysql/key.pem
+#        backup: yes
+
+    - name: /home/docker/openwebui.{{inventory_hostname}}/docker-compose.yml Container Configuration
+      blockinfile:
+        path: /home/docker/openwebui.{{inventory_hostname}}/docker-compose.yml
+        create: yes
+        mode: 0440
+        owner: root
+        group: docker
+        marker: "# {mark} ANSIBLE MANAGED BLOCK"
+        block: |
+        
+          services:
+
+            openwebui.{{inventory_hostname}}--ollama:
+              image: ollama/ollama:latest
+              cap_add:
+                - SYS_NICE
+              restart: unless-stopped
+              networks:
+                - openwebui.{{inventory_hostname}}--networka
+              volumes:
+                - ./ollama-data:/root/.ollama
+                - /etc/localtime:/etc/localtime:ro
+
+            openwebui.{{inventory_hostname}}:
+              image: ghcr.io/open-webui/open-webui
+              restart: unless-stopped
+              environment:
+                - OLLAMA_BASE_URL=http://openwebui.{{inventory_hostname}}--ollama:11434
+                - WEBUI_AUTH=False
+              volumes:
+                - /etc/localtime:/etc/localtime:ro
+                - ./openwebui-data:/app/backend/data
+              networks:
+                - openwebui.{{inventory_hostname}}--network
+                - traefik
+              labels:
+                - traefik.enable=true
+                # HTTPS
+                - traefik.http.routers.openwebui-{{ ansible_facts['hostname'] }}.rule=Host(`openwebui.{{ ansible_facts['nodename'] }}`)
+                - traefik.http.routers.openwebui-{{ ansible_facts['hostname'] }}.entrypoints=https
+                - traefik.http.routers.openwebui-{{ ansible_facts['hostname'] }}.tls=true
+                # Proxy to service-port
+                - traefik.http.services.openwebui-{{ ansible_facts['hostname'] }}.loadbalancer.server.port=80
+                - traefik.http.routers.openwebui-{{ ansible_facts['hostname'] }}.service=openwebui-{{ ansible_facts['hostname'] }}
+                # cert via letsencrypt
+                - traefik.http.routers.openwebui-{{ ansible_facts['hostname'] }}.tls.certresolver=letsencrypt
+                # Traefik network
+                - traefik.docker.network=traefik
+                # auth
+                - traefik.http.routers.openwebui-{{ ansible_facts['hostname'] }}.middlewares=secHeaders@file,default-basic-auth@file
+              depends_on:
+                - openwebui.{{inventory_hostname}}--ollama
+
+          networks:
+            openwebui.{{inventory_hostname}}--network:
+              driver: bridge
+              driver_opts:
+                com.docker.network.bridge.name: br-openwebui
+            traefik:
+              external: true
+
+        backup: yes        
+      notify: Restart openwebui
+
+  handlers:
+
+    - name: Restart openwebui
+      ansible.builtin.shell: docker-compose up -d --force-recreate
+      args:
+        chdir: /home/docker/openwebui.{{inventory_hostname}}
+
