@@ -21,6 +21,7 @@
           - libvirt-clients
           - bridge-utils
           - virt-manager
+          - virt-viewer
         state: present
 
     - name: add user to group libvirt
