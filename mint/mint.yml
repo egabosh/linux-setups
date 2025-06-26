@@ -111,7 +111,6 @@
       apt:
         name:
           - xserver-xorg-video-qxl
-          - qxl-guest-utils
           - spice-vdagent
           - qemu-guest-agent
           - virtiofsd
