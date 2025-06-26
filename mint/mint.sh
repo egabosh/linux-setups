@@ -106,7 +106,7 @@ sudo chmod 700 /usr/local/sbin/linux_setups_debian_install.sh
 
 if [ -f /etc/mint-minimal ]
 then
-  apt remove --purge thunderbird libreoffice*
+  apt-get -a remove --purge thunderbird libreoffice*
   export PLAYBOOKS="debian/basics/basics.yml
 debian/firewall/firewall.yml
 debian/runchecks/runchecks.yml
