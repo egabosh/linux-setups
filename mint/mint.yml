@@ -108,6 +108,7 @@
           - com.github.tchx84.Flatseal
         state: present
         method: system
+      when: not mint_minimal_file.stat.exists
   
     # Gather facts about the system, including virtualization type
     - name: Gather system facts
