@@ -104,7 +104,18 @@ sudo sed -i 's/ victoria / virginia /g' /etc/apt/sources.list.d/official-package
 sudo wget https://raw.githubusercontent.com/egabosh/linux-setups/refs/heads/main/debian/install.sh -O /usr/local/sbin/linux_setups_debian_install.sh
 sudo chmod 700 /usr/local/sbin/linux_setups_debian_install.sh
 
-export PLAYBOOKS="debian/basics/basics.yml
+if [ -f /etc/mint-minimal ]
+then
+  apt remove --purge thunderbird libreoffice*
+  export PLAYBOOKS="debian/basics/basics.yml
+debian/firewall/firewall.yml
+debian/runchecks/runchecks.yml
+debian/backup/backup.yml
+debian/autoupdate/autoupdate.yml
+debian/firefox/firefox.yml
+mint/mint.yml"
+else
+  export PLAYBOOKS="debian/basics/basics.yml
 debian/firewall/firewall.yml
 debian/runchecks/runchecks.yml
 debian/backup/backup.yml
@@ -124,6 +135,7 @@ debian/chromium/chromium.yml
 debian/signal-desktop/signal-desktop.yml
 debian/element-desktop/element-desktop.yml
 debian/wireguard.client/wireguard-client.yml"
+fi
 
 echo $PLAYBOOKS | sudo tee /usr/local/etc/playbooks >/dev/null
 sudo -E bash -x /usr/local/sbin/linux_setups_debian_install.sh
