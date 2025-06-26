@@ -1,7 +1,22 @@
 ---
 - name: Tornet Debian Linux Setup
   hosts: all
+
+  vars:
+    sn: 43  # default vnet subnet (192.168.{{ sn }}.255)
+
   tasks:
+
+    - name: check if this is a vm
+      ansible.builtin.command: systemd-detect-virt --quiet
+      register: virt_check
+      ignore_errors: yes
+
+    - name: use sn 47 (192.168.47.255) if this is a vm
+      set_fact:
+        sn: 47
+      when: virt_check.rc == 0
+
     
     - name: Packages for tor
       apt:
@@ -104,8 +119,8 @@
           auto tornet0
           iface tornet0 inet static
             bridge_ports none
-            address 192.168.43.1
-            broadcast 192.168.43.255
+            address 192.168.{{ sn }}.1
+            broadcast 192.168.{{ sn }}.255
             netmask 255.255.255.0
       notify:
       - Restart tornet0
@@ -133,9 +148,9 @@
           *nat
           #:POSTROUTING ACCEPT - [0:0]
           :POSTROUTING ACCEPT
-          # Route network 192.168.43.0/24 (tornet0) to transparent Tor-Proxy (udp not supported by Tor)
+          # Route network 192.168.{{ sn }}.0/24 (tornet0) to transparent Tor-Proxy (udp not supported by Tor)
           # Activate "normal" routing for non-Internet Networks
-          -A POSTROUTING -s 192.168.43.0/24 -j MASQUERADE
+          -A POSTROUTING -s 192.168.{{ sn }}.0/24 -j MASQUERADE
           -A PREROUTING -i tornet0 -d 127.0.0.0/8 -j RETURN
           -A PREROUTING -i tornet0 -d 10.0.0.0/8 -j RETURN
           -A PREROUTING -i tornet0 -d 192.168.0.0/16 -j RETURN
@@ -152,11 +167,11 @@
           -A PREROUTING -i tornet0 -d 224.0.0.0/4 -j RETURN
           -A PREROUTING -i tornet0 -d 240.0.0.0/4 -j RETURN
           -A PREROUTING -i tornet0 -d 255.255.255.255/32 -j RETURN
-          -A PREROUTING -i tornet0 -s 192.168.43.0/24 -p udp --dport 53 -j RETURN
+          -A PREROUTING -i tornet0 -s 192.168.{{ sn }}.0/24 -p udp --dport 53 -j RETURN
           # Redirect all TCP-Connections to transparent Tor-Proxy
-          -A PREROUTING -i tornet0 -s 192.168.43.0/24 -p tcp --syn -j REDIRECT --to-ports 9040
+          -A PREROUTING -i tornet0 -s 192.168.{{ sn }}.0/24 -p tcp --syn -j REDIRECT --to-ports 9040
           # Redirect all non TCP-Connections into nirvana because Tor only speaks TCP
-          -A PREROUTING -i tornet0 -s 192.168.43.0/24 ! -p tcp -j DNAT --to 127.0.0.1:1
+          -A PREROUTING -i tornet0 -s 192.168.{{ sn }}.0/24 ! -p tcp -j DNAT --to 127.0.0.1:1
           COMMIT
       notify:
       - Restart ufw
@@ -211,14 +226,14 @@
         block: |
           port=53
           interface=tornet0
-          listen-address=192.168.43.1
+          listen-address=192.168.{{ sn }}.1
           bind-interfaces
           except-interface=lo
           domain-needed
           bogus-priv
           server=127.0.0.53
-          dhcp-range=192.168.43.100,192.168.43.200,255.255.255.0,12h
-          dhcp-option=option:ntp-server,192.168.43.1
+          dhcp-range=192.168.{{ sn }}.100,192.168.{{ sn }}.200,255.255.255.0,12h
+          dhcp-option=option:ntp-server,192.168.{{ sn }}.1
           log-queries
           log-dhcp
       notify:
