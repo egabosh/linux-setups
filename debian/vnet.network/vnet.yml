@@ -31,15 +31,18 @@
       shell: |
         ip -4 addr show | grep -v 'vnet0' | grep -oP '(?<=inet\s)\d+(\.\d+){3}'
       register: ip_output
+      changed_when: false
 
     - name: Check if any IP is in 192.168.42.0/24 subnet
       set_fact:
         ip_in_subnet: "{{ ip_output.stdout_lines | select('search', '^192\\.168\\.42\\.') | list | length > 0 }}"
+      changed_when: false
 
     - name: Set sn to 46 if an IP from the subnet is found
       set_fact:
         sn: 46
       when: ip_in_subnet | default(false)
+      changed_when: false
 
     - name: 'remove dnsmasq from startup'
       command: systemctl disable dnsmasq
