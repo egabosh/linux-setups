@@ -1,31 +1,62 @@
 ---
 - name: vnet Debian Linux Setup
   hosts: all
+  gather_facts: yes
 
   vars:
     sn: 42  # default vnet subnet (192.168.42.255)
 
   tasks:
 
-    - name: check if this is a vm
-      ansible.builtin.command: systemd-detect-virt --quiet
-      register: virt_check
-      ignore_errors: yes
+#    - name: check if this is a vm
+#      ansible.builtin.command: systemd-detect-virt --quiet
+#      register: virt_check
+#      ignore_errors: yes
+#
+#    - name: use sn 46 (192.168.46.255) if this is a vm
+#      set_fact:
+#        sn: 46
+#      when: virt_check.rc == 0
+#
+#    - name: Packages for vnet0
+#      apt:
+#        name:
+#          - bridge-utils
+#          - ufw
+#          - dnsmasq
+#          - ifupdown
+#        update_cache: no
+#        install_recommends: no
 
-    - name: use sn 46 (192.168.46.255) if this is a vm
+    - name: Collect all relevant interfaces (excluding vnet0 and lo)
+      set_fact:
+        relevant_interfaces: >-
+          {{
+            ansible_facts.interfaces
+            | difference(['lo', 'vnet0'])
+          }}
+
+    - name: Gather all IPv4 addresses (excluding vnet0)
+      set_fact:
+        relevant_ips: >-
+          {{
+            relevant_interfaces
+            | map('extract', ansible_facts)
+            | map(attribute='ipv4')
+            | select('defined')
+            | map(attribute='address')
+            | list
+          }}
+
+    - name: Check if any IP is in 192.168.42.0/24 subnet
+      set_fact:
+        ip_in_subnet: "{{ relevant_ips | select('ipaddr', '192.168.42.0/24') | list | length > 0 }}"
+      when: relevant_ips | length > 0
+
+    - name: Set sn to 46 if an IP from the subnet is found
       set_fact:
         sn: 46
-      when: virt_check.rc == 0
-
-    - name: Packages for vnet0
-      apt:
-        name:
-          - bridge-utils
-          - ufw
-          - dnsmasq
-          - ifupdown
-        update_cache: no
-        install_recommends: no
+      when: ip_in_subnet | default(false)
 
     - name: 'remove dnsmasq from startup'
       command: systemctl disable dnsmasq
