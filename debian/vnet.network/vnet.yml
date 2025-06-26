@@ -1,7 +1,6 @@
 ---
 - name: vnet Debian Linux Setup
   hosts: all
-  gather_facts: yes
 
   vars:
     sn: 42  # default vnet subnet (192.168.42.255)
@@ -17,41 +16,25 @@
 #      set_fact:
 #        sn: 46
 #      when: virt_check.rc == 0
-#
-#    - name: Packages for vnet0
-#      apt:
-#        name:
-#          - bridge-utils
-#          - ufw
-#          - dnsmasq
-#          - ifupdown
-#        update_cache: no
-#        install_recommends: no
 
-    - name: Collect all relevant interfaces (excluding vnet0 and lo)
-      set_fact:
-        relevant_interfaces: >-
-          {{
-            ansible_facts.interfaces
-            | difference(['lo', 'vnet0'])
-          }}
+    - name: Packages for vnet0
+      apt:
+        name:
+          - bridge-utils
+          - ufw
+          - dnsmasq
+          - ifupdown
+        update_cache: no
+        install_recommends: no
 
-    - name: Gather all IPv4 addresses (excluding vnet0)
-      set_fact:
-        relevant_ips: >-
-          {{
-            relevant_interfaces
-            | map('extract', ansible_facts)
-            | map(attribute='ipv4')
-            | select('defined')
-            | map(attribute='address')
-            | list
-          }}
+    - name: Get all IPv4 addresses except on vnet0
+      shell: |
+        ip -4 addr show | grep -v 'vnet0' | grep -oP '(?<=inet\s)\d+(\.\d+){3}'
+      register: ip_output
 
     - name: Check if any IP is in 192.168.42.0/24 subnet
       set_fact:
-        ip_in_subnet: "{{ relevant_ips | select('ipaddr', '192.168.42.0/24') | list | length > 0 }}"
-      when: relevant_ips | length > 0
+        ip_in_subnet: "{{ ip_output.stdout_lines | select('search', '^192\\.168\\.42\\.') | list | length > 0 }}"
 
     - name: Set sn to 46 if an IP from the subnet is found
       set_fact:
