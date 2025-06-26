@@ -17,6 +17,23 @@
         sn: 47
       when: virt_check.rc == 0
 
+    - name: Get all IPv4 addresses except on tornet0
+      shell: |
+        ip -4 addr show | grep -v 'tornet0' | grep -oP '(?<=inet\s)\d+(\.\d+){3}'
+      register: ip_output
+      changed_when: false
+
+    - name: Check if any IP is in 192.168.43.0/24 subnet
+      set_fact:
+        ip_in_subnet: "{{ ip_output.stdout_lines | select('search', '^192\\.168\\.43\\.') | list | length > 0 }}"
+      changed_when: false
+
+    - name: Set sn to 47 if an IP from the subnet is found
+      set_fact:
+        sn: 47
+      when: ip_in_subnet | default(false)
+      changed_when: false
+
     
     - name: Packages for tor
       apt:
