@@ -97,6 +97,34 @@
           - com.github.tchx84.Flatseal
         state: present
         method: system
+  
+    # Gather facts about the system, including virtualization type
+    - name: Gather system facts
+      ansible.builtin.setup:
+
+    # Check if the system is running as a KVM virtual machine
+    - name: Set fact if running on KVM
+      ansible.builtin.set_fact:
+        is_kvm_guest: "{{ ansible_facts.virtualization_type == 'kvm' and ansible_facts.virtualization_role == 'guest' }}"
+
+    - name: Install QXL components only if this is a KVM guest
+      apt:
+        name:
+          - xserver-xorg-video-qxl
+          - qxl-guest-utils
+          - spice-vdagent
+          - qemu-guest-agent
+          - virtiofsd
+          - linux-image-virtual
+      when: is_kvm_guest
+
+    - name: start qemu-guest-agent
+      service:
+        name: qemu-guest-agent
+        state: started
+        enabled: yes
+      when: is_kvm_guest
+
 
     - name: mint-config-update
       blockinfile:
