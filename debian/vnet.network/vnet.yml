@@ -1,7 +1,21 @@
 ---
 - name: vnet Debian Linux Setup
   hosts: all
+
+  vars:
+    sn: 42  # default vnet subnet (192.168.42.255)
+
   tasks:
+
+    - name: check if this is a vm
+      ansible.builtin.command: systemd-detect-virt --quiet
+      register: virt_check
+      ignore_errors: yes
+
+    - name: use sn 46 (192.168.46.255) if this is a vm
+      set_fact:
+        sn: 46
+      when: virt_check.rc == 0
 
     - name: Packages for vnet0
       apt:
@@ -35,8 +49,8 @@
           auto vnet0
           iface vnet0 inet static
             bridge_ports none
-            address 192.168.42.1
-            broadcast 192.168.42.255
+            address 192.168.{{ sn }}.1
+            broadcast 192.168.{{ sn }}.255
             netmask 255.255.255.0
       notify:
       - Restart vnet0
@@ -69,8 +83,8 @@
           *nat
           #:POSTROUTING ACCEPT - [0:0]
           :POSTROUTING ACCEPT
-          # Route network 192.168.42.0/24 (vnet0)
-          -A POSTROUTING -s 192.168.42.0/24 -j MASQUERADE
+          # Route network 192.168.{{ sn }}.0/24 (vnet0)
+          -A POSTROUTING -s 192.168.{{ sn }}.0/24 -j MASQUERADE
           COMMIT
       notify:
       - Restart ufw
@@ -125,14 +139,14 @@
         block: |
           port=53
           interface=vnet0
-          listen-address=192.168.42.1
+          listen-address=192.168.{{ sn }}.1
           bind-interfaces
           except-interface=lo
           domain-needed
           bogus-priv
           server=127.0.0.53
-          dhcp-range=192.168.42.100,192.168.42.200,255.255.255.0,12h
-          dhcp-option=option:ntp-server,192.168.42.1
+          dhcp-range=192.168.{{ sn }}.100,192.168.{{ sn }}.200,255.255.255.0,12h
+          dhcp-option=option:ntp-server,192.168.{{ sn }}.1
           log-queries
           log-dhcp
       notify:
