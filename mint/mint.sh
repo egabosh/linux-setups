@@ -113,6 +113,7 @@ debian/runchecks/runchecks.yml
 debian/backup/backup.yml
 debian/autoupdate/autoupdate.yml
 debian/firefox/firefox.yml
+debian/kvm.server/kvm.yml
 mint/mint.yml"
 else
   export PLAYBOOKS="debian/basics/basics.yml
