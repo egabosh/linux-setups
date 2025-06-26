@@ -35,40 +35,20 @@
           - speedtest-cli
           - gnome-characters
           - gparted
-          - handbrake
           # tools for android-smartphones/LineageOS
           - heimdall-flash
           - android-tools-adb
           - android-tools-fastboot
-          # OnlineBanking
-          - hibiscus
           # dconf-gui
           - dconf-editor
           # Media
-          - vlc
-          - gthumb
-          - mediainfo-gui
-          - easytag
-          - audacity
-          - asunder
-          - mediathekview
-          - audacious
-          - guvcview
-          - calf-plugins
           - lame
           - vorbis-tools
           - fdkaac
           - flac
-          - opus-tools
-          - wavpack
-          - musepack-tools
-          # retro
-          - dosbox
           # brennen
           - brasero
           # misc
-          - openoffice.org-hyphenation
-          - gpodder
           - wireguard
           - wireguard-tools
           - tinyproxy
@@ -82,14 +62,45 @@
           #- virtualbox-guest-additions-iso
           # screenshot
           - flameshot
+        update_cache: yes
+        install_recommends: no
+
+    - name: check if mint-minimal exists
+      ansible.builtin.stat:
+        path: /etc/mint-minimal
+      register: mint_minimal_file
+
+    - name: install additional packages if no mint minimal install
+      ansible.builtin.apt:
+        name:
+          - openoffice.org-hyphenation
           # groupware
           - evolution
           # nextcloud
           - nextcloud-desktop
           - nemo-nextcloud
-        update_cache: yes
+          # misc
+          - opus-tools
+          - wavpack
+          - musepack-tools
+          - gthumb
+          - mediainfo-gui
+          - easytag
+          - audacity
+          - asunder
+          - mediathekview
+          - audacious
+          - guvcview
+          - calf-plugins
+          - handbrake
+          - gpodder
+          # retro
+          - dosbox
+          # OnlineBanking
+          - hibiscus
         install_recommends: no
-        
+      when: not mint_minimal_file.stat.exists
+
     - name: Install Flatpaks
       community.general.flatpak:
         name:
