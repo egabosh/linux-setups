@@ -77,9 +77,9 @@
           - redshift-gtk
           - clamtk
           # virtualization
-          - virtualbox
-          - virtualbox-qt
-          - virtualbox-guest-additions-iso
+          #- virtualbox
+          #- virtualbox-qt
+          #- virtualbox-guest-additions-iso
           # screenshot
           - flameshot
           # groupware
