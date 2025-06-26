@@ -1,0 +1,43 @@
+- name: KVM
+  hosts: all
+  tasks:
+
+    - name: Read all users from /etc/passwd
+      ansible.builtin.getent:
+        database: passwd
+      register: passwd_entries
+
+    - name: find username with UID 1000
+      set_fact:
+        user_1000: "{{ item.key }}"
+      loop: "{{ passwd_entries.ansible_facts.getent_passwd | dict2items }}"
+      when: item.value[2] | int == 1000
+
+    - name: install packages
+      apt:
+        name:
+          - qemu-kvm
+          - libvirt-daemon-system
+          - libvirt-clients
+          - bridge-utils
+          - virt-manager
+        state: present
+
+    - name: add user to group libvirt
+      user:
+        name: "{{ user_1000 }}"
+        groups: libvirt
+        append: yes
+
+    - name: add user to group kvm
+      user:
+        name: "{{ user_1000 }}"
+        groups: kvm
+        append: yes
+
+    - name: ensure libvirt is running
+      systemd:
+        name: libvirtd
+        state: started
+        enabled: yes
+
