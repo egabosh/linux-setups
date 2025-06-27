@@ -11,6 +11,7 @@
       ansible.builtin.command: systemd-detect-virt --quiet
       register: virt_check
       ignore_errors: yes
+      changed_when: false
 
     - name: use sn 46 (192.168.46.255) if this is a vm
       set_fact:
@@ -145,6 +146,14 @@
         proto: tcp
         interface: vnet0
         direction: in
+
+    - name: Allow sending audio to pipewire (4656)
+      community.general.ufw:
+        rule: allow
+        direction: in
+        interface: vnet0
+        port: 4656
+        proto: tcp
 
     - name: dnsmasq DNS and DHCP for vnet0
       blockinfile:
