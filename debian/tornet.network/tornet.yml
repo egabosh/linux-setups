@@ -152,6 +152,26 @@
         value: '1'
         state: present
 
+    - name: create /etc/pipewire/pipewire-pulse.conf.d
+      ansible.builtin.file:
+        path: /etc/pipewire/pipewire-pulse.conf.d
+        state: directory
+        mode: '0755'
+
+    - name: pipewire listen on tcp:4656
+      ansible.builtin.copy:
+        dest: /etc/pipewire/pipewire-pulse.conf.d/99-server-tcp.conf
+        content: |
+          pulse.properties = {
+              server.address = [
+                  "tcp:4656"
+              ]
+          }
+        owner: root
+        group: root
+        mode: '0644'
+
+
     - name: ufw firewall rules for transparent tor proxy in tornet0
       blockinfile:
         path: /etc/ufw/before.rules
