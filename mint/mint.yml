@@ -137,12 +137,6 @@
         enabled: yes
       when: is_kvm_guest
 
-    #- name: get default gateway
-    #  ansible.builtin.command: ip route | grep default | awk '{print $3}'
-    #  register: default_gw
-    #  changed_when: false
-    #  when: is_kvm_guest
-
     - name: create /etc/pipewire/pipewire-pulse.conf.d
       ansible.builtin.file:
         path: /etc/pipewire/pipewire-pulse.conf.d
