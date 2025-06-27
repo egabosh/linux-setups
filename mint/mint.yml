@@ -136,11 +136,11 @@
         enabled: yes
       when: is_kvm_guest
 
-    - name: get default gateway
-      ansible.builtin.command: ip route | grep default | awk '{print $3}'
-      register: default_gw
-      changed_when: false
-      when: is_kvm_guest
+    #- name: get default gateway
+    #  ansible.builtin.command: ip route | grep default | awk '{print $3}'
+    #  register: default_gw
+    #  changed_when: false
+    #  when: is_kvm_guest
 
     - name: create /etc/pipewire/pipewire-pulse.conf.d
       ansible.builtin.file:
@@ -159,7 +159,7 @@
                 tunnel.mode = source
                 pulse.server.address = "tcp:{{ default_gw.stdout }}:4656"
                 node.name = "Input-to-Host"
-                node.description = "tcp forward to {{ default_gw.stdout }}"
+                node.description = "tcp forward to {{ ansible_default_ipv4.gateway }}"
                 # pulse.latency = 200
                 # reconnect.interval.ms = 0
                 # stream.props = { }
@@ -171,7 +171,7 @@
                 tunnel.mode = sink
                 pulse.server.address = "tcp:{{ default_gw.stdout }}:4656"
                 node.name = "Output-to-Host"
-                node.description = "tcp forward to {{ default_gw.stdout }}"
+                node.description = "tcp forward to {{ ansible_default_ipv4.gateway }}"
                 # pulse.latency = 200
                 # reconnect.interval.ms = 0
                 # stream.props = { }
