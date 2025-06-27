@@ -152,7 +152,7 @@
             { name = libpipewire-module-pulse-tunnel
               args = {
                 tunnel.mode = source
-                pulse.server.address = "tcp:{{ default_gw.stdout }}:4656"
+                pulse.server.address = "tcp:{{ ansible_default_ipv4.gateway }}:4656"
                 node.name = "Input-to-Host"
                 node.description = "tcp forward to {{ ansible_default_ipv4.gateway }}"
                 # pulse.latency = 200
@@ -164,7 +164,7 @@
             { name = libpipewire-module-pulse-tunnel
               args = {
                 tunnel.mode = sink
-                pulse.server.address = "tcp:{{ default_gw.stdout }}:4656"
+                pulse.server.address = "tcp:{{ ansible_default_ipv4.gateway }}:4656"
                 node.name = "Output-to-Host"
                 node.description = "tcp forward to {{ ansible_default_ipv4.gateway }}"
                 # pulse.latency = 200
