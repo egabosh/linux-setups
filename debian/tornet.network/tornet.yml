@@ -231,6 +231,14 @@
         interface: tornet0
         direction: in
 
+    - name: Allow sending audio to pipewire (4656)
+      community.general.ufw:
+        rule: allow
+        direction: in
+        interface: tornet0
+        port: 4656
+        proto: tcp
+
     - name: dnsmasq DNS and DHCP for tornet0
       blockinfile:
         path: /etc/dnsmasq-tornet0.conf
