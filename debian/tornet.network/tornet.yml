@@ -523,6 +523,18 @@
           Domains=~." | sudo tee /etc/systemd/resolved.conf.d/DoHoT.conf
               sudo systemctl restart systemd-resolved.service
             fi
+            if [[ -s /etc/mydomain ]] & systemd-detect-virt -q
+            then
+              MYIP=$(ip -o addr show up scope global | grep -Eo 'inet [0-9.]+' | cut -d' ' -f2)
+              if [ $MYIP =~ ^192\.168\.42\. ]] || [ $MYIP =~ ^192\.168\.43\. ]]
+              then
+                MYDFAULT_GW=$(ip route | awk '/default/ {print $3}')
+                MYDOMAIN="$(cat /etc/mydomain)"
+                echo "[Resolve]
+          DNS=$MYDFAULT_GW
+          Domains=$MYDOMAIN" | sudo tee /etc/systemd/resolved.conf.d/01-virt.conf
+              fi
+            fi
           fi
          
           cd -
