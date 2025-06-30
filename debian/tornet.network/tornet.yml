@@ -164,6 +164,7 @@
         content: |
           pulse.properties = {
               server.address = [
+                  "unix:native"
                   "tcp:4656"
               ]
           }
