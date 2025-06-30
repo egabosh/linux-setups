@@ -525,10 +525,9 @@
             fi
             if [[ -s /etc/mydomain ]] & systemd-detect-virt -q
             then
-              MYIP=$(ip -o addr show up scope global | grep -Eo 'inet [0-9.]+' | cut -d' ' -f2)
-              if [ $MYIP =~ ^192\.168\.42\. ]] || [ $MYIP =~ ^192\.168\.43\. ]]
+              MYDFAULT_GW=$(ip route | awk '/default/ {print $3}')
+              if [ $MYDFAULT_GW =~ ^192\.168\.42\. ]] || [ $MYDFAULT_GW =~ ^192\.168\.43\. ]]
               then
-                MYDFAULT_GW=$(ip route | awk '/default/ {print $3}')
                 MYDOMAIN="$(cat /etc/mydomain)"
                 echo "[Resolve]
           DNS=$MYDFAULT_GW
