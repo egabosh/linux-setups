@@ -533,6 +533,7 @@
                 echo "[Resolve]
           DNS=$MYDFAULT_GW
           Domains=$MYDOMAIN" | sudo tee /etc/systemd/resolved.conf.d/01-virt.conf
+                sudo systemctl restart systemd-resolved.service 
               fi
             fi
           fi
