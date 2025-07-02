@@ -63,6 +63,8 @@
           #- virtualbox-guest-additions-iso
           # screenshot
           - flameshot
+          # print
+          - printer-driver-escpr
         update_cache: yes
         install_recommends: no
 
