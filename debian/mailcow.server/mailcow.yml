@@ -212,7 +212,7 @@
         block: |
           cd /home/docker/mailcow-dockerized
           mkdir -p ${BACKUPDIR}/mailcow-backup_script
-          BACKUP_LOCATION=${BACKUPDIR}/mailcow-backup_script /home/docker/mailcow-dockerized/helper-scripts/backup_and_restore.sh backup all --delete-days 3 || g_echo_error "MailCow-Backup (mysql crypt redis) war nicht erfolgreich"
+          BACKUP_LOCATION=${BACKUPDIR}/mailcow-backup_script /home/docker/mailcow-dockerized/helper-scripts/backup_and_restore.sh backup all --delete-days 1 || g_echo_error "MailCow-Backup (mysql crypt redis) war nicht erfolgreich"
         backup: yes
         validate: /bin/bash -n %s
 
