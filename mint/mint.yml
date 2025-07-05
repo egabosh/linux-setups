@@ -132,7 +132,7 @@
           - linux-image-virtual
       when: is_kvm_guest
 
-   - name: Install KVM/libvirt if this is not a KVM guest
+    - name: Install KVM/libvirt if this is not a KVM guest
       apt:
         name:
           - virtinst
