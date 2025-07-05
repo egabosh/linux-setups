@@ -268,18 +268,103 @@
         port: '42000'
         proto: udp
 
-    # no more pulse since Mint 22
-    #- name: force samplerate to 44100 to avoid problems with additional audio hardware for live streams
-    #  blockinfile:
-    #    path: /etc/pulse/daemon.conf
-    #    owner: root
-    #    group: root
-    #    create: no
-    #    marker: "; {mark} ANSIBLE MANAGED BLOCK"
-    #    block: |
-    #      default-sample-rate = 44100
-    #      alternate-sample-rate = 44100
-    #    backup: yes
+    - name: PipeWire Sample-Rate 44100 Hz
+      blockinfile:
+        path: /etc/pipewire/pipewire.conf.d/99-sample-rate.conf
+        owner: root
+        group: root
+        create: yes
+        marker: "; {mark} ANSIBLE MANAGED BLOCK"
+        block: |
+          context.properties = {
+              default.clock.rate = 44100
+          }
+        backup: yes
+
+    - name: Check if /usr/local/etc/cryptstick.key exists
+      stat:
+        path: /usr/local/etc/cryptstick.key
+      register: cryptstick_key
+
+    - name: Add entry to /etc/crypttab for CRYPTSTICK
+      lineinfile:
+        path: /etc/crypttab
+        regexp: '^cryptstick '
+        line: 'cryptstick LABEL=CRYPTSTICK /usr/local/etc/cryptstick.key luks,nofail'
+        create: yes
+        state: present
+        insertafter: EOF
+      when: cryptstick_key.stat.exists
+
+    - name: Add entry to /etc/fstab for decrypted USB stick
+      lineinfile:
+        path: /etc/fstab
+        regexp: '^/dev/mapper/cryptstick'
+        line: '/dev/mapper/cryptstick /home ext4 defaults,nofail 0 2'
+        create: yes
+        state: present
+        insertafter: EOF
+      when: cryptstick_key.stat.exists
+
+    - name: Create mountpoint for decrypted USB stick
+      file:
+        path: /media/cryptstick
+        state: directory
+        owner: root
+        group: root
+        mode: '0755'
+      when: cryptstick_key.stat.exists
+
+    - name: Systemd mount unit for cryptstick
+      copy:
+        dest: /etc/systemd/system/media-cryptstick.mount
+        content: |
+          [Unit]
+          Description=Mount cryptstick device
+          After=cryptsetup.target
+
+          [Mount]
+          What=/dev/mapper/cryptstick
+          Where=/media/cryptstick
+          Type=auto
+          Options=defaults
+
+          [Install]
+          WantedBy=multi-user.target
+
+      notify: Reload systemd
+      when: cryptstick_key.stat.exists
+
+    - name: Systemd-Service-Unit for lightdm restart
+      copy:
+        dest: /etc/systemd/system/restart-lightdm-on-cryptstick.service
+        content: |
+          [Unit]
+          Description=Restart LightDM when cryptstick is mounted
+          After=media-cryptstick.mount
+          Requires=media-cryptstick.mount
+
+          [Service]
+          Type=oneshot
+          ExecStart=/bin/systemctl restart lightdm
+
+          [Install]
+          WantedBy=media-cryptstick.mount
+
+      notify: Reload systemd
+      when: cryptstick_key.stat.exists
+
+    - name: enable Systemd-Service
+      ansible.builtin.systemd:
+        name: restart-lightdm-on-cryptstick.service
+        enabled: yes
+      when: cryptstick_key.stat.exists
+
+  handlers:
+    - name: Reload systemd
+      ansible.builtin.systemd:
+        daemon_reload: yes
+
 
 
   handlers:
