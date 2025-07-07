@@ -72,7 +72,17 @@
             fi
           fi
           [ -x /usr/bin/flatpak ] && flatpak update --system --noninteractive --force-remove
+          
+          # clean apt cache
           apt-get clean
+
+          # clean root mails
+          N=$(mail -H | wc -l)
+          DEL=$((N-100))
+          if [ "$DEL" -gt 0 ]; then
+              printf "d 1-%d\nq\n" "$DEL" | mail
+          fi
+
         backup: yes
         validate: /bin/bash -n %s
 
