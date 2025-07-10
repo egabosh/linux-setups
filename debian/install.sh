@@ -20,6 +20,8 @@ rm -rf linux-setups
 git clone https://github.com/egabosh/linux-setups.git
 cd linux-setups
 
+[[ -z "$PLAYBOOKS" ]] && [[ -s /usr/local/etc/playbooks ]] && PLAYBOOKS=$(cat /usr/local/etc/playbooks)
+
 for playbook in $PLAYBOOKS
 do
   echo "=== $playbook"
