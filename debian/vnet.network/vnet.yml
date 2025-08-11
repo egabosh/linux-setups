@@ -12,6 +12,7 @@
       register: virt_check
       ignore_errors: yes
       changed_when: false
+      failed_when: false
 
     - name: use sn 46 (192.168.46.255) if this is a vm
       set_fact:
