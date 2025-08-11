@@ -51,7 +51,7 @@
         marker: "# {mark} ANSIBLE MANAGED BLOCK"
         block: |
           g_echo_ok "Checking for systemupdates"
-          apt-get update || g_echo_error "apt-get update fehlgeschlagen"
+          apt-get -y update || g_echo_error "apt-get update fehlgeschlagen"
           if ! hostname | grep -q ".mint."
           then
             if ! apt-get -s dist-upgrade 2>&1 | sed -e "s/'/'\\\\''/g; 1s/^/'/; \$s/\$/'/" | tee $g_tmp/sys-updatelist | egrep "^0.+, 0 .+, 0 .+ 0 .+\."
