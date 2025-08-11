@@ -259,7 +259,7 @@
               #docker -l warn compose --ansi never up -d --force-recreate >$g_tmp/up 2>&1   || g_echo_error "$docker: docker compose up fehlgeschlagen: $(cat $g_tmp/up)"
               echo $$ >/tmp/$(basename $docker)
               docker -l warn compose --ansi never up -d --remove-orphans >$g_tmp/up 2>&1 || g_echo_error "$docker: docker compose up fehlgeschlagen: $(cat $g_tmp/up)"
-              egrep -v -- "-wpcli" $g_tmp/up | grep "Started" >${g_tmp}/started && g_echo_warn "$docker Update installiert: $(cat ${g_tmp}/started)"
+              egrep -v -- "-wpcli" $g_tmp/up | grep "Started" >${g_tmp}/started && g_echo_warn "$docker Update installed: $(cat ${g_tmp}/started)"
             fi
             if [ -f Dockerfile ]
             then
