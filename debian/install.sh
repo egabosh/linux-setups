@@ -11,8 +11,8 @@ then
   exit $?
 fi
 
-sudo apt-get -y update
-which ansible >/dev/null 2>&1 || sudo apt-get -y install ansible git
+sudo DEBIAN_FRONTEND=noninteractive apt-get -y update --allow-releaseinfo-change
+which ansible >/dev/null 2>&1 || sudo DEBIAN_FRONTEND=noninteractive apt-get -y install ansible git
 sudo ansible-galaxy collection install community.general
 
 cd
