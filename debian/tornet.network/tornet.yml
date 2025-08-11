@@ -11,6 +11,8 @@
       ansible.builtin.command: systemd-detect-virt --quiet
       register: virt_check
       ignore_errors: yes
+      changed_when: false
+      failed_when: false
 
     - name: use sn 47 (192.168.47.255) if this is a vm
       set_fact:
