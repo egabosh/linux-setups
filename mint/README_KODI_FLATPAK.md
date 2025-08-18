@@ -1,4 +1,4 @@
-# Kodi (install and config (with flatpak)
+# Kodi - install and config (with flatpak)
 
 ## Install Kodi flatpack
 ```
