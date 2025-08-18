@@ -25,7 +25,7 @@ Get Public key
 ```
 cat ~/.ssh/id_ed25519.pub`
 ```
-Then write the public-key to `/home/USER-ON-SERVER/.ssh/authorized_keys` on the server (replace  USER-ON-SERVERwith yout user on server-side)
+Then write the public-key to `/home/USER-ON-SERVER/.ssh/authorized_keys` on the server (replace USER-ON-SERVER with yout user on server-side)
 
 Reload systemd
 ```
