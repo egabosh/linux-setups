@@ -33,4 +33,5 @@ Reload systemd
 mount:
 
 `sudo mount -a`
+
 The targets should then be reached and the data should be mounted under /share if accessible from the network.
