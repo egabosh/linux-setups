@@ -6,7 +6,7 @@ Open /etc/fstab with editor for example
 
 `sudo xed /etc/fstab`
 
-Attention - do not change anything or add the following line at the end - replace the “user” with your local username in Mint:
+Attention - do not change anything or add the following line at the end - replace the "user" with your local username in Mint and "sftp-server" with the hostname of the SFTP-Server:
 
 `user@sftp-server:/ /share fuse.sshfs  port=28,x-systemd.automount,_netdev,users,idmap=user,IdentityFile=/home/user/.ssh/id_ed25519,allow_other,reconnect 0 0`
 
