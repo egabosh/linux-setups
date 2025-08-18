@@ -2,19 +2,19 @@ Install sshfs via application management, or
 
 `sudo apt install sshfs`
 
-create the mount directory / mountpoint (replace user with your user in mint):
+create the mount directory / mountpoint (replace USER-IN-MINT with your username in mint):
 
 `sudo mkdir -p /share`
 
-`chown -R user /share`
+`chown -R USER-IN-MINT /share`
 
 Open /etc/fstab with editor for example
 
 `sudo xed /etc/fstab`
 
-Attention - do not change anything or add the following line at the end - replace the "user" with your local username in Mint and "sftp-server" with the hostname of the SFTP-Server:
+Attention - do not change anything, only add the following line at the end - replace "USER-ON-SERVER" with the sftp-user on the server, "SFTP-SERVER-HOST" with the hostname of the SFTP-Server and the "USER-IN-MINT" with your local username in Mint:
 
-`user@sftp-server:/ /share fuse.sshfs  port=28,x-systemd.automount,_netdev,users,idmap=user,IdentityFile=/home/user/.ssh/id_ed25519,allow_other,reconnect 0 0`
+`USER-ON-SERVER@SFTP-SERVER-HOST:/ /share fuse.sshfs  port=28,x-systemd.automount,_netdev,users,idmap=USER_IN_MINT,IdentityFile=/home/user/.ssh/id_ed25519,allow_other,reconnect 0 0`
 
 If you do not yet have an ed25519 keypair (~/.ssh/id\_ed25519 does not exist):
 
@@ -24,7 +24,7 @@ Get Public key
 
 `cat ~/.ssh/id_ed25519.pub`
 
-Then write the public-key to /home/user/.ssh/authorized_keys on the server (replace user with yout user on server-side)
+Then write the public-key to /home/USER-ON-SERVER/.ssh/authorized_keys on the server (replace user with yout user on server-side)
 
 Reload systemd
 
