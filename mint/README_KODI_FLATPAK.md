@@ -16,12 +16,16 @@ Download Config
 ```
 # go to addons-dir
 cd ~/.var/app/tv.kodi.Kodi/data/addons
+
 # parse newest version of addon language.de_de
 addonvers=$(wget -q https://mirrors.kodi.tv/addons/omega/resource.language.de_de/ -O - | egrep "resource.language.de_de-.+\.zip" | tail -n1 | cut -d\" -f2)
+
 # download language.de_de
 wget "https://mirrors.kodi.tv/addons/omega/resource.language.de_de/${addonvers}"
+
 # unpack language.de_de
 unzip resource.language.de_de-11.0.97.zip
+
 # load config
 wget https://raw.githubusercontent.com/egabosh/linux-setups/refs/heads/main/debian/kodi/kodi-settings/userdata/guisettings.xml -O ~/.var/app/tv.kodi.Kodi/data/userdata/guisettings.xml
 ```
@@ -97,7 +101,9 @@ xed ~/.var/app/tv.kodi.Kodi/data/userdata/mediasources.xml
 </mediasources>
 ```
 #### sources.xml
+```
 xed ~/.var/app/tv.kodi.Kodi/data/userdata/sources.xml
+```
 ```
 <sources>
     <programs>
@@ -127,7 +133,9 @@ xed ~/.var/app/tv.kodi.Kodi/data/userdata/sources.xml
 </sources>
 ```
 #### passwords.xml
+```
 xed ~/.var/app/tv.kodi.Kodi/data/userdata/passwords.xml
+```
 ```
 <passwords>
     <path>
