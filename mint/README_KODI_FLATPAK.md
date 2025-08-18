@@ -87,12 +87,13 @@ Then write the public-key to `/home/SFTPUSER/.ssh/authorized_keys` on the server
 flatpak --user override tv.kodi.Kodi --filesystem=~/.ssh
 ```
 
-### Write config files
-Edit tags DBHOSTNAME, DBPORT, DBUSER, DBPASSWORD
+### Edit/Write config files
+
+#### mediasources.xml
+
 ```
 xed ~/.var/app/tv.kodi.Kodi/data/userdata/mediasources.xml
 ```
-#### mediasources.xml
 ```
 <mediasources>
     <network>
