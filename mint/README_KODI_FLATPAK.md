@@ -1,4 +1,6 @@
-# Install Kodi flatpack
+# Kodi (install and config (with flatpak)
+
+## Install Kodi flatpack
 ```
 sudo flatpak -y install tv.kodi.Kodi
 ```
