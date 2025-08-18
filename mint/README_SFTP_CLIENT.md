@@ -2,6 +2,12 @@ Install sshfs via application management, or
 
 `sudo apt install sshfs`
 
+create the mount directory / mountpoint (replace user with your user in mint):
+
+`sudo mkdir -p /share`
+
+`chown -R user /share`
+
 Open /etc/fstab with editor for example
 
 `sudo xed /etc/fstab`
@@ -19,12 +25,6 @@ Get Public key
 `cat ~/.ssh/id_ed25519.pub`
 
 Then write the public-key to /home/user/.ssh/authorized_keys on the server (replace user with yout user on server-side)
-
-create the mount directory:
-
-`sudo mkdir -p /share`
-
-`chown -R user /share`
 
 Reload systemd
 
