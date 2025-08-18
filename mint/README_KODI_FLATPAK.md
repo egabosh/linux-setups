@@ -8,7 +8,7 @@ sudo flatpak -y install tv.kodi.Kodi
 ## German localization
 Create userdata and addons dir if not exists:
 ```
-mkdir -p ~/.var/app/tv.kodi.Kodi/data/userdata  /.var/app/tv.kodi.Kodi/data/addons
+mkdir -p ~/.var/app/tv.kodi.Kodi/data/userdata  ~/.var/app/tv.kodi.Kodi/data/addons
 ```
 Download Config
 ```
@@ -34,7 +34,7 @@ mkdir -p ~/.var/app/tv.kodi.Kodi/data/userdata
 ### Write config in advancedsettings.xml:
 Edit tags DBHOSTNAME, DBPORT, DBUSER, DBPASSWORD
 ```
-xed /.var/app/tv.kodi.Kodi/data/userdata/advancedsettings.xml
+xed ~/.var/app/tv.kodi.Kodi/data/userdata/advancedsettings.xml
 ```
 ```
 <advancedsettings>
