@@ -43,6 +43,7 @@
                 ND_ENABLEINSIGHTSCOLLECTOR: false
                 ND_LASTFM_ENABLED: false
                 ND_LISTENBRAINZ_ENABLED: false
+                ND_SCANNER_PURGEMISSING: always
               networks:
                 - navidrome.{{inventory_hostname}}--network
                 - traefik
