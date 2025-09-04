@@ -7,7 +7,7 @@ create the mount directory / mountpoint (replace USER-IN-MINT with your username
 sudo mkdir -p /share
 ```
 ```
-chown USER-IN-MINT /share
+sudo chown USER-IN-MINT /share
 ```
 Open /etc/fstab with editor for example
 ```
