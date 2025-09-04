@@ -204,6 +204,7 @@ then
   dconf write /org/cinnamon/theme/name "'Mint-Y-Dark'"
   dconf write /org/gnome/desktop/interface/icon-theme "'Mint-Y-Dark'"
   dconf write /org/gnome/desktop/interface/gtk-theme "'Mint-Y-Dark'"
+  dconf write /org/gnome/desktop/interface/color-scheme "'prefer-dark'"
  
   # Nemo Filemanager Settings
   dconf write /org/nemo/preferences/default-folder-viewer "'list-view'"
