@@ -23,16 +23,16 @@ ssh-keygen -t ed25519 -f ~/.ssh/id_ed25519 -P ""
 ```
 Get Public key
 ```
-cat ~/.ssh/id_ed25519.pub`
+cat ~/.ssh/id_ed25519.pub
 ```
 Then write the public-key to `/home/USER-ON-SERVER/.ssh/authorized_keys` on the server (replace USER-ON-SERVER with yout user on server-side)
 
 Reload systemd
 ```
-sudo systemctl daemon-reload`
+sudo systemctl daemon-reload
 ```
 mount:
 ```
-sudo mount -a`
+sudo mount -a
 ```
 The targets should then be reached and the data should be mounted under /share if accessible from the network.
