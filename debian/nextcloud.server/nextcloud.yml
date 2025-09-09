@@ -403,7 +403,7 @@
           fi
           if [ -s /home/docker/nextcloud.{{inventory_hostname}}/nextcloud-data/data/nextcloud.log ]
           then
-            docker compose -f /home/docker/nextcloud.{{inventory_hostname}}/docker-compose.yml exec -ti -u www-data nextcloud.{{inventory_hostname}} ./occ log:tail 1000 | grep " Error " | grep -v "Can't get app storage," >"${g_tmp}/nextcloud-error.log"
+            docker compose -f /home/docker/nextcloud.{{inventory_hostname}}/docker-compose.yml exec -ti -u www-data nextcloud.{{inventory_hostname}} ./occ log:tail 1000 | grep " Error " | grep -v "Can't get app storage," | dd bs=1M count=1 2>/dev/null >"${g_tmp}/nextcloud-error.log"
             if [ -s "${g_tmp}/nextcloud-error.log" ]
             then
               g_echo_error "Errors in Nextcloud Log: $(cat "${g_tmp}/nextcloud-error.log")"
