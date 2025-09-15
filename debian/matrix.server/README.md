@@ -1,7 +1,15 @@
 # Dependencies
-- debian.ansible.basics
-- debian.ansible.docker
-- debian.ansible.traefik.server
+
+## minimal
+- debian/basics/basics.yml
+- debian/docker/docker.yml
+- debian/traefik.server/traefik.yml
+
+## recommended
+- debian/firewall/firewall.yml
+- debian/runchecks/runchecks.yml
+- debian/backup/backup.yml
+- debian/autoupdate/autoupdate.yml
 
 # Installation
 ```
