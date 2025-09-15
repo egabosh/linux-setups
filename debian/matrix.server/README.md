@@ -8,8 +8,17 @@
 ansible-playbook --connection=local --inventory $(hostname), --limit $(hostname) matrix.yml
 ```
 
+# Server URL:
+https://matrix.MYHOSTNAME
+
+# Web-Client URL
+https://matrix-web.MYHOSTNAME
+
+## initial Server User credentials
+`cat /home/docker/matrix.$(hostname)/env.user`
+
 # Admin UI
-https://matrix-admin.HOSTNAME
+https://matrix-admin.MYHOSTNAME
 
 Admin User: mx-admin
 
