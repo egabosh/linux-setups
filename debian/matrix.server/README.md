@@ -8,7 +8,12 @@
 ansible-playbook --connection=local --inventory $(hostname), --limit $(hostname) matrix.yml
 ```
 
-# User Administration
+# Admin UI
+https://matrix-admin.HOSTNAME
+Admin User: mx-admin
+Initial password: `cat /home/docker/matrix.$(hostname)/env`
+
+# Administration vial CLI
 Admin User is created while installation.
 Username: mx-admin
 Password can be found with 
