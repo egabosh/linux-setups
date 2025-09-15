@@ -559,6 +559,8 @@
           for roomid in $(docker run -t -v ./matrix-commander-data:/data:rw -v /etc/hosts:/etc/hosts:ro  matrixcommander/matrix-commander  --joined-rooms --output text)
           do
 
+            [[ "$roomid" == *":matrix.$(hostname)" ]] || continue
+
             echo "== Room ID $roomid"
 
             # get room name
