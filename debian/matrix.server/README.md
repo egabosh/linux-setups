@@ -32,7 +32,7 @@ Admin User: mx-admin
 
 Initial password: `cat /home/docker/matrix.$(hostname)/env`
 
-# Administration vial CLI
+# Administration via CLI
 Admin User is created while installation.
 Username: mx-admin
 Password can be found with 
