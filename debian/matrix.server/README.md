@@ -10,7 +10,9 @@ ansible-playbook --connection=local --inventory $(hostname), --limit $(hostname)
 
 # Admin UI
 https://matrix-admin.HOSTNAME
+
 Admin User: mx-admin
+
 Initial password: `cat /home/docker/matrix.$(hostname)/env`
 
 # Administration vial CLI
