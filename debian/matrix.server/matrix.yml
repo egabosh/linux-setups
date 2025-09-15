@@ -587,6 +587,7 @@
               image: matrixcommander/matrix-commander
               volumes:
                 - /etc/localtime:/etc/localtime:ro
+                - /etc/hosts:/etc/hosts:ro
                 - ./matrix-commander-data-${roomnospace}:/data:rw
                 - ${pipe}:/${pipebasename}
               entrypoint: /bin/bash -c 'cd /data && tail -F \"/${pipebasename}\" | /app/matrix_commander/matrix-commander -m _ --html --room \"$room\" --log-level INFO INFO'
