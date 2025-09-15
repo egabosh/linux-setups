@@ -556,13 +556,13 @@
           echo "services:" >docker-compose.override.yml.new
 
           # go through existing rooms (ids) of matrix-commander user
-          for roomid in $(docker run -t -v ./matrix-commander-data:/data:rw  matrixcommander/matrix-commander  --joined-rooms --output text)
+          for roomid in $(docker run -t -v ./matrix-commander-data:/data:rw -v /etc/hosts:/etc/hosts:ro  matrixcommander/matrix-commander  --joined-rooms --output text)
           do
 
             echo "== Room ID $roomid"
 
             # get room name
-            room=$(docker run -t -v ./matrix-commander-data:/data:rw matrixcommander/matrix-commander:7.5 --get-room-info "\\$roomid" --log-level ERROR ERROR | cut -d\# -f2 | cut -d: -f1)
+            room=$(docker run -t -v ./matrix-commander-data:/data:rw -v /etc/hosts:/etc/hosts:ro matrixcommander/matrix-commander:7.5 --get-room-info "\\$roomid" --log-level ERROR ERROR | cut -d\# -f2 | cut -d: -f1)
 
             if [ -z "$room" ]
             then
@@ -608,7 +608,7 @@
           do
             echo "== Auth new root/matrix-commander instance ${newroom}"
             . ./env.user
-            docker run -t -v ./matrix-commander-data-${newroom}:/data:rw  matrixcommander/matrix-commander --login password --homeserver matrix.$(hostname) --user-login $MATRIX_SRV_USER --password $MATRIX_SRV_USER_PASSWORD --device $(hostname) --room-default $(hostname)
+            docker run -t -v ./matrix-commander-data-${newroom}:/data:rw -v /etc/hosts:/etc/hosts:ro matrixcommander/matrix-commander --login password --homeserver matrix.$(hostname) --user-login $MATRIX_SRV_USER --password $MATRIX_SRV_USER_PASSWORD --device $(hostname) --room-default $(hostname)
             docker compose down matrix.room-pipe-${newroom}
             docker compose up -d matrix.room-pipe-${newroom}
           done
