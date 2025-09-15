@@ -25,6 +25,22 @@ List users
 docker compose -f /home/docker/matrix.$(hostname)/docker-compose.yml exec -ti matrix.$(hostname)--db psql -U $POSTGRES_USER -d synapse -c "SELECT name from users"
 ```
 
-# Debugging
+# Rooms (Groups)
+Create room (group)
+```
+docker compose -f /home/docker/matrix.$(hostname)/docker-compose.yml run -T matrix.$(hostname)--commander --room-create MYRPOOMNAME
+```
+
+Invite user to room (group)
+```
+docker compose -f /home/docker/matrix.$(hostname)/docker-compose.yml run -ti matrix.$(hostname)--commander --room-invite MYROOMNAME --user @USERNAME:matrix.$(hostname)
+```
+
+Create pipes for rooms and containers to push messages
+```
+bash /home/docker/matrix.$(hostname)/pipe-rooms.sh
+```
+
+# External Check
 https://federationtester.matrix.org
 
