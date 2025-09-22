@@ -71,9 +71,10 @@
         block: |
           cd /home/docker/nextcloud.{{inventory_hostname}}
 
-          wget -q https://github.com/nextcloud/docker/raw/master/.examples/dockerfiles/full/apache/Dockerfile -O Dockerfile
-          sed -i 's/^FROM nextcloud:apache/FROM nextcloud:stable-apache/' Dockerfile
-          sed -i 's/^#       libreoffice/        libreoffice/' Dockerfile
+          #wget -q https://github.com/nextcloud/docker/raw/master/.examples/dockerfiles/full/apache/Dockerfile -O Dockerfile
+          #sed -i 's/^FROM nextcloud:apache/FROM nextcloud:stable-apache/' Dockerfile
+          #sed -i 's/^#       libreoffice/        libreoffice/' Dockerfile
+          wget -q https://raw.githubusercontent.com/nextcloud/docker/refs/heads/master/Dockerfile-debian.template -O Dockerfile
           wget -q https://github.com/nextcloud/docker/raw/master/.examples/dockerfiles/full/apache/supervisord.conf -O supervisord.conf
         backup: yes
         validate: /bin/bash -n %s
