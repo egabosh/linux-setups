@@ -141,9 +141,10 @@
         
           services:
             nextcloud.{{inventory_hostname}}:
-              build: 
-                context: .
-                dockerfile: Dockerfile
+              image: nextcloud:stable-apache
+              #build: 
+              #  context: .
+              #  dockerfile: Dockerfile
               security_opt:
                 - no-new-privileges:true
               restart: unless-stopped
