@@ -33,7 +33,6 @@
           - net-tools
           - vim
           - git
-          - man-db
           - netcat-traditional
           - debconf-utils
           - iputils-ping
@@ -43,38 +42,20 @@
           - dos2unix
           - locales
           - iproute2
-          - cryptsetup
           - curl
           - moreutils
-          - ffmpeg
-          - mediainfo
           - telnet
           - libstring-approx-perl
           - postfix
           - zip
-          - nmap
           - whois
           - libfile-readbackwards-perl
-          - libcrypt-cbc-perl
-          - libcrypt-des-perl
           - pwgen
           - jq
-          - cifs-utils
           - apt-transport-https
-          - golang
-          - make
-          - sshfs
-          - imagemagick
-          - libimage-exiftool-perl
-          - sqlite3
           - html-xml-utils
-          - openssh-server
           - wget
-          - gpg
-          - crudini
-          - rblcheck
           - bind9-host
-          - kpartx
           - python3-pip
           - python3-venv
           - python3-html2text
@@ -84,6 +65,25 @@
     - name: Install Basic Packages if not running in container
       apt:
         name:
+          - man-db 
+          - cryptsetup
+          - ffmpeg
+          - mediainfo
+          - nmap
+          - libcrypt-cbc-perl
+          - libcrypt-des-perl
+          - cifs-utils
+          - golang
+          - make
+          - sshfs
+          - imagemagick
+          - libimage-exiftool-perl
+          - sqlite3
+          - openssh-server
+          - gpg
+          - rblcheck
+          - crudini
+          - kpartx
           - hd-idle
           - jnettop
           - strace
