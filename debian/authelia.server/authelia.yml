@@ -28,7 +28,7 @@
         state: directory
         mode: '0770'
 
-    - name: Create /home/docker/authelia.{{inventory_hostname}}/ldap-data dir
+    - name: Create /home/docker/authelia.{{inventory_hostname}}/ldap-db dir
       ansible.builtin.file:
         path: /home/docker/authelia.{{inventory_hostname}}/ldap-db
         owner: 10001
@@ -41,10 +41,91 @@
         path: /home/docker/authelia.{{ inventory_hostname }}/ldap-config/slapd.conf.ldif.done
       register: slapd_conf_status
 
-    - name: Generate new password and SSHA hash if slapd.conf does not exist
+    - name: Generate initial config for ldap
       when: not slapd_conf_status.stat.exists
       block:
  
+        - name: Clone lam git repository to /tmp/lam-temp
+          ansible.builtin.git:
+            repo: https://github.com/LDAPAccountManager/lam.git
+            dest: /tmp/lam-temp
+            update: no
+        
+        - name: Copy lam/config from clone to /home/docker/authelia.{{ inventory_hostname }}/lam-data/config
+          ansible.builtin.copy:
+            src: /tmp/lam-temp/lam/config/
+            dest: /home/docker/authelia.{{ inventory_hostname }}/lam-data/config/
+
+        - name: Download default customized lam.conf
+          ansible.builtin.get_url:
+            url: https://raw.githubusercontent.com/egabosh/linux-setups/refs/heads/main/debian/authelia.server/lam.conf
+            dest: /home/docker/authelia.{{ inventory_hostname }}/lam-data/config/lam.conf
+
+        - name: Create /home/docker/authelia.{{inventory_hostname}}/lam-data/etc-ldap-account-manager dir
+          ansible.builtin.file:
+            path: /home/docker/authelia.{{inventory_hostname}}/lam-data/etc-ldap-account-manager
+            state: directory
+            mode: '0775'
+
+        - name: Copy LAM config.cfg
+          ansible.builtin.copy:
+            src: /tmp/lam-temp/lam/config/config.cfg.sample
+            dest: /home/docker/authelia.{{ inventory_hostname }}/lam-data/etc-ldap-account-manager/config.cfg
+
+        - name: Copy LAM nginx.conf
+          ansible.builtin.copy:
+            src: /tmp/lam-temp/lam-packaging/debian/lam.nginx.conf
+            dest: /home/docker/authelia.{{ inventory_hostname }}/lam-data/etc-ldap-account-manager/nginx.conf
+
+        - name: Copy LAM apache.conf
+          ansible.builtin.copy:
+            src: /tmp/lam-temp/lam-packaging/debian/lam.apache.conf
+            dest: /home/docker/authelia.{{ inventory_hostname }}/lam-data/etc-ldap-account-manager/apache.conf
+
+
+        - name: default user config
+          blockinfile:
+            path: /home/docker/authelia.{{inventory_hostname}}/lam-data/config/profiles/lam/default.user
+            create: yes
+            marker: "# {mark} ANSIBLE MANAGED BLOCK"
+            block: |
+              ldap_suffix: -
+              ldap_rdn: uid
+              inetOrgPerson_description:
+              posixAccount_primaryGroup: users
+              posixAccount_additionalGroup: users
+              posixAccount_cn:
+              posixAccount_gecos: $firstname $lastname
+              posixAccount_homeDirectory: /home/$user
+              posixAccount_loginShell: /bin/false
+              shadowAccount_addExt: false
+              shadowAccount_shadowWarning: 10
+              shadowAccount_shadowInactive: 10
+              shadowAccount_shadowMin: 1
+              shadowAccount_shadowMax: 365
+              shadowAccount_shadowExpire_day: -
+              shadowAccount_shadowExpire_mon: -
+              shadowAccount_shadowExpire_yea: -
+
+        - name: Remove the cloned /tmp/lam-temp directory
+          ansible.builtin.file:
+            path: /tmp/lam-temp
+            state: absent
+
+        - name: Recursively change owner and group to 33:33
+          ansible.builtin.file:
+            path: /home/docker/authelia.defiant.dedyn.io/lam-data
+            recurse: yes
+            owner: '33'
+            group: '33'
+
+        - name: Link lam config.cfg
+          ansible.builtin.file:
+            src: /etc/ldap-account-manager/config.cfg
+            dest: /home/docker/authelia.{{inventory_hostname}}/lam-data/config/config.cfg
+            state: link
+            force: yes
+
         - name: Generate a secure password using pwgen
           command: pwgen -s 32 1
           register: generated_password
@@ -94,6 +175,34 @@
               dn: ou=groups,{{ldap_basedn}}
               objectClass: organizationalUnit
               ou: groups
+
+              dn: cn=admins,ou=groups,{{ldap_basedn}}
+              objectClass: top
+              objectClass: posixGroup
+              cn: admins
+              gidNumber: 19999
+              memberUid: admin
+
+              dn: cn=users,ou=groups,{{ldap_basedn}}
+              objectClass: top
+              objectClass: posixGroup
+              cn: users
+              gidNumber: 19998
+              memberUid: admin
+
+              dn: uid=admin,ou=users,{{ldap_basedn}}
+              objectClass: top
+              objectClass: inetOrgPerson
+              objectClass: posixAccount
+              objectClass: shadowAccount
+              cn: admin
+              sn: Administrator
+              uid: admin
+              uidNumber: 19999
+              gidNumber: 19999
+              homeDirectory: /home/admin
+              loginShell: /bin/bash
+              userPassword: {{ldap_password_hash}}
 
         - name: /home/docker/authelia.{{inventory_hostname}}/ldap-config/config.ldif
           blockinfile:
@@ -258,7 +367,8 @@
               volumes:
                 - /etc/localtime:/etc/localtime:ro
                 - /etc/hosts:/etc/hosts:ro
-                #- ./lam-data:/var/lib/ldap-account-manager/config:rw
+                - ./lam-data/config:/var/lib/ldap-account-manager/config:rw
+                - ./lam-data/etc-ldap-account-manager:/etc/ldap-account-manager:rw
               env_file: env.ldap
               environment:
                 LDAP_SERVER: "ldaps://openldap.{{inventory_hostname}}"
@@ -268,7 +378,7 @@
                 LDAP_USERS_DN: "ou=users,{{ldap_basedn}}"
                 LDAP_ORGANISATION: "{{inventory_hostname}}"
                 LAM_CONFIGURATION_DATABASE: "files"
-                LAM_SKIP_PRECONFIGURE: true
+                LAM_SKIP_PRECONFIGURE: false
               depends_on:
                 - openldap.{{inventory_hostname}}
               restart: unless-stopped
