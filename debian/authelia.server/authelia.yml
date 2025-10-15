@@ -114,7 +114,7 @@
 
         - name: Recursively change owner and group to 33:33
           ansible.builtin.file:
-            path: /home/docker/authelia.defiant.dedyn.io/lam-data
+            path: /home/docker/authelia.{{inventory_hostname}}/lam-data
             recurse: yes
             owner: '33'
             group: '33'
@@ -238,6 +238,81 @@
               olcDbDirectory: /var/lib/ldap
               olcDbIndex: objectClass eq
 
+    - name: Check if Authelia config exists
+      stat:
+        path: /home/docker/authelia.{{ inventory_hostname }}/authelia-data/configuration.yml
+      register: authelia_conf_status
+
+    - name: Generate initial config for authelia
+      when: not authelia_conf_status.stat.exists
+      block:
+
+        - name: Generate a secure password using pwgen
+          command: pwgen -s 32 1
+          register: session_secret
+
+        - name: Generate a secure password using pwgen
+          command: pwgen -s 32 1
+          register: encryption_key
+
+        - name: Source env.ldap and get LDAP_ADMIN_PASSWORD
+          shell: |
+            grep ^LDAP_ADMIN_PASSWORD= /home/docker/authelia.{{inventory_hostname}}/env.ldap | cut -d= -f2
+          register: ldap_admin_password
+
+        - name: /home/docker/authelia.{{inventory_hostname}}/authelia-data/configuration.yml
+          blockinfile:
+            path: /home/docker/authelia.{{inventory_hostname}}/authelia-data/configuration.yml
+            mode: "0600"
+            owner: root
+            group: root
+            create: yes
+            marker: "# {mark} ANSIBLE MANAGED BLOCK"
+            block: |
+              session:
+                secret: "{{session_secret.stdout}}"
+                name: auth.{{inventory_hostname}}_session
+                same_site: lax
+                expiration: 1h
+                inactivity: 15m
+                remember_me: 1M
+
+                cookies:
+                  - domain: "{{inventory_hostname}}"
+                    authelia_url: https://auth.{{inventory_hostname}}
+
+              storage:
+                local:
+                  path: /config/db.sqlite3
+                encryption_key: "{{encryption_key.stdout}}"
+
+              notifier:
+                filesystem:
+                  filename: /config/notifications.txt
+
+              authentication_backend:
+                password_reset:
+                  disable: true
+                ldap:
+                  implementation: custom
+                  address: ldaps://openldap.{{inventory_hostname}}:636
+                  base_dn: "{{ldap_basedn}}"
+                  additional_users_dn: "ou=users"
+                  additional_groups_dn: "ou=groups"
+                  user: "cn=head-of-ldap,{{ldap_basedn}}"
+                  password: "{{ ldap_admin_password.stdout }}"
+                  attributes:
+                    username: uid
+                    display_name: cn
+                  users_filter: "(&({username_attribute}={input})(objectClass=posixAccount))"
+                  groups_filter: "(&(objectClass=group)(member={dn}))"
+
+              access_control:
+                default_policy: one_factor
+                rules:
+                  - domain: "{{inventory_hostname}}"
+                    policy: two_factor
+
     - name: /home/docker/authelia.{{inventory_hostname}}/Dockerfile
       blockinfile:
         path: /home/docker/authelia.{{inventory_hostname}}/Dockerfile
@@ -337,30 +412,31 @@
                 - authelia.{{inventory_hostname}}--network
                 - traefik
 
-            #authelia.{{inventory_hostname}}:
-            #  image: authelia/authelia:latest
-            #  restart: unless-stopped
-            #  networks:
-            #    - authelia.{{inventory_hostname}}--network
-            #    - traefik
-            #  volumes:
-            #    - ./authelia-data:/config
-            #    - /etc/localtime:/etc/localtime:ro
-            #  labels:
-            #    - traefik.enable=true
-            #    # HTTPS
-            #    - traefik.http.routers.authelia-{{ ansible_facts['hostname'] }}.rule=Host(`auth.{{ ansible_facts['nodename'] }}`)
-            #    - traefik.http.routers.authelia-{{ ansible_facts['hostname'] }}.entrypoints=https
-            #    - traefik.http.routers.authelia-{{ ansible_facts['hostname'] }}.tls=true
-            #    # Proxy to service-port
-            #    - traefik.http.services.authelia-{{ ansible_facts['hostname'] }}.loadbalancer.server.port=9091
-            #    - traefik.http.routers.authelia-{{ ansible_facts['hostname'] }}.service=authelia-{{ ansible_facts['hostname'] }}
-            #    # cert via letsencrypt
-            #    - traefik.http.routers.authelia-{{ ansible_facts['hostname'] }}.tls.certresolver=letsencrypt
-            #    # Traefik network
-            #    - traefik.docker.network=traefik
-            #    # auth
-            #    - traefik.http.routers.authelia-{{ ansible_facts['hostname'] }}.middlewares=secHeaders@file
+            authelia.{{inventory_hostname}}:
+              image: authelia/authelia:latest
+              restart: unless-stopped
+              networks:
+                - authelia.{{inventory_hostname}}--network
+                - traefik
+              volumes:
+                - ./authelia-data:/config
+                - /etc/localtime:/etc/localtime:ro
+                - /etc/hosts:/etc/hosts:ro
+              labels:
+                - traefik.enable=true
+                # HTTPS
+                - traefik.http.routers.authelia-{{ ansible_facts['hostname'] }}.rule=Host(`auth.{{ ansible_facts['nodename'] }}`)
+                - traefik.http.routers.authelia-{{ ansible_facts['hostname'] }}.entrypoints=https
+                - traefik.http.routers.authelia-{{ ansible_facts['hostname'] }}.tls=true
+                # Proxy to service-port
+                - traefik.http.services.authelia-{{ ansible_facts['hostname'] }}.loadbalancer.server.port=9091
+                - traefik.http.routers.authelia-{{ ansible_facts['hostname'] }}.service=authelia-{{ ansible_facts['hostname'] }}
+                # cert via letsencrypt
+                - traefik.http.routers.authelia-{{ ansible_facts['hostname'] }}.tls.certresolver=letsencrypt
+                # Traefik network
+                - traefik.docker.network=traefik
+                # auth
+                - traefik.http.routers.authelia-{{ ansible_facts['hostname'] }}.middlewares=secHeaders@file
 
             ldap.{{inventory_hostname}}:
               image: ghcr.io/ldapaccountmanager/lam:stable 
