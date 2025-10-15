@@ -185,6 +185,16 @@
                   customFrameOptionsValue: "SAMEORIGIN"
                   sslProxyHeaders:
                     X-Forwarded-Proto: "https"
+              authelia:
+                forwardAuth:
+                  address: "http://authelia.{{inventory_hostname}}:9091/api/authz/forward-auth?authelia_url=https://auth.{{inventory_hostname}}"
+                  trustForwardHeader: true
+                  authResponseHeaders:
+                    - "X-Forwarded-Remote-User"
+                    - "X-Forwarded-Remote-Groups"
+                    - "X-Forwarded-Remote-Name"
+                    - "X-Forwarded-Remote-Email"
+                    - "X-Forwarded-Method"
               default-basic-auth:
                 basicAuth:
                   usersFile: "/etc/traefik/providers.local/default-basic-auth.usersfile"
