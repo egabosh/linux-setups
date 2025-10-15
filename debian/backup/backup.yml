@@ -35,7 +35,7 @@
           BACKUPDIR=/home/backup
           mkdir -p ${BACKUPDIR}
           chmod 700 ${BACKUPDIR}
-          chown root. ${BACKUPDIR}
+          chown root:root ${BACKUPDIR}
           find /usr/local/sbin/backup.d -name "*.backup" -type f | sort | while read backup
           do
             g_echo "Running: $backup"
