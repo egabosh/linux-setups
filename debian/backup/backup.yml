@@ -38,8 +38,14 @@
           chown root:root ${BACKUPDIR}
           find /usr/local/sbin/backup.d -name "*.backup" -type f | sort | while read backup
           do
-            g_echo "Running: $backup"
-            . "$backup"
+            if bash -n "$backup" >$g_tmp/backup_error 2>&1
+            then
+               g_echo "Running: $backup"
+               . "$backup"
+             else
+               g_echo_error "Error in $backup $(cat $g_tmp/backup_error)"
+               continue
+             fi
           done
           g_echo "Backup-Skript beendet"
         backup: yes
