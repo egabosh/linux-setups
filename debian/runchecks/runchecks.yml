@@ -40,8 +40,14 @@
             g_echo "Next Loop"
             for check in $(find /usr/local/sbin/runchecks.d -name "*.check" -type f | sort)
             do
-              g_echo "Running: $check"
-              . "$check"
+              if bash -n "$check" >$g_tmp/check_error 2>&1
+              then
+                g_echo "Running: $check"
+                . "$check"
+              else
+                g_echo_error "Error in $check $(cat $g_tmp/check_error)"
+                continue
+             fi
             done
           done
         backup: yes
