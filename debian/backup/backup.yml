@@ -36,7 +36,8 @@
           mkdir -p ${BACKUPDIR}
           chmod 700 ${BACKUPDIR}
           chown root:root ${BACKUPDIR}
-          find /usr/local/sbin/backup.d -name "*.backup" -type f | sort | while read backup
+          #find /usr/local/sbin/backup.d -name "*.backup" -type f | sort | while read backup
+          for backup in $(find /usr/local/sbin/backup.d -name "*.backup" -type f | sort)
           do
             if bash -n "$backup" >$g_tmp/backup_error 2>&1
             then
