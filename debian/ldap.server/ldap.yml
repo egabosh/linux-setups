@@ -55,7 +55,7 @@
 
         - name: Download default customized lam.conf
           ansible.builtin.get_url:
-            url: https://raw.githubusercontent.com/egabosh/linux-setups/refs/heads/main/debian/authelia.server/lam.conf
+            url: https://raw.githubusercontent.com/egabosh/linux-setups/refs/heads/main/debian/ldap.server/lam.conf
             dest: "{{ docker_path }}/lam-data/config/lam.conf"
 
         - name: Link lam config.cfg
@@ -245,14 +245,14 @@
               objectClass: top
               objectClass: posixGroup
               cn: {{ ansible_facts['hostname'] }}-admins
-              gidNumber: 20000
+              gidNumber: 30000
               memberUid: admin
 
               dn: cn={{ ansible_facts['hostname'] }}-users,ou=groups,{{ldap_basedn}}
               objectClass: top
               objectClass: posixGroup
               cn: {{ ansible_facts['hostname'] }}-users
-              gidNumber: 20001
+              gidNumber: 30001
               memberUid: admin
 
               dn: uid=admin,ou=users,{{ldap_basedn}}
@@ -263,8 +263,8 @@
               cn: admin
               sn: Administrator
               uid: admin
-              uidNumber: 19999
-              gidNumber: 19999
+              uidNumber: 30000
+              gidNumber: 30001
               homeDirectory: /home/admin
               loginShell: /bin/bash
               userPassword: {{ldap_password_hash}}
