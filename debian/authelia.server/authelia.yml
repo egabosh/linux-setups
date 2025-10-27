@@ -1,16 +1,11 @@
 ---
 - name: authelia
   hosts: all
+
+  vars:
+    ldap_basedn: "{{ 'dc=openldap,' ~ inventory_hostname | split('.') | map('regex_replace', '^(.*)$', 'dc=\\1') | join(',') }}"
+
   tasks:
-
-    - name: Generate ldap_basedn from hostname
-      shell: "echo \"openldap.{{ inventory_hostname }}\" | awk -F. '{for(i=1;i<=NF;i++) printf \"dc=%s%s\", $i, (i==NF ? \"\\n\" : \",\")}'"
-      register: ldap_basedn_output
-      changed_when: false
-
-    - name: set var ldap_basedn
-      set_fact:
-        ldap_basedn: "{{ ldap_basedn_output.stdout }}"
 
     - name: Create /home/docker/authelia.{{inventory_hostname}} dir
       ansible.builtin.file:
@@ -20,230 +15,12 @@
         state: directory
         mode: '0550'
 
-    - name: Create /home/docker/authelia.{{inventory_hostname}}/ldap-config dir
-      ansible.builtin.file:
-        path: /home/docker/authelia.{{inventory_hostname}}/ldap-config
-        owner: 10001
-        group: 10001
-        state: directory
-        mode: '0770'
-
-    - name: Create /home/docker/authelia.{{inventory_hostname}}/ldap-db dir
-      ansible.builtin.file:
-        path: /home/docker/authelia.{{inventory_hostname}}/ldap-db
-        owner: 10001
-        group: 10001
-        state: directory
-        mode: '0770'
-
-    - name: Check if slapd.conf.ldif exists
+    - name: Check if Authelia secrets exists
       stat:
-        path: /home/docker/authelia.{{ inventory_hostname }}/ldap-config/slapd.conf.ldif.done
-      register: slapd_conf_status
-
-    - name: Generate initial config for ldap
-      when: not slapd_conf_status.stat.exists
-      block:
- 
-        - name: Clone lam git repository to /tmp/lam-temp
-          ansible.builtin.git:
-            repo: https://github.com/LDAPAccountManager/lam.git
-            dest: /tmp/lam-temp
-            update: no
-        
-        - name: Copy lam/config from clone to /home/docker/authelia.{{ inventory_hostname }}/lam-data/config
-          ansible.builtin.copy:
-            src: /tmp/lam-temp/lam/config/
-            dest: /home/docker/authelia.{{ inventory_hostname }}/lam-data/config/
-
-        - name: Download default customized lam.conf
-          ansible.builtin.get_url:
-            url: https://raw.githubusercontent.com/egabosh/linux-setups/refs/heads/main/debian/authelia.server/lam.conf
-            dest: /home/docker/authelia.{{ inventory_hostname }}/lam-data/config/lam.conf
-
-        - name: Create /home/docker/authelia.{{inventory_hostname}}/lam-data/etc-ldap-account-manager dir
-          ansible.builtin.file:
-            path: /home/docker/authelia.{{inventory_hostname}}/lam-data/etc-ldap-account-manager
-            state: directory
-            mode: '0775'
-
-        - name: Copy LAM config.cfg
-          ansible.builtin.copy:
-            src: /tmp/lam-temp/lam/config/config.cfg.sample
-            dest: /home/docker/authelia.{{ inventory_hostname }}/lam-data/etc-ldap-account-manager/config.cfg
-
-        - name: Copy LAM nginx.conf
-          ansible.builtin.copy:
-            src: /tmp/lam-temp/lam-packaging/debian/lam.nginx.conf
-            dest: /home/docker/authelia.{{ inventory_hostname }}/lam-data/etc-ldap-account-manager/nginx.conf
-
-        - name: Copy LAM apache.conf
-          ansible.builtin.copy:
-            src: /tmp/lam-temp/lam-packaging/debian/lam.apache.conf
-            dest: /home/docker/authelia.{{ inventory_hostname }}/lam-data/etc-ldap-account-manager/apache.conf
-
-
-        - name: default user config
-          blockinfile:
-            path: /home/docker/authelia.{{inventory_hostname}}/lam-data/config/profiles/lam/default.user
-            create: yes
-            marker: "# {mark} ANSIBLE MANAGED BLOCK"
-            block: |
-              ldap_suffix: -
-              ldap_rdn: uid
-              inetOrgPerson_description:
-              posixAccount_primaryGroup: users
-              posixAccount_additionalGroup: users
-              posixAccount_cn:
-              posixAccount_gecos: $firstname $lastname
-              posixAccount_homeDirectory: /home/$user
-              posixAccount_loginShell: /bin/false
-              shadowAccount_addExt: false
-              shadowAccount_shadowWarning: 10
-              shadowAccount_shadowInactive: 10
-              shadowAccount_shadowMin: 1
-              shadowAccount_shadowMax: 365
-              shadowAccount_shadowExpire_day: -
-              shadowAccount_shadowExpire_mon: -
-              shadowAccount_shadowExpire_yea: -
-
-        - name: Remove the cloned /tmp/lam-temp directory
-          ansible.builtin.file:
-            path: /tmp/lam-temp
-            state: absent
-
-        - name: Recursively change owner and group to 33:33
-          ansible.builtin.file:
-            path: /home/docker/authelia.{{inventory_hostname}}/lam-data
-            recurse: yes
-            owner: '33'
-            group: '33'
-
-        - name: Link lam config.cfg
-          ansible.builtin.file:
-            src: /etc/ldap-account-manager/config.cfg
-            dest: /home/docker/authelia.{{inventory_hostname}}/lam-data/config/config.cfg
-            state: link
-            force: yes
-
-        - name: Generate a secure password using pwgen
-          command: pwgen -s 32 1
-          register: generated_password
-
-        - name: Generate a 2nd secure password using pwgen
-          command: pwgen -s 32 1
-          register: generated_password_2
-
-        - name: Generate SSHA password hash using slappasswd
-          command: slappasswd -s "{{ generated_password.stdout }}"
-          register: ssha_hash
-
-        - name: Save plaintext password to env-ldap file
-          copy:
-            content: |
-              LDAP_ADMIN_PASSWORD={{ generated_password.stdout }}
-              LAM_PASSWORD={{ generated_password_2.stdout }}
-            dest: /home/docker/authelia.{{ inventory_hostname }}/env.ldap
-            mode: '0440'
-            owner: docker
-            group: root
-
-        - name: Set ldap_password_hash variable
-          set_fact:
-            ldap_password_hash: "{{ ssha_hash.stdout }}"
- 
-        - name: /home/docker/authelia.{{inventory_hostname}}/ldap-config/base.ldif
-          blockinfile:
-            path: /home/docker/authelia.{{inventory_hostname}}/ldap-config/base.ldif
-            mode: "0440"
-            owner: 10001
-            group: 10001
-            create: yes
-            marker: "# {mark} ANSIBLE MANAGED BLOCK"
-            block: |
-              dn: {{ldap_basedn}}
-              objectClass: top
-              objectClass: dcObject
-              objectClass: organization
-              o: {{inventory_hostname}}
-              dc: openldap
-
-              dn: ou=users,{{ldap_basedn}}
-              objectClass: organizationalUnit
-              ou: users
-
-              dn: ou=groups,{{ldap_basedn}}
-              objectClass: organizationalUnit
-              ou: groups
-
-              dn: cn=admins,ou=groups,{{ldap_basedn}}
-              objectClass: top
-              objectClass: posixGroup
-              cn: admins
-              gidNumber: 19999
-              memberUid: admin
-
-              dn: cn=users,ou=groups,{{ldap_basedn}}
-              objectClass: top
-              objectClass: posixGroup
-              cn: users
-              gidNumber: 19998
-              memberUid: admin
-
-              dn: uid=admin,ou=users,{{ldap_basedn}}
-              objectClass: top
-              objectClass: inetOrgPerson
-              objectClass: posixAccount
-              objectClass: shadowAccount
-              cn: admin
-              sn: Administrator
-              uid: admin
-              uidNumber: 19999
-              gidNumber: 19999
-              homeDirectory: /home/admin
-              loginShell: /bin/bash
-              userPassword: {{ldap_password_hash}}
-
-        - name: /home/docker/authelia.{{inventory_hostname}}/ldap-config/config.ldif
-          blockinfile:
-            path: /home/docker/authelia.{{inventory_hostname}}/ldap-config/config.ldif
-            mode: "0440"
-            owner: 10001
-            group: 10001
-            create: yes
-            marker: "# {mark} ANSIBLE MANAGED BLOCK"
-            block: |
-              dn: cn=config
-              objectClass: olcGlobal
-              cn: config
-
-              dn: cn=module,cn=config
-              objectClass: olcModuleList
-              cn: module
-              olcModulePath: /usr/lib/ldap
-              olcModuleLoad: back_mdb
-
-              dn: olcDatabase={0}config,cn=config
-              objectClass: olcDatabaseConfig
-              objectClass: olcConfig
-              olcDatabase: config
-
-              dn: olcDatabase={1}mdb,cn=config
-              objectClass: olcDatabaseConfig
-              objectClass: olcMdbConfig
-              olcDatabase: mdb
-              olcSuffix: {{ldap_basedn}}
-              olcRootDN: cn=head-of-ldap,{{ldap_basedn}}
-              olcRootPW: {{ldap_password_hash}}
-              olcDbDirectory: /var/lib/ldap
-              olcDbIndex: objectClass eq
-
-    - name: Check if Authelia config exists
-      stat:
-        path: /home/docker/authelia.{{ inventory_hostname }}/authelia-data/configuration.yml
+        path: /home/docker/authelia.{{ inventory_hostname }}/env
       register: authelia_conf_status
 
-    - name: Generate initial config for authelia
+    - name: Generate Authelia secrets
       when: not authelia_conf_status.stat.exists
       block:
 
@@ -255,123 +32,183 @@
           command: pwgen -s 32 1
           register: encryption_key
 
-        - name: Source env.ldap and get LDAP_ADMIN_PASSWORD
-          shell: |
-            grep ^LDAP_ADMIN_PASSWORD= /home/docker/authelia.{{inventory_hostname}}/env.ldap | cut -d= -f2
-          register: ldap_admin_password
-
-        - name: /home/docker/authelia.{{inventory_hostname}}/authelia-data/configuration.yml
-          blockinfile:
-            path: /home/docker/authelia.{{inventory_hostname}}/authelia-data/configuration.yml
-            mode: "0600"
-            owner: root
+        - name: Save plaintext password to env file
+          copy:
+            content: |
+              session_secret={{session_secret.stdout}}
+              encryption_key={{encryption_key.stdout}}
+            dest: /home/docker/authelia.{{ inventory_hostname }}/env
+            mode: '0440'
+            owner: docker
             group: root
-            create: yes
-            marker: "# {mark} ANSIBLE MANAGED BLOCK"
-            block: |
-              session:
-                secret: "{{session_secret.stdout}}"
-                name: auth.{{inventory_hostname}}_session
-                same_site: lax
-                expiration: 1h
-                inactivity: 15m
-                remember_me: 1M
 
-                cookies:
-                  - domain: "{{inventory_hostname}}"
-                    authelia_url: https://auth.{{inventory_hostname}}
+    - name: Get session_secret from file
+      shell: "grep ^session_secret= /home/docker/authelia.{{inventory_hostname}}/env | cut -d= -f2-"
+      register: session_secret
+      changed_when: false
 
-              storage:
-                local:
-                  path: /config/db.sqlite3
-                encryption_key: "{{encryption_key.stdout}}"
+    - name: Get encryption_key from file
+      shell: "grep ^encryption_key= /home/docker/authelia.{{inventory_hostname}}/env | cut -d= -f2-"
+      register: encryption_key
+      changed_when: false
 
-              notifier:
-                filesystem:
-                  filename: /config/notifications.txt
+    - name: Get LDAP admin password from file
+      shell: "grep ^LDAP_ADMIN_PASSWORD= /home/docker/ldap.{{inventory_hostname}}/env.openldap | cut -d= -f2-"
+      register: ldap_admin_password
+      changed_when: false
 
-              authentication_backend:
-                password_reset:
-                  disable: true
-                ldap:
-                  implementation: custom
-                  address: ldaps://openldap.{{inventory_hostname}}:636
-                  base_dn: "{{ldap_basedn}}"
-                  additional_users_dn: "ou=users"
-                  additional_groups_dn: "ou=groups"
-                  user: "cn=head-of-ldap,{{ldap_basedn}}"
-                  password: "{{ ldap_admin_password.stdout }}"
-                  attributes:
-                    username: uid
-                    display_name: cn
-                  users_filter: "(&({username_attribute}={input})(objectClass=posixAccount))"
-                  groups_filter: "(&(objectClass=group)(member={dn}))"
-
-              access_control:
-                default_policy: one_factor
-                rules:
-                  - domain: "{{inventory_hostname}}"
-                    policy: two_factor
-
-    - name: /home/docker/authelia.{{inventory_hostname}}/Dockerfile
+    - name: /home/docker/authelia.{{inventory_hostname}}/authelia-data/configuration.yml
       blockinfile:
-        path: /home/docker/authelia.{{inventory_hostname}}/Dockerfile
-        mode: "0440"
+        path: /home/docker/authelia.{{inventory_hostname}}/authelia-data/configuration.yml
+        mode: "0600"
         owner: root
         group: root
         create: yes
         marker: "# {mark} ANSIBLE MANAGED BLOCK"
         block: |
-          FROM ghcr.io/egabosh/debian:latest
-          RUN apt-get update && \
-            addgroup --system --gid 10001 openldap && \
-            adduser --system --disabled-password --disabled-login --gid 10001 --uid 10001 --home /var/lib/ldap openldap && \
-            apt-get install -y slapd ldap-utils && \
-            apt-get clean && \
-            rm -rf /var/lib/apt/lists/*
-          COPY ./docker-entrypoint.sh /
-          ENTRYPOINT ["/docker-entrypoint.sh"]
+          session:
+            secret: "{{session_secret.stdout}}"
+            name: auth.{{inventory_hostname}}_session
+            same_site: lax
+            expiration: 1h
+            inactivity: 15m
+            remember_me: 1M
+            cookies:
+              - domain: "{{inventory_hostname}}"
+                authelia_url: https://auth.{{inventory_hostname}}
+
+          storage:
+            local:
+              path: /config/db.sqlite3
+            encryption_key: "{{encryption_key.stdout}}"
+
+          authentication_backend:
+            password_reset:
+              disable: true
+            ldap:
+              implementation: custom
+              address: ldaps://openldap.{{inventory_hostname}}:636
+              base_dn: "{{ldap_basedn}}"
+              additional_users_dn: "ou=users"
+              additional_groups_dn: "ou=groups"
+              user: "cn=head-of-ldap,{{ldap_basedn}}"
+              password: "{{ ldap_admin_password.stdout }}"
+              attributes:
+                username: uid
+                display_name: cn
+                mail: mail
+              users_filter: "(&({username_attribute}={input})(objectClass=posixAccount))"
+              groups_filter: "(&(objectClass=posixGroup)(memberUid={input}))"
+
+          totp:
+            disable: false
+            issuer: auth.{{inventory_hostname}}
+            algorithm: sha1
+            digits: 6
+            period: 30
+            skew: 1
+
         backup: yes
       notify:
       - Restart authelia
 
-    - name: /home/docker/authelia.{{inventory_hostname}}/docker-entrypoint.sh
+
+    - name: Check if Authelia secrets exists
+      stat:
+        path: /home/docker/_defaults/mailclient
+      register: authelia_mail
+
+    - name: Generate Authelia secrets
+      when: not authelia_mail.stat.exists
+      block:
+       - name: /home/docker/authelia.{{inventory_hostname}}/authelia-data/configuration.yml
+         blockinfile:
+           path: /home/docker/authelia.{{inventory_hostname}}/authelia-data/configuration.yml
+           mode: "0600"
+           owner: root
+           group: root
+           create: yes
+           marker: "# {mark} ANSIBLE MANAGED BLOCK NOTIFICATION"
+           block: |
+
+             notifier:
+               filesystem:
+                 filename: /config/notifications.txt
+
+           backup: yes
+         notify:
+         - Restart authelia
+
+
+    - name: Generate Authelia secrets
+      when: authelia_mail.stat.exists
+      block:
+
+       - name: Get smtp_user from file
+         shell: "grep ^smtp_user= /home/docker/_defaults/mailclient | cut -d= -f2-"
+         register: smtp_user
+         changed_when: false
+
+       - name: Get smtp_password from file
+         shell: "grep ^smtp_pw= /home/docker/_defaults/mailclient | cut -d= -f2-"
+         register: smtp_password
+         changed_when: false
+
+       - name: Get smtp_server from file
+         shell: "grep ^smtp_srv= /home/docker/_defaults/mailclient | cut -d= -f2-"
+         register: smtp_server
+         changed_when: false
+
+       - name: Get smtp_port from file
+         shell: "grep ^smtp_port= /home/docker/_defaults/mailclient | cut -d= -f2-"
+         register: smtp_port
+         changed_when: false
+
+       - name: Get smtp_from from file
+         shell: "grep ^smtp_from= /home/docker/_defaults/mailclient | cut -d= -f2-"
+         register: smtp_from
+         changed_when: false
+
+       - name: /home/docker/authelia.{{inventory_hostname}}/authelia-data/configuration.yml
+         blockinfile:
+           path: /home/docker/authelia.{{inventory_hostname}}/authelia-data/configuration.yml
+           mode: "0600"
+           owner: root
+           group: root
+           create: yes
+           marker: "# {mark} ANSIBLE MANAGED BLOCK NOTIFICATION"
+           block: |
+             notifier:
+               smtp:
+                 username: {{ smtp_user.stdout }}
+                 password: {{ smtp_password.stdout }}
+                 address: {{ smtp_server.stdout }}:{{ smtp_port.stdout }}
+                 sender: {{ smtp_from.stdout }}
+                 subject: "[auth.{{inventory_hostname}}] Notification"
+                 startup_check_address: {{ smtp_from.stdout }}
+                 identifier: "authelia"
+                 timeout: 15s
+
+           backup: yes
+         notify: Restart authelia
+
+    - name: /home/docker/authelia.{{inventory_hostname}}/authelia-data/configuration.yml
       blockinfile:
-        path: /home/docker/authelia.{{inventory_hostname}}/docker-entrypoint.sh
-        mode: "0555"
+        path: /home/docker/authelia.{{inventory_hostname}}/authelia-data/configuration.yml
+        mode: "0600"
         owner: root
         group: root
         create: yes
-        marker: "# {mark} ANSIBLE MANAGED BLOCK"
+        marker: "# {mark} ANSIBLE MANAGED BLOCK ACCESS CONTROL"
         block: |
-          set -x
-          mkdir -p /var/run/slapd
-          chown openldap:openldap /var/run/slapd
-          if ! [[ -s /ldap-config/slapd.conf.ldif.done ]]
-          then
-            rm -rf /etc/ldap/slapd.d/*
-            mkdir /ldap-config/slapd.d
-            chown -R openldap:openldap /var/lib/ldap /ldap-config/slapd.d
-            slapadd -F /ldap-config/slapd.d -n 0 -l /ldap-config/config.ldif
-            slapadd -F /ldap-config/slapd.d -n 0 -l /etc/ldap/schema/core.ldif
-            slapadd -F /ldap-config/slapd.d -n 0 -l /etc/ldap/schema/cosine.ldif
-            slapadd -F /ldap-config/slapd.d -n 0 -l /etc/ldap/schema/inetorgperson.ldif
-            slapadd -F /ldap-config/slapd.d -n 0 -l /etc/ldap/schema/nis.ldif
-            slapadd -F /ldap-config/slapd.d -l /ldap-config/base.ldif
-            chown -R openldap:openldap /var/lib/ldap /ldap-config/slapd.d
-            date >>/ldap-config/slapd.conf.ldif.done
-          fi
-          exec /usr/sbin/slapd -h "ldap:/// ldapi:///" -d 0 -u openldap -g openldap -F /ldap-config/slapd.d
-        backup: yes
-        validate: /bin/bash -n %s
-      notify:
-      - Restart authelia
+          access_control:
+            default_policy: deny
+            rules:
+              - domain: "{{inventory_hostname}}"
+                policy: one_factor
 
-    - name: /home/docker/authelia.{{inventory_hostname}}/docker-entrypoint.sh shebang
-      lineinfile:
-        path: /home/docker/authelia.{{inventory_hostname}}/docker-entrypoint.sh
-        insertbefore: BOF
-        line: "#!/bin/bash"
+        backup: yes
+      notify: Restart authelia
 
     - name: /home/docker/authelia.{{inventory_hostname}}/docker-compose.yml Container Configuration
       blockinfile:
@@ -383,34 +220,6 @@
         marker: "# {mark} ANSIBLE MANAGED BLOCK"
         block: |
           services:
-
-            openldap.{{inventory_hostname}}:
-              build:
-                context: .
-                dockerfile: Dockerfile
-              volumes:
-                - ./ldap-db:/var/lib/ldap:rw
-                - ./ldap-config:/ldap-config:rw
-                - /etc/localtime:/etc/localtime:ro
-              restart: unless-stopped
-              labels:
-                - traefik.enable=true
-                # HTTPS
-                - traefik.tcp.routers.authelia-openldap-{{ ansible_facts['hostname'] }}.rule=HostSNI(`openldap.{{ ansible_facts['nodename'] }}`)
-                - traefik.tcp.routers.authelia-openldap-{{ ansible_facts['hostname'] }}.entrypoints=ldaps
-                - traefik.tcp.routers.authelia-openldap-{{ ansible_facts['hostname'] }}.tls=true
-                # Proxy to service-port
-                - traefik.tcp.services.authelia-openldap-{{ ansible_facts['hostname'] }}.loadbalancer.server.port=389
-                - traefik.tcp.routers.authelia-openldap-{{ ansible_facts['hostname'] }}.service=authelia-openldap-{{ ansible_facts['hostname'] }}
-                # cert via letsencrypt
-                - traefik.tcp.routers.authelia-openldap-{{ ansible_facts['hostname'] }}.tls.certresolver=letsencrypt
-                # Traefik network
-                - traefik.docker.network=traefik
-                # auth
-                #- traefik.tcp.routers.authelia-openldap-{{ ansible_facts['hostname'] }}.middlewares=secHeaders@file
-              networks:
-                - authelia.{{inventory_hostname}}--network
-                - traefik
 
             authelia.{{inventory_hostname}}:
               image: authelia/authelia:latest
@@ -438,46 +247,6 @@
                 # auth
                 - traefik.http.routers.authelia-{{ ansible_facts['hostname'] }}.middlewares=secHeaders@file
 
-            ldap.{{inventory_hostname}}:
-              image: ghcr.io/ldapaccountmanager/lam:stable 
-              volumes:
-                - /etc/localtime:/etc/localtime:ro
-                - /etc/hosts:/etc/hosts:ro
-                - ./lam-data/config:/var/lib/ldap-account-manager/config:rw
-                - ./lam-data/etc-ldap-account-manager:/etc/ldap-account-manager:rw
-              env_file: env.ldap
-              environment:
-                LDAP_SERVER: "ldaps://openldap.{{inventory_hostname}}"
-                LDAP_BASE_DN: "{{ldap_basedn}}"
-                LDAP_USER: "cn=head-of-ldap,{{ldap_basedn}}"
-                LDAP_GROUPS_DN: "ou=groups,{{ldap_basedn}}"
-                LDAP_USERS_DN: "ou=users,{{ldap_basedn}}"
-                LDAP_ORGANISATION: "{{inventory_hostname}}"
-                LAM_CONFIGURATION_DATABASE: "files"
-                LAM_SKIP_PRECONFIGURE: false
-              depends_on:
-                - openldap.{{inventory_hostname}}
-              restart: unless-stopped
-              networks:
-                - authelia.{{inventory_hostname}}--network
-                - traefik
-              labels:
-                - traefik.enable=true
-                # HTTPS
-                - traefik.http.routers.ldap-{{ ansible_facts['hostname'] }}.rule=Host(`ldap.{{ ansible_facts['nodename'] }}`)
-                - traefik.http.routers.ldap-{{ ansible_facts['hostname'] }}.entrypoints=https
-                - traefik.http.routers.ldap-{{ ansible_facts['hostname'] }}.tls=true
-                # Proxy to service-port
-                - traefik.http.services.ldap-{{ ansible_facts['hostname'] }}.loadbalancer.server.port=80
-                - traefik.http.routers.ldap-{{ ansible_facts['hostname'] }}.service=ldap-{{ ansible_facts['hostname'] }}
-                # cert via letsencrypt
-                - traefik.http.routers.ldap-{{ ansible_facts['hostname'] }}.tls.certresolver=letsencrypt
-                # Traefik network
-                - traefik.docker.network=traefik
-                # auth
-                - traefik.http.routers.ldap-{{ ansible_facts['hostname'] }}.middlewares=secHeaders@file
-
-
           networks:
             authelia.{{inventory_hostname}}--network:
               driver: bridge
@@ -492,7 +261,7 @@
   handlers:
 
     - name: Restart authelia
-      ansible.builtin.shell: docker-compose build --pull --no-cache --force-rm && docker-compose up -d
+      ansible.builtin.shell: docker-compose down && docker-compose up -d
       args:
         chdir: /home/docker/authelia.{{inventory_hostname}}
 
