@@ -567,9 +567,9 @@
         state: file
       become: true
 
-    - name: /usr/local/bin/ldapsearch-defiant
+    - name: "/usr/local/bin/ldapsearch-{{ ansible_facts['hostname'] }}"
       ansible.builtin.copy:
-        dest: /usr/local/bin/ldapsearch-defiant
+        dest: "/usr/local/bin/ldapsearch-{{ ansible_facts['hostname'] }}"
         mode: 0750
         owner: root
         group: root
