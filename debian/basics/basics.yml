@@ -9,7 +9,7 @@
 
     - name: check if we are in an container env by existing systemd
       stat: 
-        path: /usr/bin/systemd
+        path: /lib/systemd/systemd
       register: nocontainer
 
     - name: check if we are in a lxc env
@@ -106,18 +106,20 @@
           - mailutils
           - rsyslog
           - postgresql-client
-          - ntpdate
+          - ntpsec-ntpdate
         update_cache: yes
         install_recommends: no
       when: nocontainer.stat.exists == true
 
-    - name: Install Basic Packages especially for Debian 12 - bookworm
+    - name: Install Basic Packages especially for Debian 12 & 13 - bookworm & trixie
       apt:
         name:
           - systemd-resolved
         update_cache: yes
         install_recommends: no
-      when: ansible_distribution_release is match("bookworm") and (nocontainer.stat.exists == true)
+      when:
+        - ansible_distribution_release in ["bookworm", "trixie"]
+        - nocontainer.stat.exists == true
       register: resolved
 
     - name: Restart systemd-resolved
@@ -150,12 +152,25 @@
           Pin-Priority: 100
       when: ansible_distribution_release is match("bookworm") and (nocontainer.stat.exists == true)
 
-    - name: Add Debian testing repository
+    - name: remove /etc/apt/preferences.d/pinning.pref if trixie
+      ansible.builtin.file:
+        path: /etc/apt/preferences.d/pinning.pref
+        state: absent
+      when: ansible_distribution_release == "trixie"
+
+   - name: Add Debian testing repository
       ansible.builtin.apt_repository:
         repo: deb http://deb.debian.org/debian testing main
         state: present
         update_cache: yes
       when: ansible_distribution_release is match("bookworm") and (nocontainer.stat.exists == true)
+
+    - name: Remove Debian testing repository
+      ansible.builtin.apt_repository:
+        repo: "deb http://deb.debian.org/debian testing main"
+        state: absent
+        update_cache: yes
+      when: ansible_distribution_release is match("trixie") and (nocontainer.stat.exists == true)
 
     # Gather facts about the system, including virtualization type
     - name: Gather system facts
