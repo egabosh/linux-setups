@@ -65,8 +65,11 @@
               DEBIAN_FRONTEND=noninteractive apt-get purge '~o'
               # sed -i 's/bullseye/bookworm/g' /etc/apt/sources.list
               # sed -i 's/bullseye/bookworm/g' /etc/apt/sources.list.d/*
+              # sed -i 's/bookworm/trixie/g' /etc/apt/sources.list
+              # sed -i 's/bookworm/trixie/g' /etc/apt/sources.list.d/*
               # sed -i 's/non-free/non-free non-free-firmware/g' /etc/apt/sources.list
               # sed -i 's/non-free/non-free non-free-firmware/g' /etc/apt/sources.list.d/*
+              # DEBIAN_FRONTEND=noninteractive apt-get update
               # DEBIAN_FRONTEND=noninteractive apt-get -yy upgrade --without-new-pkgs
               # DEBIAN_FRONTEND=noninteractive apt-get -yy full-upgrade
             fi

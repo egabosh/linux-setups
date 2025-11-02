@@ -14,7 +14,7 @@ You also should test this on an non-productive Test-System to fit your needs.
 You need a up-to-date and running Debian Linux system. Maybe some on Debian based Distributions will also work but are not tested.
 I testet this in an minimal installation (+SSH Server) of Debian Bookworm which you can download here:
 
-https://www.debian.org/releases/bookworm/debian-installer/
+https://www.debian.org/releases/trixie/debian-installer/
 
 https://cdimage.debian.org/debian-cd/current/amd64/iso-dvd/debian-12.1.0-amd64-DVD-1.iso
 
