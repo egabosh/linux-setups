@@ -99,8 +99,6 @@
           - gpodder
           # retro
           - dosbox
-          # OnlineBanking
-          - hibiscus
         install_recommends: no
       when: not mint_minimal_file.stat.exists
 
