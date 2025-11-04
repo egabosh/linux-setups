@@ -114,7 +114,6 @@ debian/backup/backup.yml
 debian/autoupdate/autoupdate.yml
 debian/firefox/firefox.yml
 debian/kvm.server/kvm.yml
-debian/hibiscus/hibiscus.yml
 mint/mint.yml"
 else
   export PLAYBOOKS="debian/basics/basics.yml
@@ -136,7 +135,9 @@ debian/firefox/firefox.yml
 debian/chromium/chromium.yml
 debian/signal-desktop/signal-desktop.yml
 debian/element-desktop/element-desktop.yml
-debian/wireguard.client/wireguard-client.yml"
+debian/wireguard.client/wireguard-client.yml
+debian/hibiscus/hibiscus.yml
+"
 fi
 
 echo $PLAYBOOKS | sudo tee /usr/local/etc/playbooks >/dev/null
