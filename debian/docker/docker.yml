@@ -94,6 +94,11 @@
     - name: Change ansible_distribution_release to noble (Ubuntu) if its wilma (Mint)
       set_fact:
         ansible_distribution_release: "noble"
+      when: ansible_distribution_release == "zara"
+
+    - name: Change ansible_distribution_release to noble (Ubuntu) if its wilma (Mint)
+      set_fact:
+        ansible_distribution_release: "noble"
       when: ansible_distribution_release == "wilma"
 
     - name: Change ansible_distribution_release to noble (Ubuntu) if its xia (Mint)
