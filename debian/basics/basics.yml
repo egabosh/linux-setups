@@ -158,7 +158,7 @@
         state: absent
       when: ansible_distribution_release == "trixie"
 
-   - name: Add Debian testing repository
+    - name: Add Debian testing repository
       ansible.builtin.apt_repository:
         repo: deb http://deb.debian.org/debian testing main
         state: present
