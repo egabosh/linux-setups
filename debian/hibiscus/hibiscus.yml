@@ -1,0 +1,82 @@
+- name: Install Jameica and Hibiscus
+  hosts: all
+
+  vars:
+    jameica_url: "https://www.willuhn.de/products/jameica/releases/current/jameica/jameica-linux64.zip"
+    jameica_zip: "/tmp/jameica.zip"
+    jameica_dir: "/opt"
+    hibiscus_plugin_url: "https://www.willuhn.de/products/hibiscus/releases/current/hibiscus.zip"
+    hibiscus_plugin_zip: "/tmp/hibiscus.zip"
+
+  tasks:
+
+    - name: Remove any existing Jameica system package including configuration
+      apt:
+        name: 
+          - jameica
+          - hibiscus
+        state: absent
+        purge: yes
+
+    - name: Install required packages
+      apt:
+        name:
+          - unzip
+        state: present
+
+    - name: Download Jameica
+      get_url:
+        url: "{{ jameica_url }}"
+        dest: "{{ jameica_zip }}"
+
+    - name: Download Hibiscus plugin
+      get_url:
+        url: "{{ hibiscus_plugin_url }}"
+        dest: "{{ hibiscus_plugin_zip }}"
+
+    - name: Delete /opt/jameica directory recursively
+      file:
+        path: /opt/jameica
+        state: absent
+
+    - name: Extract Jameica to /opt
+      unarchive:
+        src: "{{ jameica_zip }}"
+        dest: "{{ jameica_dir }}"
+        extra_opts: [ "-o", "-a" ]
+
+    - name: Extract Hibiscus plugin into Jameica plugin directory
+      unarchive:
+        src: "{{ hibiscus_plugin_zip }}"
+        dest: "{{ jameica_dir }}/jameica/plugins"
+        extra_opts: [ "-o", "-a" ]
+
+    - name: Set execute permissions
+      file:
+        path: "{{ jameica_dir }}/jameica/jameica.sh"
+        mode: '0755'
+        state: file
+
+    - name: Remove downloaded zip files
+      file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - "{{ jameica_zip }}"
+        - "{{ hibiscus_plugin_zip }}"
+
+    - name: Create global desktop icon for Jameica
+      copy:
+        dest: /usr/share/applications/jameica.desktop
+        content: |
+          [Desktop Entry]
+          Version=1.0
+          Type=Application
+          Name=Jameica
+          Comment=Start Jameica
+          Exec=/opt/jameica/jameica.sh
+          Icon=/opt/jameica/jameica-icon.png
+          Terminal=false
+          Categories=Finance;Application;
+        mode: '0644'
+
