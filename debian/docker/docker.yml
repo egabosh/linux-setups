@@ -91,7 +91,7 @@
       register: deb_architecture
       changed_when: false
 
-    - name: Change ansible_distribution_release to noble (Ubuntu) if its wilma (Mint)
+    - name: Change ansible_distribution_release to noble (Ubuntu) if its zara (Mint)
       set_fact:
         ansible_distribution_release: "noble"
       when: ansible_distribution_release == "zara"
@@ -105,6 +105,12 @@
       set_fact:
         ansible_distribution_release: "noble"
       when: ansible_distribution_release == "xia"
+
+    - name: Lösche Datei /etc/apt/sources.list.d/docker.list
+      ansible.builtin.file:
+        path: /etc/apt/sources.list.d/docker.list
+        state: absent
+      changed_when: false
 
     - name: Add repository into list
       ansible.builtin.apt_repository:
