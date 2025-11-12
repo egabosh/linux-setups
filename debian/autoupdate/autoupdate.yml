@@ -51,28 +51,52 @@
         marker: "# {mark} ANSIBLE MANAGED BLOCK"
         block: |
           g_echo_ok "Checking for systemupdates"
-          DEBIAN_FRONTEND=noninteractive apt-get -y update --allow-releaseinfo-change || g_echo_error "apt-get update fehlgeschlagen"
+          DEBIAN_FRONTEND=noninteractive apt-get -y update --allow-releaseinfo-change || g_echo_error "apt-get update failed"
           if ! hostname | grep -q ".mint."
           then
+
+            if ! grep -r "non-free non-free-firmware" /etc/apt/sources.list /etc/apt/sources.list.d/*
+            then
+               g_echo_warn "Allowing non-free-firmware"
+               sed -i 's/non-free/non-free non-free-firmware/g' /etc/apt/sources.list
+               sed -i 's/non-free/non-free non-free-firmware/g' /etc/apt/sources.list.d/*
+            fi
+
             if ! apt-get -s dist-upgrade 2>&1 | sed -e "s/'/'\\\\''/g; 1s/^/'/; \$s/\$/'/" | tee $g_tmp/sys-updatelist | egrep "^0.+, 0 .+, 0 .+ 0 .+\."
             then
-              g_echo_warn "Systemupdate wird eingespielt: $(cat $g_tmp/sys-updatelist)"
+              g_echo_warn "Systemupdate will be installed: $(cat $g_tmp/sys-updatelist)"
               DEBIAN_FRONTEND=noninteractive apt-get -yy dist-upgrade | sed -e "s/'/'\\\\''/g; 1s/^/'/; \$s/\$/'/" | tee $g_tmp/sys-update || g_echo_error "apt-get -yy dist-upgrade failed $($g_tmp/sys-update)"
-              DEBIAN_FRONTEND=noninteractive needrestart -b -r a | egrep -q "^NEEDRESTART-KSTA: [2|3]" && g_echo_warn "Server Reboot benötigt"
+              DEBIAN_FRONTEND=noninteractive needrestart -b -r a | egrep -q "^NEEDRESTART-KSTA: [2|3]" && g_echo_warn "System reboot needed"
               g_echo_warn $(DEBIAN_FRONTEND=noninteractive apt-get -yy --purge autoremove 2>&1 | egrep -A10 "^The following packages will be REMOVED:")
               DEBIAN_FRONTEND=noninteractive apt-get -yy autoclean
               g_echo_warn $(find /etc -name '.dpkg-' -o -name '.ucf-' -o -name '*.merge-error')
               DEBIAN_FRONTEND=noninteractive apt-get purge '~o'
-              # sed -i 's/bullseye/bookworm/g' /etc/apt/sources.list
-              # sed -i 's/bullseye/bookworm/g' /etc/apt/sources.list.d/*
-              # sed -i 's/bookworm/trixie/g' /etc/apt/sources.list
-              # sed -i 's/bookworm/trixie/g' /etc/apt/sources.list.d/*
-              # sed -i 's/non-free/non-free non-free-firmware/g' /etc/apt/sources.list
-              # sed -i 's/non-free/non-free non-free-firmware/g' /etc/apt/sources.list.d/*
-              # DEBIAN_FRONTEND=noninteractive apt-get update
-              # DEBIAN_FRONTEND=noninteractive apt-get -yy upgrade --without-new-pkgs
-              # DEBIAN_FRONTEND=noninteractive apt-get -yy full-upgrade
             fi
+            
+            #if grep -q bullseye /etc/apt/sources.list
+            #then
+            #  g_echo_warn "Distributionupdate from bullseye to bookworm will be installed!!!"
+            #  sed -i 's/bullseye/bookworm/g' /etc/apt/sources.list
+            #  sed -i 's/bullseye/bookworm/g' /etc/apt/sources.list.d/*
+            #  DEBIAN_FRONTEND=noninteractive apt-get update
+            #  DEBIAN_FRONTEND=noninteractive apt-get -yy upgrade --without-new-pkgs
+            #  DEBIAN_FRONTEND=noninteractive apt-get -yy full-upgrade
+            #  DEBIAN_FRONTEND=noninteractive apt-get -yy -o Dpkg::Options::="--force-overwrite" --fix-broken install
+            #  DEBIAN_FRONTEND=noninteractive apt-get -yy autoremove
+            #fi
+
+            #if grep -q bookworm /etc/apt/sources.list
+            #then
+            #  g_echo_warn "Distributionupdate from bookworm to trixie will be installed!!!"
+            #  sed -i 's/bookworm/trixie/g' /etc/apt/sources.list
+            #  sed -i 's/bookworm/trixie/g' /etc/apt/sources.list.d/*
+            #  DEBIAN_FRONTEND=noninteractive apt-get update
+            #  DEBIAN_FRONTEND=noninteractive apt-get -yy upgrade --without-new-pkgs
+            #  DEBIAN_FRONTEND=noninteractive apt-get -yy full-upgrade
+            #  DEBIAN_FRONTEND=noninteractive apt-get -yy -o Dpkg::Options::="--force-overwrite" --fix-broken install
+            #  DEBIAN_FRONTEND=noninteractive apt-get -yy autoremove
+            #fi
+
           fi
           [ -x /usr/bin/flatpak ] && flatpak update --system --noninteractive --force-remove
  
