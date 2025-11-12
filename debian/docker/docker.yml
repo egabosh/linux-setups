@@ -384,11 +384,11 @@
           [Service]
           Environment=DOCKER_MIN_API_VERSION=1.24
         mode: '0644'
-      notify:
-      - Restart docker
+      register: docker_override
 
     - name: Reload systemd daemon
       command: systemctl daemon-reload
+      when: docker_override.changed
     ###### END WORKAROUND
 
   handlers:
