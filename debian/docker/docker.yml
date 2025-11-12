@@ -370,6 +370,26 @@
         insertbefore: BOF
         line: "#!/bin/bash -e"
 
+    ###### WORKAROUND FOR OLD DOCKER API NEEDED BY TRAEFIK: https://github.com/traefik/traefik/issues/12253
+    - name: Ensure Docker override directory exists
+      file:
+        path: /etc/systemd/system/docker.service.d
+        state: directory
+        mode: '0755'
+
+    - name: Create Docker service override configuration
+      copy:
+        dest: /etc/systemd/system/docker.service.d/override.conf
+        content: |
+          [Service]
+          Environment=DOCKER_MIN_API_VERSION=1.24
+        mode: '0644'
+      notify:
+      - Restart docker
+
+    - name: Reload systemd daemon
+      command: systemctl daemon-reload
+    ###### END WORKAROUND
 
   handlers:
 
