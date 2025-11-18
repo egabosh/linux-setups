@@ -909,6 +909,29 @@
       - update-grub
       when: isgrub.stat.exists == true
 
+    - name: Add sudo config to disable fqdn lookup
+      ansible.builtin.copy:
+        dest: /etc/sudoers.d/99-disable-fqdn
+        content: |
+          # Disable DNS lookups for sudo
+          Defaults !fqdn
+        mode: '0440'
+        validate: 'visudo -cf %s'
+
+    - name: Ensure nsswitch.conf uses only files
+      ansible.builtin.lineinfile:
+        path: /etc/nsswitch.conf
+        regexp: '^{{ item.key }}:'
+        line: '{{ item.key }}: files'
+        state: present
+      loop:
+        - { key: 'passwd' }
+        - { key: 'group' }
+        - { key: 'shadow' }
+        - { key: 'gshadow' }
+      loop_control:
+        label: '{{ item.key }}'
+
 
   handlers:
 
