@@ -932,6 +932,14 @@
       loop_control:
         label: '{{ item.key }}'
 
+    - name: check and add hostname und FQDN in /etc/hosts with 127.0.0.1
+      ansible.builtin.lineinfile:
+        path: /etc/hosts
+        regexp: '^127\.0\.0\.1[[:space:]]+.*\b{{ ansible_hostname }}\b.*\b{{ inventory_hostname }}\b'
+        line: '127.0.0.1 {{ ansible_hostname }} {{ inventory_hostname }}'
+        state: present
+        backup: yes
+
 
   handlers:
 
