@@ -198,12 +198,12 @@
     - name: check if this is a Mint system
       stat: 
         path: /etc/linuxmint/mintSystem.conf
-      register: mintpios
+      register: mint
 
     - name: check if we are in a RaspberryPiOS
       stat:
         path: /usr/bin/wayfire-pi
-      register: mintpios
+      register: pios
 
     - name: Install Basic Packages if not running in container/mint or PiOS
       apt:
@@ -211,19 +211,19 @@
           - dhcpcd5
         update_cache: yes
         install_recommends: no
-      when: (nocontainer.stat.exists == true) and (mintpios.stat.exists == false)
+      when: nocontainer.stat.exists and not (mint.stat.exists or pios.stat.exists)
 
     - name: add dhcpcd to startup if not running in container/mint or PiOS
       command: systemctl enable dhcpcd
       args:
         creates: /etc/systemd/system/multi-user.target.wants/dhcpcd.service
-      when: (nocontainer.stat.exists == true) and (mintpios.stat.exists == false)
-      
+      when: nocontainer.stat.exists and not (mint.stat.exists or pios.stat.exists)
+
     - name: No DHCPcd for internal interfaces if not running in container/mint or PiOS
       ansible.builtin.lineinfile:
         path: /etc/dhcpcd.conf
         line: denyinterfaces docker0 virbr0 tornet0 veth* br* eth1
-      when: (nocontainer.stat.exists == true) and (mintpios.stat.exists == false)
+      when: nocontainer.stat.exists and not (mint.stat.exists or pios.stat.exists)
       register: dhcpcd
 
 #    - name: Check weather /etc/network/interfaces exists
