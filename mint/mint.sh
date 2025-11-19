@@ -60,6 +60,7 @@ fi
 
 # cleanup old stuff
 rm -f /usr/local/sbin/autoupdate.d/server.update
+rm -f /usr/local/sbin/autoupdate.d/signal-cli.update
 
 # fix for creating notify.sh dir from docker start if file not present
 [ -d /usr/local/bin/notify.sh ] && rmdir /usr/local/bin/notify.sh
