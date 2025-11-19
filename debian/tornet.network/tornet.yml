@@ -564,7 +564,7 @@
       lineinfile:
         path: /usr/local/sbin/dnstest.sh
         insertbefore: BOF
-        line: "#!/bin/bash -e"
+        line: "#!/bin/bash"
 
     - name: Schedule dnstest.sh script in cron
       ansible.builtin.cron:
