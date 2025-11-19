@@ -27,13 +27,13 @@ do
   echo "=== $playbook"
   if [ -s "$playbook" ]
   then
-    sudo ansible-playbook --connection=local --inventory $(hostname), --limit $(hostname) "${playbook}"
+    sudo ansible-playbook --connection=local --inventory $(hostname), --limit $(hostname) -e "ansible_python_interpreter=/usr/bin/python" "${playbook}"
   elif [[ $playbook =~ https:// ]]
   then
     playbookfile=$(basename "$playbook")
     if curl -L "$playbook" >~/"${playbookfile}"
     then
-      sudo ansible-playbook --connection=local --inventory $(hostname), --limit $(hostname) ~/"${playbookfile}"
+      sudo ansible-playbook --connection=local --inventory $(hostname), --limit $(hostname) -e "ansible_python_interpreter=/usr/bin/python" ~/"${playbookfile}"
     else
       echo "Playbook $playbook could not be downloaded"
       exit 1
@@ -43,7 +43,7 @@ do
     mkdir tmpplaybooks-$$
     cd tmpplaybooks-$$
     git clone $playbook
-    sudo ansible-playbook --connection=local --inventory $(hostname), --limit $(hostname) */*.yml
+    sudo ansible-playbook --connection=local --inventory $(hostname), --limit $(hostname) -e "ansible_python_interpreter=/usr/bin/python" */*.yml
     cd ..
     rm -r tmpplaybooks-$$
   else

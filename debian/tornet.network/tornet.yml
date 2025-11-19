@@ -575,7 +575,7 @@
         month: "*"
         weekday: "*"
         user: "root"
-        job: "/usr/local/sbin/dnstest.sh >>/var/log/dnstest.sh 2>&1"
+        job: "/usr/local/sbin/dnstest.sh >>/var/log/dnstest.sh.log 2>&1"
 
 
   handlers:

@@ -58,6 +58,9 @@ then
   rm -rf /home/docker/whoogle.*
 fi
 
+# cleanup old stuff
+rm -f /usr/local/sbin/autoupdate.d/server.update
+
 # fix for creating notify.sh dir from docker start if file not present
 [ -d /usr/local/bin/notify.sh ] && rmdir /usr/local/bin/notify.sh
 
@@ -100,7 +103,6 @@ sudo sed -i 's/ vanessa / virginia /g' /etc/apt/sources.list.d/official-package-
 sudo sed -i 's/ victoria / virginia /g' /etc/apt/sources.list.d/official-package-repositories.list
 
 # run ansible playbooks
-
 sudo wget https://raw.githubusercontent.com/egabosh/linux-setups/refs/heads/main/debian/install.sh -O /usr/local/sbin/linux_setups_debian_install.sh
 sudo chmod 700 /usr/local/sbin/linux_setups_debian_install.sh
 
