@@ -144,7 +144,7 @@ debian/hibiscus/hibiscus.yml
 fi
 
 echo $PLAYBOOKS | sudo tee /usr/local/etc/playbooks >/dev/null
-sudo -E bash -x /usr/local/sbin/linux_setups_debian_install.sh
+sudo -E bash /usr/local/sbin/linux_setups_debian_install.sh
 
 
 sudo bash /usr/local/sbin/autoupdate.sh noplaybooks
