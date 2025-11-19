@@ -39,6 +39,7 @@
     - name: Get sha256
       shell: wget -q https://gitlab.com/api/v4/projects/24386000/packages/generic/librewolf/latest/LibreWolf.{{ ansible_architecture }}.AppImage.sha256 -O - | cut -d" " -f1
       register: command_output
+      changed_when: false
 
     - set_fact:
         librewolf_sha256: "{{ command_output.stdout }}"
