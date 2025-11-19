@@ -47,7 +47,6 @@
           . /etc/bash/gaboshlib.include
 
           g_lockfile
-          g_all-to-syslog
 
           wireguard_config="/usr/local/etc/wg-client.conf"
           if ! [ -s $wireguard_config ]
@@ -78,12 +77,12 @@
           then
             g_echo_warn "DNS for $wghost not working"
             # maybe vpn is blocking dns - if active remove
-            #if nmcli connection | grep -q " wg-client"
-            # then
-            #  g_echo_warn "removing wg-client - maybe its blocking DNS/Internet access"
-            #  nmcli connection down wg-client
-            #  nmcli connection delete wg-client
-            #fi
+            if nmcli connection | grep -q " wg-client"
+            then
+              g_echo_warn "removing wg-client - maybe its blocking DNS/Internet access"
+              nmcli connection down wg-client
+              nmcli connection delete wg-client
+            fi
             exit 1
           fi
 

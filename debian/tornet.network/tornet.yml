@@ -555,7 +555,6 @@
         block: |
           . /etc/bash/gaboshlib.include
           g_lockfile
-          g_all-to-syslog
           g_check_fix_dns_stack
         backup: yes
         validate: /bin/bash -n %s
