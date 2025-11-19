@@ -28,34 +28,40 @@
       get_url:
         url: "{{ jameica_url }}"
         dest: "{{ jameica_zip }}"
+      changed_when: false
 
     - name: Download Hibiscus plugin
       get_url:
         url: "{{ hibiscus_plugin_url }}"
         dest: "{{ hibiscus_plugin_zip }}"
+      changed_when: false
 
     - name: Delete /opt/jameica directory recursively
       file:
         path: /opt/jameica
         state: absent
+      changed_when: false
 
     - name: Extract Jameica to /opt
       unarchive:
         src: "{{ jameica_zip }}"
         dest: "{{ jameica_dir }}"
         extra_opts: [ "-o", "-a" ]
+      changed_when: false
 
     - name: Extract Hibiscus plugin into Jameica plugin directory
       unarchive:
         src: "{{ hibiscus_plugin_zip }}"
         dest: "{{ jameica_dir }}/jameica/plugins"
         extra_opts: [ "-o", "-a" ]
+      changed_when: false
 
     - name: Set execute permissions
       file:
         path: "{{ jameica_dir }}/jameica/jameica.sh"
         mode: '0755'
         state: file
+      changed_when: false
 
     - name: Remove downloaded zip files
       file:
@@ -64,6 +70,7 @@
       loop:
         - "{{ jameica_zip }}"
         - "{{ hibiscus_plugin_zip }}"
+      changed_when: false
 
     - name: Create global desktop icon for Jameica
       copy:
