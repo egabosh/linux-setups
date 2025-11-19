@@ -48,6 +48,9 @@
 
           g_lockfile
 
+          # first let dnstest.sh run
+          sleep 10       
+   
           wireguard_config="/usr/local/etc/wg-client.conf"
           if ! [ -s $wireguard_config ]
           then
