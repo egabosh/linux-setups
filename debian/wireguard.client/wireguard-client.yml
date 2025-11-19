@@ -46,9 +46,20 @@
         block: |
           wireguard_config="/usr/local/etc/wg-client.conf"
 
+          function restart_dns_stack {
+            local service
+            for service in tor dnscrypt-proxy systemd-resolved
+            do
+              systemctl status $service.service 2>/dev/null | grep -q 'Active: active (running)' || continue
+              sleep 3
+              systemctl restart $service.service
+            done
+          }
+
+
           [ -s $wireguard_config ] || exit 0
 
-          testip=$(grep "^DNS" /usr/local/etc/wg-client.conf | cut -d= -f2 | cut -d, -f1)
+          testip=$(grep "^DNS" $wireguard_config | cut -d= -f2 | cut -d, -f1)
           if ping -c3 $testip >/dev/null 2>&1
           then
             echo "wireguard connection OK"
@@ -57,17 +68,17 @@
 
           echo "No wireguard connection"
 
-          wghost=$(grep "^Endpoint" /usr/local/etc/wg-client.conf | cut -d= -f2 | cut -d: -f1)
+          wghost=$(grep "^Endpoint" $wireguard_config | cut -d= -f2 | cut -d: -f1)
           if ! host -W 3 $wghost
           then
             echo "DNS for wireguard.defiant.dedyn.io not working"
-            # maybe wpn is blocking dns - if active remove
+            # maybe vpn is blocking dns - if active remove
             if nmcli connection | grep -q " wg-client"
              then
               echo "removing wg-client - maybe its blocking DNS/Internet access"
               nmcli connection down wg-client
               nmcli connection delete wg-client
-              systemctl restart tor.service
+              restart_dns_stack
             fi
             exit 1
           fi
@@ -84,7 +95,7 @@
           then
             nmcli connection down wg-client
             nmcli connection up wg-client
-            systemctl restart tor.service
+            restart_dns_stack
             exit 3
           fi
         backup: yes

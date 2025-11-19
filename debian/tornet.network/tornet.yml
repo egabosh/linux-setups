@@ -544,6 +544,51 @@
         validate: /bin/bash -n %s
 
 
+    - name: /usr/local/sbin/dnstest.sh
+      blockinfile:
+        path: /usr/local/sbin/dnstest.sh
+        create: yes
+        mode: 0500
+        owner: root
+        group: root
+        marker: "# {mark} ANSIBLE MANAGED BLOCK"
+        block: |
+          function restart_dns_stack {
+            local service
+            for service in tor dnscrypt-proxy systemd-resolved
+            do
+              echo "restart $service"
+              systemctl status $service.service 2>/dev/null | grep -q 'Active: active (running)' || continue
+              systemctl restart $service.service
+              sleep 3
+            done
+          }
+
+          if ! host -W 3 9.9.9.9
+          then
+            echo "restarting dns stack"
+            restart_dns_stack
+          fi
+        backup: yes
+        validate: /bin/bash -n %s
+
+    - name: /usr/local/sbin/dnstest.sh shebang
+      lineinfile:
+        path: /usr/local/sbin/dnstest.sh
+        insertbefore: BOF
+        line: "#!/bin/bash -e"
+
+    - name: Schedule dnstest.sh script in cron
+      ansible.builtin.cron:
+        name: "tnstest.sh Script"
+        minute: "*"
+        hour: "*"
+        day: "*"
+        month: "*"
+        weekday: "*"
+        user: "root"
+        job: "/usr/local/sbin/dnstest.sh"
+
 
   handlers:
 
