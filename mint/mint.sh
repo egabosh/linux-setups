@@ -214,6 +214,8 @@ then
   # Nemo Filemanager Settings
   dconf write /org/nemo/preferences/default-folder-viewer "'list-view'"
   dconf write /org/nemo/preferences/show-location-entry true
+  dconf write /org/nemo/preferences/show-directory-item-counts "'never'"
+  dconf write /org/nemo/preferences/show-image-thumbnails "'never'"
 
   # Traditional Cinnamon task bar (https://forums.linuxmint.com/viewtopic.php?t=321872)
   dconf write /org/cinnamon/panels-enabled "['1:0:bottom']"
