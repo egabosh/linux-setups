@@ -224,16 +224,6 @@
       args:
         removes: /etc/systemd/system/multi-user.target.wants/dhcpcd.service
 
-    - name: /etc/default/grub nonquiet nosplash
-      ansible.builtin.lineinfile:
-        path: /etc/default/grub
-        regexp: '^GRUB_CMDLINE_LINUX_DEFAULT=.*$'
-        line: "GRUB_CMDLINE_LINUX_DEFAULT=\"nosplash\""
-        backup: yes
-      notify:
-      - update-grub
-      changed_when: false
-
     - name: enable Mint Autoupdate 
       command: systemctl enable mintupdate-automation-upgrade.timer
       args:
@@ -372,10 +362,3 @@
       ansible.builtin.systemd:
         daemon_reload: yes
 
-
-
-  handlers:
-
-    - name: update-grub
-      ansible.builtin.shell: update-gruba
-      changed_when: false
