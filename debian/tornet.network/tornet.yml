@@ -554,6 +554,14 @@
         marker: "# {mark} ANSIBLE MANAGED BLOCK"
         block: |
           . /etc/bash/gaboshlib.include
+          sleep 10
+          
+          while [[ -s /var/lock/wireguard.sh.lock ]]
+          do
+            g_echo "Waiting for /var/lock/wireguard.sh.lock"
+            sleep 1
+          done
+
           g_lockfile
           g_check_fix_dns_stack
         backup: yes
