@@ -553,22 +553,10 @@
         group: root
         marker: "# {mark} ANSIBLE MANAGED BLOCK"
         block: |
-          function restart_dns_stack {
-            local service
-            for service in tor dnscrypt-proxy systemd-resolved
-            do
-              echo "restart $service"
-              systemctl status $service.service 2>/dev/null | grep -q 'Active: active (running)' || continue
-              systemctl restart $service.service
-              sleep 3
-            done
-          }
-
-          if ! host -W 3 9.9.9.9
-          then
-            echo "restarting dns stack"
-            restart_dns_stack
-          fi
+          . /etc/bash/gaboshlib.include
+          g_lockfile
+          g_all-to-syslog
+          g_check_fix_dns_stack
         backup: yes
         validate: /bin/bash -n %s
 
@@ -587,7 +575,7 @@
         month: "*"
         weekday: "*"
         user: "root"
-        job: "/usr/local/sbin/dnstest.sh"
+        job: "/usr/local/sbin/dnstest.sh >>/var/log/dnstest.sh 2>&1"
 
 
   handlers:
