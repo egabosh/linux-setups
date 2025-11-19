@@ -104,7 +104,10 @@
           [ -x /usr/bin/flatpak ] && flatpak update --system --noninteractive --force-remove
  
           # run all defined playbooks if available
-          [[ -s "/usr/local/etc/playbooks" ]] && bash /usr/local/sbin/linux_setups_debian_install.sh
+          if ! [[ $1 = "noplaybooks" ]]
+          then
+            [[ -s "/usr/local/etc/playbooks" ]] && bash /usr/local/sbin/linux_setups_debian_install.sh
+          fi
          
           # clean apt cache
           apt-get -yy clean

@@ -49,6 +49,7 @@
         dest: /usr/local/bin/librewolf
         checksum: sha256:{{ librewolf_sha256 }}
         mode: "0555"
+      changed_when: false
 
     - name: /usr/local/sbin/autoupdate.d/video-download-helper.update
       blockinfile:
@@ -69,4 +70,5 @@
       command: bash -e /usr/local/sbin/autoupdate.d/video-download-helper.update
       args:
         creates: /opt/net.downloadhelper.coapp
+      changed_when: false
 
