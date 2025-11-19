@@ -232,6 +232,7 @@
         backup: yes
       notify:
       - update-grub
+      changed_when: false
 
     - name: enable Mint Autoupdate 
       command: systemctl enable mintupdate-automation-upgrade.timer
@@ -376,4 +377,5 @@
   handlers:
 
     - name: update-grub
-      ansible.builtin.shell: update-grub
+      ansible.builtin.shell: update-gruba
+      changed_when: false
