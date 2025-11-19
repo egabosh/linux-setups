@@ -49,18 +49,18 @@ fi
 
 # hostname
 host=$(cat /etc/hostname | sed "s/^${defaultuser}-//" | cut  -d. -f1)
-hostnamectl set-hostname ${host}.mint.${mydomain}
+sudo hostnamectl set-hostname ${host}.mint.${mydomain}
 
 # cleanup whoogle
 if ! [ -s /home/docker/whoogle.$(hostname)/docker-compose.yml ]
 then
   find /home/docker/whoogle.* -name docker-compose.yml -exec docker compose -f {} down \;
-  rm -rf /home/docker/whoogle.*
+  sudo rm -rf /home/docker/whoogle.*
 fi
 
 # cleanup old stuff
-rm -f /usr/local/sbin/autoupdate.d/server.update
-rm -f /usr/local/sbin/autoupdate.d/signal-cli.update
+sudo rm -f /usr/local/sbin/autoupdate.d/server.update
+sudo rm -f /usr/local/sbin/autoupdate.d/signal-cli.update
 
 # fix for creating notify.sh dir from docker start if file not present
 [ -d /usr/local/bin/notify.sh ] && rmdir /usr/local/bin/notify.sh

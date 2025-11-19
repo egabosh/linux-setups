@@ -49,41 +49,46 @@
           g_lockfile
           g_all-to-syslog
 
+          wireguard_config="/usr/local/etc/wg-client.conf"
+          if ! [ -s $wireguard_config ]
+          then
+            g_echo "No wireguard configuration in $wireguard_config"
+            exit 0
+          fi
+
           while [[ -s /var/lock/dnstest.sh.lock ]]
           do
             g_echo "Waiting for /var/lock/dnstest.sh.lock"
             sleep 1
           done
 
-          wireguard_config="/usr/local/etc/wg-client.conf"
-
           [ -s $wireguard_config ] || exit 0
 
-          testip=$(grep "^DNS" $wireguard_config | cut -d= -f2 | cut -d, -f1)
-          if ping -c3 $testip >/dev/null 2>&1
+          wgdnsip=$(grep "^DNS" $wireguard_config | cut -d= -f2 | cut -d, -f1)
+          if ping -c3 $wgdnsip >/dev/null 2>&1
           then
             g_echo "wireguard connection OK"
             exit 0
           fi
 
-          echo "No wireguard connection"
+          g_echo "No wireguard connection"
 
           wghost=$(grep "^Endpoint" $wireguard_config | cut -d= -f2 | cut -d: -f1)
-          if ! host -W 3 $wghost
+          if ! host -W5 $wghost
           then
-            g_echo_warn "DNS for wireguard.defiant.dedyn.io not working"
+            g_echo_warn "DNS for $wghost not working"
             # maybe vpn is blocking dns - if active remove
-            if nmcli connection | grep -q " wg-client"
-             then
-              g_echo_warn "removing wg-client - maybe its blocking DNS/Internet access"
-              nmcli connection down wg-client
-              nmcli connection delete wg-client
-            fi
+            #if nmcli connection | grep -q " wg-client"
+            # then
+            #  g_echo_warn "removing wg-client - maybe its blocking DNS/Internet access"
+            #  nmcli connection down wg-client
+            #  nmcli connection delete wg-client
+            #fi
             exit 1
           fi
 
           nmcli connection | grep -q "^wg-client" || \
-          if ! sudo nmcli connection import type wireguard file $wireguard_config
+          if ! nmcli connection import type wireguard file $wireguard_config
           then
             g_echo_error "Failed to import Wireguard VPN file $wireguard_config"
             exit 2
