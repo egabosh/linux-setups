@@ -203,7 +203,7 @@
           [Service]
           Type=oneshot
           User=root
-          ExecStart=bash -x /usr/local/sbin/mint-config-update.sh
+          ExecStart=bash /usr/local/sbin/mint-config-update.sh
           # Wait for "normal" exit of the script SIGCONT doesnt kill/terminate it
           KillSignal=SIGCONT
           # wait a maximum of 30 minutes
