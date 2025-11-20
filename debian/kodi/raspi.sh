@@ -60,6 +60,7 @@ debian/whoogle/whoogle.yml
 debian/flatpak/flatpak.yml
 debian/firefox/firefox.yml
 debian/chromium/chromium.yml
+debian/tornet.network/tornet.yml
 debian/wireguard.client/wireguard-client.yml"
 
 echo $PLAYBOOKS >/usr/local/etc/playbooks
