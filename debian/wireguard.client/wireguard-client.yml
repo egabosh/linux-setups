@@ -55,6 +55,29 @@
             exit 0
           fi
 
+          ## Tor withount wireguard
+          novpnroute=$(ip route | grep default | awk '{print $3}')
+          novpndev=$(ip route | grep default | awk '{print $5}')
+          toruid=$(getent passwd debian-tor | cut -d: -f3)
+          # check for routing-table-alias
+          if ! grep -q "101 nowireguard" /etc/iproute2/rt_tables
+          then
+            g_echo "adding 101 nowireguard routingtable to /etc/iproute2/rt_tables"
+            echo "101 nowireguard" >>/etc/iproute2/rt_tables
+          fi
+          # check for nowireguard route
+          if ! ip route list table nowireguard | egrep -q "^default via $novpnroute dev $novpndev" 
+          then
+            g_echo "adding route via $novpnroute dev $novpndev for nowireguard routing tabe"
+            ip route add default via $novpnroute dev $novpndev table nowireguard
+          fi
+          # check for nowireguard rule for tor uid
+          if ! ip rule list | egrep -q "from all uidrange $toruid-$toruid lookup nowireguard"
+          then
+            g_echo "adding rule from all uidrange $toruid-$toruid lookup nowireguard"
+            ip rule add from all uidrange $toruid-$toruid lookup nowireguard
+          fi
+          
           # Lockfiles
           while [[ -s /var/lock/dnstest.sh.lock ]]
           do
