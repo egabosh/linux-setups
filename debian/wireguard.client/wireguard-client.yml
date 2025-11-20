@@ -48,21 +48,20 @@
 
           g_echo "=== Starting $0"
 
-          while [[ -s /var/lock/dnstest.sh.lock ]]
-          do
-            g_echo "Waiting for /var/lock/dnstest.sh.lock"
-            sleep 1
-          done
-
-
-          g_lockfile
-
           wireguard_config="/root/wg-client.conf"
           if ! [ -s $wireguard_config ]
           then
             g_echo "No wireguard configuration in $wireguard_config"
             exit 0
           fi
+
+          # Lockfiles
+          while [[ -s /var/lock/dnstest.sh.lock ]]
+          do
+            g_echo "Waiting for /var/lock/dnstest.sh.lock"
+            sleep 1
+          done
+          g_lockfile
 
           wgdnsip=$(grep "^DNS" $wireguard_config | cut -d= -f2 | cut -d, -f1)
 
@@ -78,12 +77,6 @@
             fi
             rm -f $g_tmp/ping_out
           fi
-
-          while [[ -s /var/lock/dnstest.sh.lock ]]
-          do
-            g_echo "Waiting for /var/lock/dnstest.sh.lock"
-            sleep 1
-          done
 
           [ -s $wireguard_config ] || exit 0
 
