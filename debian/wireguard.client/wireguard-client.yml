@@ -48,12 +48,18 @@
 
           g_echo "=== Starting $0"
 
-          wireguard_config="/root/wg-client.conf"
+          userhome=$(getent passwd 1000 | cut -d: -f6)
+          wireguard_configs="${userhome}/wg-client.conf ${userhome}/.config/wg-client.conf ${userhome}/.wg-client.conf/root/wg-client.conf /usr/local/etc/wg-client.conf /etc/wg-client.conf"
+          for wireguard_config in wireguard_configs
+          do
+            [ -s $wireguard_config ] && break
+          done
           if ! [ -s $wireguard_config ]
           then
-            g_echo "No wireguard configuration in $wireguard_config"
+            g_echo "No wireguard configuration found in $wireguard_configs"
             exit 0
           fi
+          g_echo "using config $wireguard_config"
 
           ## Tor withount wireguard
           novpnroute=$(ip route | grep default | awk '{print $3}')
