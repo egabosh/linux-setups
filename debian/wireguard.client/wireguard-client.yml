@@ -148,3 +148,11 @@
         user: "root"
         job: "/usr/local/sbin/wireguard.sh >>/var/log/wireguard.sh.log 2>&1"
 
+    - name: Schedule WireGuard script @reboot
+      ansible.builtin.cron:
+        name: "WireGuard Script Reboot"
+        special_time: reboot
+        user: "root"
+        job: "/usr/local/sbin/wireguard.sh >>/var/log/wireguard.sh.log 2>&1"
+        state: present
+
