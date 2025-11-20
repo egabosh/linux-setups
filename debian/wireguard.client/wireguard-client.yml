@@ -89,17 +89,16 @@
           wgdnsip=$(grep "^DNS" $wireguard_config | cut -d= -f2 | cut -d, -f1)
 
           # look for known issue (happens in some cases afer machine reboot)
-          #nmcli connection | grep -q " wg-client" && if ! ping -c1 $wgdnsip >$g_tmp/ping_out 2>&1
-          #then
-          #  if grep -q 'ping: sendmsg: Destination address required' $g_tmp/ping_out
-          #  then
-          #    g_echo "Known routing or whatever failure when network isn't up fast enough - "
-          #    nmcli connection down wg-client
-          #    nmcli connection up wg-client
-          #    systemctl restart tor.service
-          #  fi
-          #  rm -f $g_tmp/ping_out
-          #fi
+          nmcli connection | grep -q " wg-client" && if ! ping -c1 $wgdnsip >$g_tmp/ping_out 2>&1
+          then
+            if grep -q 'ping: sendmsg: Destination address required' $g_tmp/ping_out
+            then
+              g_echo "Known routing or whatever failure when network isn't up fast enough - "
+              nmcli connection down wg-client
+              nmcli connection up wg-client
+            fi
+            rm -f $g_tmp/ping_out
+          fi
 
           if ping -c3 $wgdnsip >$g_tmp/ping_out 2>&1
           then
@@ -129,7 +128,6 @@
             g_echo_warn "reconnecting wg-client"
             nmcli connection down wg-client
             nmcli connection up wg-client
-            #g_check_fix_dns_stack
             exit 3
           fi
         backup: yes
