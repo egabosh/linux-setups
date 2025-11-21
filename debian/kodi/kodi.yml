@@ -175,4 +175,16 @@
         port: '8080'
         proto: tcp
 
+    - name: Restart kodi/lightdm if remote database connection fails
+      ansible.builtin.cron:
+        name: "Restart kodi/lightdm if remote database connection fails"
+        user: root
+        minute: "*"
+        hour: "*"
+        day: "*"
+        month: "*"
+        weekday: "*"
+        job: 'cat /home/user/.kodi/temp/kodi.log | egrep -iq " Unable to open database: .*Can\'t connect to server" && systemctl restart lightdm.service'
+        state: present
+
 
