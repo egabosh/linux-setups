@@ -184,7 +184,7 @@
         day: "*"
         month: "*"
         weekday: "*"
-        job: 'cat /home/user/.kodi/temp/kodi.log | egrep -iq " Unable to open database: .*Can\'t connect to server" && systemctl restart lightdm.service'
+        job: 'cat /home/user/.kodi/temp/kodi.log | egrep -iq " Unable to open database: .*t connect to server" && systemctl restart lightdm.service'
         state: present
 
 
