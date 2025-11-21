@@ -26,12 +26,6 @@
           - ttf-mscorefonts-installer
           - fonts-terminus
           - mint-y-icons
-          # kodi
-          - kodi21
-          - kodi21-pvr-iptvsimple
-          - kodi21-vfs-sftp
-          - kodi21-game-libretro
-          - kodi21-peripheral-joystick
           # useful other stuff
           - pwgen
           - arj
@@ -74,6 +68,37 @@
           - redshift-gtk
         update_cache: yes
         install_recommends: no
+
+    - name: Install kodi for trixie
+      apt:
+        name:
+          - kodi
+          - kodi-pvr-iptvsimple
+          - kodi-vfs-sftp
+          - kodi-game-libretro
+          - kodi-peripheral-joystick
+      when: ansible_distribution_release == "trixie"
+
+    - name: Install kodi for trixie
+      apt:
+        name:
+          - kodi21
+          - kodi21-pvr-iptvsimple
+          - kodi21-vfs-sftp
+          - kodi21-game-libretro
+          - kodi21-peripheral-joystick
+        state: absent
+      when: ansible_distribution_release == "trixie"
+
+    - name: Install kodi for bookworm
+      apt:
+        name:
+          - kodi21
+          - kodi21-pvr-iptvsimple
+          - kodi21-vfs-sftp
+          - kodi21-game-libretro
+          - kodi21-peripheral-joystick
+      when: ansible_distribution_release == "bookworm"
 
     - name: 1 GB swap (100MB default)
       ansible.builtin.lineinfile:
