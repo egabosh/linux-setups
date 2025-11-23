@@ -555,7 +555,7 @@
         block: |
           . /etc/bash/gaboshlib.include
           sleep 10
-          
+
           while [[ -s /var/lock/wireguard.sh.lock ]]
           do
             g_echo "Waiting for /var/lock/wireguard.sh.lock"
@@ -563,7 +563,41 @@
           done
 
           g_lockfile
-          g_check_fix_dns_stack
+          g_check_fix_dns_stack && exit 0
+
+          # if not successful check for Captive Portal (Loginpage for free networks)
+          if timeout -k 10 -s 9 5 curl -v 9.9.9.9 2>&1 | grep -q "Location: https://"
+          then
+            g_echo "Captive portal"
+            captive_portal=yes
+          fi
+
+          if [[ $captive_portal = "yes" ]]
+          then
+            if [[ -s /etc/systemd/resolved.conf.d/DoHoT.conf ]]
+            then
+              mv /etc/systemd/resolved.conf.d/DoHoT.conf $g_tmp/DoHoT.conf
+              systemctl restart systemd-resolved.service
+              sleep 2
+            fi
+
+            while true
+            do
+              if ! curl -v 9.9.9.9 2>&1 | grep -q "Location: https://"
+              then
+                break
+              fi
+              g_echo "Waiting to accept captive portal (Loginpage for free networks)"
+              sleep 2
+            done
+
+            if [[ -s $g_tmp/DoHoT.conf ]]
+            then
+              mv $g_tmp/DoHoT.conf /etc/systemd/resolved.conf.d/DoHoT.conf
+              systemctl restart systemd-resolved.service
+              sleep 2
+            fi
+          fi
         backup: yes
         validate: /bin/bash -n %s
 
