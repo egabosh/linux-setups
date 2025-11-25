@@ -127,7 +127,6 @@
         group: docker
         marker: "# {mark} ANSIBLE MANAGED BLOCK"
         block: |
-          version: '3.6'
           services:
             home-assistant.{{inventory_hostname}}:
               image: "ghcr.io/home-assistant/home-assistant:stable"
@@ -207,7 +206,6 @@
         chdir: /home/docker/home-assistant.{{inventory_hostname}}
         creates: /home/docker/home-assistant.{{inventory_hostname}}/home-assistant.init.log
 
-  
   handlers:
     - name: run genpw.sh
       ansible.builtin.shell: ./genpw.sh
