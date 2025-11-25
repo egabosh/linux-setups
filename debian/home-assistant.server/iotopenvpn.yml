@@ -9,6 +9,7 @@
     openvpn_port: 1194
     openvpn_protocol: udp
     openvpn_cert_days: 30  # Certificates valid for 30 days
+    easyrsa_path: /etc/openvpn/iot-easy-rsa
 
   tasks:
     # Install required packages
@@ -36,69 +37,47 @@
               bridge_maxwait 0
         marker: "# {mark} ANSIBLE MANAGED BLOCK"
         create: yes
+      notify: restart networking to apply bridge
 
-    - name: Create /etc/openvpn/easy-rsa
+    - name: Create easyrsa_path
       ansible.builtin.file:
-        path: /etc/openvpn/easy-rsa
+        path: "{{ easyrsa_path }}"
         owner: root
         group: root
         state: directory
         mode: '0750'
 
-    # Initialize easy-rsa PKI
-    - name: Initialize easy-rsa PKI
+    - name: Run easy-rsa PKI steps
       command: >
-        /usr/share/easy-rsa/easyrsa --batch init-pki
-        chdir=/etc/openvpn/easy-rsa
-        creates=/etc/openvpn/easy-rsa/pki
-
-    # Build CA (valid for 30 days)
-    - name: Build CA with 30 days validity
-      command: >
-        /usr/share/easy-rsa/easyrsa --batch --days={{ openvpn_cert_days }} build-ca nopass
-        chdir=/etc/openvpn/easy-rsa
-        creates=/etc/openvpn/easy-rsa/pki/ca.crt
-
-    # Generate DH parameters
-    - name: Generate Diffie-Hellman parameters
-      command: >
-        /usr/share/easy-rsa/easyrsa --batch gen-dh
-        chdir=/etc/openvpn/easy-rsa
-        creates=/etc/openvpn/easy-rsa/pki/dh.pem
-
-    # Generate server certificate (valid for 30 days)
-    - name: Generate server certificate with 30 days validity
-      command: >
-        /usr/share/easy-rsa/easyrsa --batch --days={{ openvpn_cert_days }} build-server-full openvpn-server nopass
-        chdir=/etc/openvpn/easy-rsa
-        creates=/etc/openvpn/easy-rsa/pki/issued/openvpn-server.crt
-
-    # Copy server keys and certs to OpenVPN directory
-    - name: Copy server keys and certs to OpenVPN directory
-      copy:
-        src: "/etc/openvpn/easy-rsa/pki/{{ item.src }}"
-        dest: "/etc/openvpn/{{ item.dest }}"
-        remote_src: yes
+        /usr/share/easy-rsa/easyrsa --batch {{ item.cmd }}
+      args:
+        chdir: "{{ easyrsa_path }}"
+        creates: "{{ easyrsa_path }}/{{ item.creates }}"
       loop:
-        - { src: "ca.crt", dest: "ca.crt" }
-        - { src: "private/openvpn-server.key", dest: "server.key" }
-        - { src: "issued/openvpn-server.crt", dest: "server.crt" }
-        - { src: "dh.pem", dest: "dh.pem" }
+        - { cmd: 'init-pki', creates: 'pki' }
+        - { cmd: '--days={{ openvpn_cert_days }} build-ca nopass', creates: 'pki/ca.crt' }
+        - { cmd: 'gen-dh', creates: 'pki/dh.pem' }
+        - { cmd: '--days={{ openvpn_cert_days }} build-server-full openvpn-server nopass', creates: 'pki/issued/openvpn-server.crt' }
+      notify: restart openvpn
 
     # Configure OpenVPN server (bridge mode)
     - name: Configure OpenVPN server in bridge mode
-      copy:
-        dest: /etc/openvpn/server.conf
-        content: |
+      blockinfile:
+        path: /etc/openvpn/iot.conf
+        mode: "0444"
+        owner: root
+        group: root
+        create: yes
+        marker: "# {mark} ANSIBLE MANAGED BLOCK"
+        block: |
           port {{ openvpn_port }}
           proto {{ openvpn_protocol }}
           dev tap
-          ca ca.crt
-          cert server.crt
-          key server.key
-          dh dh.pem
-          server-bridge {{ openvpn_server_ip }} 255.255.0.0 {{ openvpn_network | ipaddr('net') | ipaddr('1') }} {{ openvpn_network | ipaddr('net') | ipaddr('254') }}
-          push "route {{ openvpn_network }} 255.255.0.0"
+          ca {{ easyrsa_path }}/pki/ca.crt
+          cert {{ easyrsa_path }}/pki/issued/openvpn-server.crt
+          key {{ easyrsa_path }}/pki/private/openvpn-server.key
+          dh {{ easyrsa_path }}/pki/dh.pem
+          server-bridge
           keepalive 10 120
           cipher AES-256-CBC
           auth SHA256
@@ -106,14 +85,121 @@
           group nogroup
           persist-key
           persist-tun
-          status openvpn-status.log
+          status /var/log/openvpn/iot-status.log
           verb 3
           explicit-exit-notify 1
+          script-security 2
+          up /etc/openvpn/iot-dev2bridge.sh
+          log-append /var/log/openvpn/iot.log
+        backup: yes
+      notify: restart openvpn
+
+    - name: bridge script for openvpn
+      blockinfile:
+        path: /etc/openvpn/iot-dev2bridge.sh
+        mode: "0500"
+        owner: root
+        group: root
+        create: yes
+        marker: "# {mark} ANSIBLE MANAGED BLOCK"
+        block: |
+          # OpenVPN Up Script to add tap to bridge
+          # get dynamically added tap device
+          tap=$dev
+
+          # set tap interface up without IP
+          /sbin/ip link set dev $tap up
+          /sbin/ip addr flush dev $tap
+
+          # add tap interface to bridge iot0
+          /sbin/ip link set dev $tap master iot0
+
+          # set promisc mode for tap
+          /sbin/ip link set dev $tap promisc on
+        backup: yes
+        validate: /bin/bash -n %s
+      notify: restart openvpn
+
+    - name: /etc/openvpn/iot-dev2bridge.sh shebang
+      lineinfile:
+        path: /etc/openvpn/iot-dev2bridge.sh
+        insertbefore: BOF
+        line: "#!/bin/bash"
+
+    - name: /usr/local/bin/ovpn-client-add.sh
+      blockinfile:
+        path: /usr/local/bin/ovpn-client-add.sh
+        mode: "0500"
+        owner: root
+        group: root
+        create: yes
+        marker: "# {mark} ANSIBLE MANAGED BLOCK"
+        block: |
+          # Config
+          EASYRSA_DIR="{{ easyrsa_path }}"
+          OPENVPN_DIR="/etc/openvpn"
+          CLIENT_NAME="${1}.iot"
+          CERT_DAYS=30
+
+          if [ -z "$CLIENT_NAME" ]; then
+            echo "Usage: $0 <client-name>"
+            exit 1
+          fi
+
+          cd "$EASYRSA_DIR" || exit 1
+
+          # create client cert and key
+          /usr/share/easy-rsa/easyrsa --batch --days="$CERT_DAYS" build-client-full "$CLIENT_NAME" nopass || exit 2
+
+          # needed files
+          CA_CRT="$EASYRSA_DIR/pki/ca.crt"
+          CLIENT_CRT="$EASYRSA_DIR/pki/issued/$CLIENT_NAME.crt"
+          CLIENT_KEY="$EASYRSA_DIR/pki/private/$CLIENT_NAME.key"
+
+          # generate .ovpn-file
+          cat > "${CLIENT_NAME}.ovpn" <<EOF
+          client
+          dev tap
+          proto udp
+          remote defiant.dedyn.io 1194
+          resolv-retry infinite
+          nobind
+          persist-key
+          persist-tun
+          ca [inline]
+          cert [inline]
+          key [inline]
+          cipher AES-256-CBC
+          auth SHA256
+          verb 3
+          remote-cert-tls server
+
+          <ca>
+          $(cat "$CA_CRT")
+          </ca>
+          <cert>
+          $(cat "$CLIENT_CRT")
+          </cert>
+          <key>
+          $(cat "$CLIENT_KEY")
+          </key>
+          EOF
+
+          echo "${EASYRSA_DIR}/${CLIENT_NAME}.ovpn created"
+        backup: yes
+        validate: /bin/bash -n %s
+      notify: restart openvpn
+
+    - name: /usr/local/bin/ovpn-client-add.sh shebang
+      lineinfile:
+        path: /usr/local/bin/ovpn-client-add.sh
+        insertbefore: BOF
+        line: "#!/bin/bash"
 
     # Enable and start OpenVPN service
     - name: Enable and start OpenVPN service
       systemd:
-        name: openvpn@server
+        name: openvpn@iot
         enabled: yes
         state: started
 
@@ -129,10 +215,17 @@
         - 192.168.0.0/16
         - fc00::/7
 
-    # Restart networking to apply bridge
-    - name: Restart networking to apply bridge
+  handlers:
+
+    # restart networking to apply bridge
+    - name: restart networking to apply bridge
       service:
         name: networking
         state: restarted
+      notify: restart openvpn
 
-
+    - name: restart openvpn
+      service:
+        name: openvpn@iot
+             notify: restart openvpn
+ state: restarted
