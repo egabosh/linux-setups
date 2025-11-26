@@ -38,7 +38,7 @@
       loop: "{{ openwrt_packages }}"
       when: item not in installed_packages.stdout
 
-    - name: copy openwrt-dg.iot.ovpn
+    - name: copy .ovpn
       local_action: >
         shell scp -B -O /etc/openvpn/iot-easy-rsa/{{ inventory_hostname }}iot.ovpn root@{{ inventory_hostname }}:/etc/openvpn/{{ inventory_hostname }}iot.ovpn
       changed_when: false
@@ -85,7 +85,7 @@
             - "uci commit network"
             - "/etc/init.d/network restart"
             - "chmod 400 /etc/openvpn/{{ inventory_hostname }}iot.ovpn"
-            - "chmod 500 /etc/openvpn/openwrt-dg.iot.ovpn"
+            - "chmod 500 /etc/openvpn/iot-dev2bridge.sh"
             - "uci commit openvpn"
             - "/etc/init.d/openvpn enable"
             - "/etc/init.d/openvpn restart"

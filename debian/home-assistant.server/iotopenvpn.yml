@@ -3,13 +3,14 @@
   hosts: all
 
   vars:
-    openvpn_bridge_name: iot0
-    openvpn_network: 172.31.0.0/16
-    openvpn_server_ip: 172.31.0.1
+    bridge_name: iot0
+    #bridge_network: 172.31.0.0/16
+    bridge_ip: 172.31.0.1
     openvpn_port: 1194
     openvpn_protocol: udp
     openvpn_cert_days: 30  # Certificates valid for 30 days
     easyrsa_path: /etc/openvpn/iot-easy-rsa
+    dns_range: "172.31.0.10,172.31.0.200,255.255.0.0,12h"
 
   tasks:
     # Install required packages
@@ -19,6 +20,7 @@
           - openvpn
           - easy-rsa
           - bridge-utils
+          - dnsmasq
         state: present
         update_cache: yes
         install_recommends: no
@@ -26,12 +28,12 @@
     # Configure bridge interface
     - name: Configure bridge interface in /etc/network/interfaces
       blockinfile:
-        path: /etc/network/interfaces.d/{{ openvpn_bridge_name }}
+        path: /etc/network/interfaces.d/{{ bridge_name }}
         block: |
-          auto {{ openvpn_bridge_name }}
-          iface {{ openvpn_bridge_name }} inet static
+          auto {{ bridge_name }}
+          iface {{ bridge_name }} inet static
               bridge_ports none
-              address {{ openvpn_server_ip }}
+              address {{ bridge_ip }}
               netmask 255.255.0.0
               bridge_fd 0
               bridge_maxwait 0
@@ -111,8 +113,8 @@
           /sbin/ip link set dev $tap up
           /sbin/ip addr flush dev $tap
 
-          # add tap interface to bridge iot0
-          /sbin/ip link set dev $tap master iot0
+          # add tap interface to bridge {{ bridge_name }}
+          /sbin/ip link set dev $tap master {{ bridge_name }}
 
           # set promisc mode for tap
           /sbin/ip link set dev $tap promisc on
@@ -217,6 +219,81 @@
         - 192.168.0.0/16
         - fc00::/7
 
+    - name: Allow access to dhcp server
+      community.general.ufw:
+        rule: allow
+        port: '67'
+        proto: udp
+        interface: "{{ bridge_name }}"
+        direction: in
+
+    - name: Allow access to NTP server
+      community.general.ufw:
+        rule: allow
+        port: '123'
+        proto: udp
+        interface: "{{ bridge_name }}"
+        direction: in
+
+    - name: 'remove dnsmasq from startup'
+      command: systemctl disable dnsmasq
+      args:
+        removes: /etc/systemd/system/multi-user.target.wants/dnsmasq.service
+
+    - name: 'stop dnsmasq'
+      command: systemctl stop dnsmasq
+      args:
+        removes: /run/dnsmasq/dnsmasq.pid
+
+    - name: dnsmasq DNS and DHCP for bridge
+      blockinfile:
+        path: "/etc/dnsmasq-{{ bridge_name }}.conf"
+        create: yes
+        mode: "0444"
+        owner: root
+        group: root
+        marker: "# {mark} ANSIBLE MANAGED BLOCK"
+        block: |
+          port=53
+          interface={{ bridge_name }}
+          listen-address={{ bridge_ip }}
+          bind-interfaces
+          except-interface=lo
+          domain-needed
+          bogus-priv
+          server=127.0.0.53
+          dhcp-range={{ dns_range }}
+          dhcp-option=option:ntp-server,{{ bridge_ip }}
+          log-queries
+          log-dhcp
+      notify:
+      - restart dnsmasq-bridge
+
+    - name: dnsmasq DNS and DHCP for bridge - systemd
+      blockinfile:
+        path: "/etc/systemd/system/dnsmasq-{{ bridge_name }}.service"
+        create: yes
+        mode: "0444"
+        owner: root
+        group: root
+        marker: "# {mark} ANSIBLE MANAGED BLOCK"
+        block: |
+          [Unit]
+          Description=dnsmasq {{ bridge_name }} DNS and DHCP
+          After=network.target
+            
+          [Service]
+          Type=forking
+          ExecStart=/usr/sbin/dnsmasq -x /run/dnsmasq/dnsmasq-{{ bridge_name }}.pid -u dnsmasq -r /run/dnsmasq/resolv.conf -C /etc/dnsmasq-{{ bridge_name }}.conf --local-service
+          PIDFile=/run/dnsmasq/dnsmasq-{{ bridge_name }}.pid
+          KillMode=process
+          Restart=on-failure
+          
+          [Install]
+          WantedBy=multi-user.target
+      notify:
+      - restart dnsmasq-{{ bridge_name }}
+
   handlers:
 
     # restart networking to apply bridge
@@ -229,4 +306,10 @@
     - name: restart openvpn
       service:
         name: openvpn@iot
+        state: restarteda
+
+    - name: restart dnsmasq-bridge
+      service:
+        name: "dnsmasq-{{ bridge_name }}"
         state: restarted
+
