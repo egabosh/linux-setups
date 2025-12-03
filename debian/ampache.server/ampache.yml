@@ -189,12 +189,12 @@
           then
             sleep 10
             source ./env
-            until ! docker compose exec -T ampache.defiant.dedyn.io php ./var/www/bin/installer install --dbname=ampache-db  --dbuser=$MYSQL_USER --dbpassword=$MYSQL_PASSWORD --dbhost=ampache.{{inventory_hostname}}--db --webpath=/ -f 2>&1 | grep failed
+            until ! docker compose exec -T ampache.{{inventory_hostname}} php ./var/www/bin/installer install --dbname=ampache-db  --dbuser=$MYSQL_USER --dbpassword=$MYSQL_PASSWORD --dbhost=ampache.{{inventory_hostname}}--db --webpath=/ -f 2>&1 | grep failed
             do 
               sleep 5
             done
-            docker compose exec -T -u 33 ampache.defiant.dedyn.io php ./var/www/bin/cli admin:addUser ampadmin -p $AMPACHE_ADMIN_PW -l 100
-            docker compose exec -T -u 33 ampache.defiant.dedyn.io php ./var/www/bin/cli run:addCatalog Music /media/music music
+            docker compose exec -T -u 33 ampache.{{inventory_hostname}} php ./var/www/bin/cli admin:addUser ampadmin -p $AMPACHE_ADMIN_PW -l 100
+            docker compose exec -T -u 33 ampache.{{inventory_hostname}} ./var/www/bin/cli run:addCatalog Music /media/music music
           fi
         backup: yes
         validate: /bin/bash -n %s
@@ -209,7 +209,7 @@
 
     - name: individual ampache config
       blockinfile:
-        path: /home/docker/ampache.defiant.dedyn.io/ampache-data/config/ampache.cfg.php
+        path: /home/docker/ampache.{{inventory_hostname}}/ampache-data/config/ampache.cfg.php
         mode: "0640"
         owner: 33
         marker: "; {mark} ANSIBLE MANAGED BLOCK"

@@ -247,9 +247,9 @@
           DAYS=7
           TIMESTAMP=$(date +"%Y%m%d%H%M")
 
-          for i in $(echo "show databases" | mariadb -u root -h kodidb.defiant.dedyn.io --ssl --ssl-verify-server-cert -P 3307 -p${MARIADB_ROOT_PASSWORD} | egrep -v "^Database$|^performance_schema$|^information_schema$")
+          for i in $(echo "show databases" | mariadb -u root -h kodidb.{{inventory_hostname}} --ssl --ssl-verify-server-cert -P 3307 -p${MARIADB_ROOT_PASSWORD} | egrep -v "^Database$|^performance_schema$|^information_schema$")
           do
-            if mariadb-dump  -u root -h kodidb.defiant.dedyn.io --ssl --ssl-verify-server-cert -P 3307 -p${MARIADB_ROOT_PASSWORD} $i 2>${g_tmp}/dberr >$BACKUPDIR/KODIDB-$i-$TIMESTAMP.sql
+            if mariadb-dump  -u root -h kodidb.{{inventory_hostname}} --ssl --ssl-verify-server-cert -P 3307 -p${MARIADB_ROOT_PASSWORD} $i 2>${g_tmp}/dberr >$BACKUPDIR/KODIDB-$i-$TIMESTAMP.sql
             then
               gzip $BACKUPDIR/KODIDB-$i-$TIMESTAMP.sql
             else
