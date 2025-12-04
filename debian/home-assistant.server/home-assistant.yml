@@ -19,6 +19,12 @@
         state: directory
         mode: '0750'
 
+    - name: Create oidc client secret
+      ansible.builtin.shell: |
+        /home/docker/authelia.{{inventory_hostname}}/gen-oidc-client-secret.sh /home/docker/home-assistant.{{inventory_hostname}}
+      changed_when: false
+      failed_when: false
+
     - name: Edit Home Assistant config
       blockinfile:
         path: /home/docker/home-assistant.{{inventory_hostname}}/config/configuration.yaml
@@ -71,6 +77,18 @@
             use_x_forwarded_for: true
             trusted_proxies:
               - 192.168.41.200 # traefik
+          
+          auth_oidc:
+            client_id: 'home-assistant'
+            client_secret: '{{ lookup('file', '/home/docker/home-assistant.' + inventory_hostname + '/oidc_password') }}'
+            discovery_url: 'https://auth.defiant.dedyn.io/.well-known/openid-configuration'
+            display_name: 'Authelia'
+            claims:
+              groups: 'groups'
+            roles:
+              admin: 'home-assistant-admin'
+              user: 'home-assistant'
+
         backup: yes
       notify: Restart home-assistant
 
@@ -246,7 +264,7 @@
                 # home-assistant
                 - client_id: 'home-assistant'
                   client_name: 'Home Assistant'
-                  client_secret: '$pbkdf2-sha512$310000$c8p78n7pUMln0jzvd4aK4Q$JNRBzwAo0ek5qKn50cFzzvE9RXV88h1wJn5KGiHrD0YKtZaR/nCb2CJPOsKaPK0hjf.9yHxzQGZziziccp6Yng'  # The digest of 'insecure_secret'.
+                  client_secret: '{{ lookup('file', '/home/docker/home-assistant.' + inventory_hostname + '/oidc_digest') }}'
                   public: false
                   require_pkce: true
                   pkce_challenge_method: 'S256'
