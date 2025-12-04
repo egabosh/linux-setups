@@ -275,39 +275,6 @@
       register: oidc_key
       changed_when: false
 
-    - name: check if OIDC client secret exists
-      ansible.builtin.stat:
-        path: /home/docker/authelia.{{inventory_hostname}}/oidc_secret
-      register: secret_file
-
-    - name: generate OIDC client secret
-      ansible.builtin.command: >
-        docker run --rm authelia/authelia:latest authelia crypto hash generate pbkdf2 --random --random.length 72 --random.charset alphanumeric
-      register: oidc_secret_raw
-      changed_when: false
-      when: not secret_file.stat.exists
-
-    - name: extract OIDC client secret key from output
-      ansible.builtin.set_fact:
-        oidc_secret_line: "{{ oidc_secret_raw.stdout_lines | select('match', '^Digest:') | list | first }}"
-      when:
-        - not secret_file.stat.exists
-        - oidc_secret_raw.stdout_lines | length > 0
-
-    - name: store only PBKDF2 digest
-      ansible.builtin.copy:
-        content: "{{ oidc_secret_line.split()[1] }}"
-        dest: /home/docker/authelia.{{ inventory_hostname }}/oidc_secret
-        mode: '0600'
-      when:
-        - not secret_file.stat.exists
-        - oidc_secret_line is defined
-
-    - name: get OIDC client secret from file
-      ansible.builtin.set_fact:
-        oidc_secret: "{{ lookup('file', '/home/docker/authelia.{{inventory_hostname}}/oidc_secret') }}"
-      when: secret_file.stat.exists
-
     - name: write OIDC config in configuration.yml
       ansible.builtin.blockinfile:
         path: /home/docker/authelia.{{inventory_hostname}}/authelia-data/configuration.yml
@@ -335,6 +302,42 @@
         backup: yes
         validate: docker run --rm -v "{{ ansible_env.HOME }}/.ansible:{{ ansible_env.HOME }}/.ansible" authelia/authelia:latest authelia validate-config --config %s
       notify: Restart authelia
+
+    - name: "Script for generating oidc client secrets"
+      blockinfile:
+        path: "/home/docker/authelia.{{inventory_hostname}}/gen-oidc-client-secret.sh"
+        mode: "0500"
+        owner: root
+        group: root
+        create: yes
+        marker: "# {mark} ANSIBLE MANAGED BLOCK"
+        block: |
+          . /etc/bash/gaboshlib.include
+
+          secret_path=$1
+          client_secret_file=$secret_path/oidc_password
+          client_digest_file=$secret_path/oidc_digest
+
+          [[ -s $client_secret_file ]] && exit 0
+          [[ -d $secret_path ]] || mkdir -p "$secret_path"
+
+          touch $g_tmp/output $client_secret_file $client_digest_file
+          chmod 400 $g_tmp/output $client_secret_file $client_digest_file
+
+          docker run --rm authelia/authelia:latest authelia crypto hash generate pbkdf2 --random --random.length 72 --random.charset alphanumeric >$g_tmp/output
+
+          grep "^Random Password:" $g_tmp/output | cut -d" " -f3 >$client_secret_file
+          grep "^Digest:" $g_tmp/output | cut -d" " -f2 >$client_digest_file
+        backup: yes
+        validate: /bin/bash -n %s
+      notify: 
+
+    - name: "gen-oidc-client-secret.sh shebang"
+      lineinfile:
+        path: "/home/docker/authelia.{{inventory_hostname}}/gen-oidc-client-secret.sh"
+        insertbefore: BOF
+        line: "#!/bin/bash"
+
 
   handlers:
 
