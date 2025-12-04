@@ -567,6 +567,26 @@
         state: file
       become: true
 
+    - name: LDAP-Konfigurationsdatei erstellen
+      copy:
+        dest: /etc/ldap/ldap.conf
+        owner: root
+        group: root
+        mode: '0644'
+        content: |
+          BASE {{ldap_basedn}}
+          URI ldaps://openldap.{{inventory_hostname}}:636
+          TLS_REQCERT demand
+          TLS_CACERT /etc/ssl/certs/ca-certificates.crt
+          NETWORK_TIMEOUT 3
+          timeout 3
+          timelimit 3
+          bind_timelimit 3
+          nss_reconnect_tries 1
+          nss_reconnect_sleeptime 1
+          nss_reconnect_maxsleeptime 2
+          nss_reconnect_maxconntries 1
+
     - name: "/usr/local/bin/ldapsearch-{{ ansible_facts['hostname'] }}"
       ansible.builtin.copy:
         dest: "/usr/local/bin/ldapsearch-{{ ansible_facts['hostname'] }}"
@@ -577,7 +597,9 @@
           #!/bin/bash
           . {{ docker_path }}/env.openldap
           LDAPTLS_CACERT=/etc/ssl/certs/ca-certificates.crt ldapsearch -D cn=readuser,{{ldap_basedn}} -w $LDAP_READUSER_PASSWORD -H ldaps://openldap.{{inventory_hostname}}:636 -b {{ldap_basedn}} $@
+          rc=$?
           unset LDAP_ADMIN_PASSWORD LDAP_READUSER_PASSWORD LDAPTLS_CACERT 
+          exit $rc
         backup: yes
 
 
