@@ -52,7 +52,7 @@
       raw: |
         echo '[ "$ACTION" = "ifup" -a "$INTERFACE" = "iot0" ] && {
           echo 1 >/proc/sys/net/ipv6/conf/iot0/disable_ipv6
-          /etc/init.d/openvpn restart
+          /sbin/ip link set dev tap1 master iot0
         }' >/etc/hotplug.d/iface/99-openvpn
         chmod 644 /etc/hotplug.d/iface/99-openvpn
       changed_when: false
