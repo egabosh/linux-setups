@@ -324,6 +324,10 @@
           do
             find -mmin -5 /tmp/$host >/dev/null 2>&1 | grep -q $host && continue
             egrep -q "192.168.41.1  $host" /etc/hosts || echo "192.168.41.1  $host" >>/etc/hosts
+          done
+          cat $g_tmp/hosts | grep -v tcp | cut -d '`' -f2 | sort -u | while read host
+          do
+            find -mmin -5 /tmp/$host >/dev/null 2>&1 | grep -q $host && continue
             if ! wget --dns-timeout=120 -t5 --waitretry=120 --connect-timeout=300 --read-timeout=15 http://${host} >${g_tmp}/traefik-wget-check -O /dev/null 2>&1 
             then
               if ! egrep -q "401 Unauthorized|403 Forbidden" ${g_tmp}/traefik-wget-check
