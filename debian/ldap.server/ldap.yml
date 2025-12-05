@@ -74,6 +74,7 @@
           ldap_suffix: -
           ldap_rdn: uid
           inetOrgPerson_description:
+          inetOrgPerson_mail:
           posixAccount_primaryGroup: {{ ansible_facts['hostname'] }}-users
           posixAccount_additionalGroup: {{ ansible_facts['hostname'] }}-users
           posixAccount_cn:
