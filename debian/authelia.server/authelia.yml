@@ -114,15 +114,15 @@
       - Restart authelia
 
 
-    - name: Check if Authelia secrets exists
+    - name: Check if mail settings are given (needed by 2FA)
       stat:
         path: /home/docker/_defaults/mailclient
       register: authelia_mail
 
-    - name: Generate Authelia secrets
+    - name: generate authelia notifier dummy to notifications.txt
       when: not authelia_mail.stat.exists
       block:
-       - name: /home/docker/authelia.{{inventory_hostname}}/authelia-data/configuration.yml
+       - name: /home/docker/authelia.{{inventory_hostname}}/authelia-data/configuration.yml notifications.txt dummy notifier
          blockinfile:
            path: /home/docker/authelia.{{inventory_hostname}}/authelia-data/configuration.yml
            mode: "0600"
@@ -140,8 +140,14 @@
          notify:
          - Restart authelia
 
+       - name: create check file for default authorization_policy
+         ansible.builtin.copy:
+           dest: /home/docker/authelia.{{inventory_hostname}}/authorization_policy
+           content: "one_factor"
+           mode: "0644"
 
-    - name: Generate Authelia secrets
+
+    - name: generate authelia notifier mail
       when: authelia_mail.stat.exists
       block:
 
@@ -170,7 +176,7 @@
          register: smtp_from
          changed_when: false
 
-       - name: /home/docker/authelia.{{inventory_hostname}}/authelia-data/configuration.yml
+       - name: /home/docker/authelia.{{inventory_hostname}}/authelia-data/configuration.yml mail notifier
          blockinfile:
            path: /home/docker/authelia.{{inventory_hostname}}/authelia-data/configuration.yml
            mode: "0600"
@@ -193,7 +199,14 @@
            backup: yes
          notify: Restart authelia
 
-    - name: /home/docker/authelia.{{inventory_hostname}}/authelia-data/configuration.yml
+       - name: create check file for default authorization_policy
+         ansible.builtin.copy:
+           dest: /home/docker/authelia.{{inventory_hostname}}/authorization_policy
+           content: "two_factor"
+           mode: "0644"
+
+
+    - name: /home/docker/authelia.{{inventory_hostname}}/authelia-data/configuration.yml default domain
       blockinfile:
         path: /home/docker/authelia.{{inventory_hostname}}/authelia-data/configuration.yml
         mode: "0600"
