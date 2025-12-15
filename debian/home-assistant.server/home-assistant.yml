@@ -271,8 +271,8 @@
           sleep 30
           cd /home/docker/home-assistant.{{inventory_hostname}} || exit 1
           . ./env
-          curl --location --request POST 'http://192.168.43.1:8123/api/onboarding/users' --header 'Content-Type: application/json' --data-raw "{
-            \"client_id\": \"http://192.168.43.1:8123/\",
+          curl --location --request POST 'http://192.168.41.1:8123/api/onboarding/users' --header 'Content-Type: application/json' --data-raw "{
+            \"client_id\": \"http://192.168.41.1:8123/\",
            \"name\": \"admin\",
             \"username\": \"haadmin\",
             \"password\": \"${HA_ADMIN_PASSWORD}\",
