@@ -78,7 +78,7 @@
           auth_oidc:
             client_id: 'home-assistant'
             client_secret: '{{ lookup('file', '/home/docker/home-assistant.' + inventory_hostname + '/oidc_password') }}'
-            discovery_url: 'https://auth.defiant.dedyn.io/.well-known/openid-configuration'
+            discovery_url: 'https://auth.{{inventory_hostname}}/.well-known/openid-configuration'
             display_name: 'Authelia'
             claims:
               groups: 'groups'
@@ -231,7 +231,7 @@
                   authorization_policy: '{{ lookup('file', '/home/docker/authelia.' + inventory_hostname + '/authorization_policy') }}'
                   consent_mode: 'implicit'
                   redirect_uris:
-                    - 'https://home-assistant.defiant.dedyn.io/auth/oidc/callback'
+                    - 'https://home-assistant.{{inventory_hostname}}/auth/oidc/callback'
                   scopes:
                     - 'openid'
                     - 'profile'
@@ -279,7 +279,7 @@
             \"language\": \"de\"
           }" >>/home/docker/home-assistant.{{inventory_hostname}}/home-assistant.init.log 2>&1
           # install home assistant community store (hacs)
-          docker compose exec -ti home-assistant.defiant.dedyn.io wget -O - https://get.hacs.xyz | bash - >>/home/docker/home-assistant.{{inventory_hostname}}/home-assistant.init.log 2>&1
+          docker compose exec -ti home-assistant.{{inventory_hostname}} wget -O - https://get.hacs.xyz | bash - >>/home/docker/home-assistant.{{inventory_hostname}}/home-assistant.init.log 2>&1
         backup: yes
         validate: /bin/bash -n %s
       #notify: run home-assistant.init
