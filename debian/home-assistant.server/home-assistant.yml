@@ -50,21 +50,18 @@
           history:
           logbook:
           system_health:
-          discovery:
           ssdp:
           zeroconf:
-          logbook:
           sun:
           sensor:
           weather:
-            - platform: openweathermap
           person:
           mobile_app:
-          system_monitor:
           light:
           mqtt:
           tts:
-            - platform: espeak
+          stream:
+          media_source:
                     
           # Load frontend themes from the themes folder
           frontend:
@@ -96,6 +93,8 @@
       ansible.builtin.file:
         path: "/home/docker/home-assistant.{{ inventory_hostname }}/config/{{ item }}"
         state: touch
+        access_time: preserve
+        modification_time: preserve
       loop:
         - scenes.yaml
         - scripts.yaml
@@ -150,6 +149,7 @@
               restart: unless-stopped
               volumes:
                 - ./config:/config
+                - ./media:/media
                 - /etc/localtime:/etc/localtime:ro
                 - /run/dbus:/run/dbus:ro
               network_mode: host
@@ -157,46 +157,6 @@
 
         backup: yes
       notify: Restart home-assistant
-
-    - name: Start home-assistant
-      ansible.builtin.shell: docker-compose up -d
-      args:
-        chdir: /home/docker/home-assistant.{{inventory_hostname}}
-        creates: /home/docker/home-assistant.{{inventory_hostname}}/config/home-assistant_v2.db
-
-    - name: Wait until home-assistant install is finished
-      wait_for:
-        path: /home/docker/home-assistant.{{inventory_hostname}}/config/home-assistant_v2.db
-
-    - name: /home/docker/home-assistant.{{inventory_hostname}}/home-assistant.init.sh
-      blockinfile:
-        path: /home/docker/home-assistant.{{inventory_hostname}}/home-assistant.init.sh
-        mode: "0500"
-        owner: root
-        group: root
-        create: yes
-        marker: "# {mark} ANSIBLE MANAGED BLOCK"
-        block: |
-          # home-assistant
-          sleep 30
-          cd /home/docker/home-assistant.{{inventory_hostname}} || exit 1
-          . ./env
-          curl --location --request POST 'http://192.168.43.1:8123/api/onboarding/users' --header 'Content-Type: application/json' --data-raw "{
-            \"client_id\": \"http://192.168.43.1:8123/\",
-            \"name\": \"admin\",
-            \"username\": \"haadmin\",
-            \"password\": \"${HA_ADMIN_PASSWORD}\",
-            \"language\": \"de\"
-          }" >>/home/docker/home-assistant.{{inventory_hostname}}/home-assistant.init.log 2>&1
-        backup: yes
-        validate: /bin/bash -n %s
-      notify: run home-assistant.init
-
-    - name: Run home-assistant.init after install
-      ansible.builtin.shell: bash /home/docker/home-assistant.{{inventory_hostname}}/home-assistant.init.sh
-      args:
-        chdir: /home/docker/home-assistant.{{inventory_hostname}}
-        creates: /home/docker/home-assistant.{{inventory_hostname}}/home-assistant.init.log
 
     - name: /home/docker/traefik/providers/home-assistant.yml Home-Assistant<->Traefik provider
       blockinfile:
@@ -249,8 +209,8 @@
 
     - name: Copy hass_oidc_auth component
       copy:
-        src: "/tmp/hass-oidc-auth/custom_components/"
-        dest: "/home/docker/home-assistant.{{inventory_hostname}}config/custom_components/"
+        src: "/tmp/hass-oidc-auth/custom_components/auth_oidc"
+        dest: "/home/docker/home-assistant.{{inventory_hostname}}/config/custom_components"
         owner: root
         group: root
         mode: "0644"
@@ -268,7 +228,8 @@
                   public: false
                   require_pkce: true
                   pkce_challenge_method: 'S256'
-                  authorization_policy: 'one_factor'
+                  authorization_policy: '{{ lookup('file', '/home/docker/authelia.' + inventory_hostname + '/authorization_policy') }}'
+                  consent_mode: 'implicit'
                   redirect_uris:
                     - 'https://home-assistant.defiant.dedyn.io/auth/oidc/callback'
                   scopes:
@@ -287,6 +248,48 @@
         validate: docker run --rm -v "{{ ansible_env.HOME }}/.ansible:{{ ansible_env.HOME }}/.ansible" authelia/authelia:latest authelia validate-config --config %s
       notify: Restart authelia
 
+    - name: Start home-assistant
+      ansible.builtin.shell: docker-compose up -d
+      args:
+        chdir: /home/docker/home-assistant.{{inventory_hostname}}
+        creates: /home/docker/home-assistant.{{inventory_hostname}}/config/home-assistant_v2.db
+     
+    - name: Wait until home-assistant install is finished
+      wait_for:
+        path: /home/docker/home-assistant.{{inventory_hostname}}/config/home-assistant_v2.db
+     
+    - name: /home/docker/home-assistant.{{inventory_hostname}}/home-assistant.init.sh
+      blockinfile:
+        path: /home/docker/home-assistant.{{inventory_hostname}}/home-assistant.init.sh
+        mode: "0500"
+        owner: root
+        group: root
+        create: yes
+        marker: "# {mark} ANSIBLE MANAGED BLOCK"
+        block: |
+          # home-assistant
+          sleep 30
+          cd /home/docker/home-assistant.{{inventory_hostname}} || exit 1
+          . ./env
+          curl --location --request POST 'http://192.168.43.1:8123/api/onboarding/users' --header 'Content-Type: application/json' --data-raw "{
+            \"client_id\": \"http://192.168.43.1:8123/\",
+           \"name\": \"admin\",
+            \"username\": \"haadmin\",
+            \"password\": \"${HA_ADMIN_PASSWORD}\",
+            \"language\": \"de\"
+          }" >>/home/docker/home-assistant.{{inventory_hostname}}/home-assistant.init.log 2>&1
+          # install home assistant community store (hacs)
+          docker compose exec -ti home-assistant.defiant.dedyn.io wget -O - https://get.hacs.xyz | bash - >>/home/docker/home-assistant.{{inventory_hostname}}/home-assistant.init.log 2>&1
+        backup: yes
+        validate: /bin/bash -n %s
+      #notify: run home-assistant.init
+    
+    - name: Run home-assistant.init after install
+      ansible.builtin.shell: bash /home/docker/home-assistant.{{inventory_hostname}}/home-assistant.init.sh
+      args:
+        chdir: /home/docker/home-assistant.{{inventory_hostname}}
+        creates: /home/docker/home-assistant.{{inventory_hostname}}/home-assistant.init.log
+
   handlers:
     - name: run genpw.sh
       ansible.builtin.shell: ./genpw.sh
@@ -294,8 +297,8 @@
         chdir: /home/docker/home-assistant.{{inventory_hostname}}
       notify: Restart home-assistant
 
-    - name: run home-assistant.init
-      ansible.builtin.shell: bash /home/docker/home-assistant.{{inventory_hostname}}/home-assistant.init.sh
+    #- name: run home-assistant.init
+    #  ansible.builtin.shell: bash /home/docker/home-assistant.{{inventory_hostname}}/home-assistant.init.sh
 
     - name: Restart home-assistant
       ansible.builtin.shell: docker-compose up -d --force-recreate
