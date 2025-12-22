@@ -298,6 +298,11 @@
       notify:
       - restart dnsmasq-{{ bridge_name }}
 
+    - name: 'add dnsmasq-iot0 to startup'
+      command: systemctl enable dnsmasq-iot0
+      args:
+        creates: /etc/systemd/system/multi-user.target.wants/dnsmasq-iott0.service
+
   handlers:
 
     # restart networking to apply bridge
