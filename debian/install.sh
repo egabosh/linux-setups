@@ -1,5 +1,12 @@
 #!/bin/bash
 
+[ -z "$PLAYBOOKS" ] && [ -s /usr/local/etc/playbooks ] && PLAYBOOKS="$(cat /usr/local/etc/playbooks)"
+if [ -z "$PLAYBOOKS" ]
+then
+  echo "No playbooks either in \$PLAYBOOK variable or in /usr/local/etc/playbooks"
+  exit 1
+fi
+
 # on fresh install remove cdrom-repo and install sudo if not available
 [ -s /usr/bin/sudo ] || su -c "sed -i '/cdrom/d' /etc/apt/sources.list ; apt update ; apt -y install sudo"
 # add user to sudo group if not
