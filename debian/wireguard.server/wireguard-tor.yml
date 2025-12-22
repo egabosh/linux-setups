@@ -46,7 +46,7 @@
         insertbefore: BOF
         block: |
           *nat
-          :POSTROUTING ACCEPT - [0:0]
+          :POSTROUTING ACCEPT [0:0]
           # Redirect DNS to TorDNS
           -A PREROUTING -i wgtor0 -s fdaa:a192:b168:cd45::/64 -d fdaa:a192:b168:cd45::1 -p udp --dport 53 -j REDIRECT --to-ports 5353
           # Route network fdaa:a192:b168:cd45::/64 (wgtor0) to transparent Tor-Proxy (udp not supported by Tor)
@@ -71,7 +71,7 @@
         insertbefore: BOF
         block: |
           *nat
-          :POSTROUTING ACCEPT - [0:0]
+          :POSTROUTING ACCEPT [0:0]
           # Redirect DNS to TorDNS
           -A PREROUTING -i wgtor0 -s 192.168.45.0/24 -d 192.168.45.1 -p udp --dport 53 -j REDIRECT --to-ports 5353
           # Route network 192.168.45.0/24 (wgtor0) to transparent Tor-Proxy (udp not supported by Tor)

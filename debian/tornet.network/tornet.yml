@@ -186,7 +186,7 @@
         insertbefore: BOF
         block: |
           *nat
-          #:POSTROUTING ACCEPT - [0:0]
+          #:POSTROUTING ACCEPT [0:0]
           :POSTROUTING ACCEPT
           # Route network 192.168.{{ sn }}.0/24 (tornet0) to transparent Tor-Proxy (udp not supported by Tor)
           # Activate "normal" routing for non-Internet Networks
