@@ -61,7 +61,7 @@
       args:
         removes: /run/dnsmasq/dnsmasq.pid
 
-   - name: Check if tor exists in /etc/hosts
+    - name: Check if tor exists in /etc/hosts
       ansible.builtin.command: grep -qw tor /etc/hosts
       register: tor_check
       changed_when: false
