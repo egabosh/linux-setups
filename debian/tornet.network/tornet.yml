@@ -136,7 +136,7 @@
           listen-address 0.0.0.0:3128
           listen-address [::1]:3128
           # Privoxy-Tor-Connection
-          forward-socks5t / localhost:9050 .
+          forward-socks5t / tor:9050 .
         backup: yes
       notify:
       - Restart privoxy
@@ -569,10 +569,13 @@
         marker: "# {mark} ANSIBLE MANAGED BLOCK"
         block: |
           . /etc/bash/gaboshlib.include
-          sleep 10
 
-          # use possible alternative external tor server or reset to 127.0.0.1/localhost
-          sed -i "/\<tor\>/ s/^[0-9.]\+/${g_tor_host}/" /etc/hosts
+          # use possible alternative external tor server ip or reset to 127.0.0.1/localhost
+          [[ $g_tor_host = localhost ]] && g_tor_host="127.0.0.1"
+          g_valid_ip $g_tor_host || g_tor_host=$(host "$g_tor_host" | awk '/has address/ {print $NF; exit}')
+          g_valid_ip $g_tor_host && sed -i "/\<tor\>/ s/^[0-9.]\+/${g_tor_host}/" /etc/hosts
+
+          sleep 10
 
           while [[ -s /var/lock/wireguard.sh.lock ]]
           do
