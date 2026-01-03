@@ -571,6 +571,9 @@
           . /etc/bash/gaboshlib.include
           sleep 10
 
+          # use possible alternative external tor server or reset to 127.0.0.1/localhost
+          sed -i "/\<tor\>/ s/^[0-9.]\+/${g_tor_host}/" /etc/hosts
+
           while [[ -s /var/lock/wireguard.sh.lock ]]
           do
             g_echo "Waiting for /var/lock/wireguard.sh.lock"
