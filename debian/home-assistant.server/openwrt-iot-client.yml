@@ -28,6 +28,10 @@
       - { key: "network.iot0.delegate", value: "0" }
 
   tasks:
+
+    - name: update opkg db
+      raw: opkg update
+
     - name: check installed packages
       raw: opkg list-installed
       register: installed_packages
