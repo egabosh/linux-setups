@@ -61,6 +61,20 @@
       args:
         removes: /run/dnsmasq/dnsmasq.pid
 
+   - name: Check if tor exists in /etc/hosts
+      ansible.builtin.command: grep -qw tor /etc/hosts
+      register: tor_check
+      changed_when: false
+      failed_when: false
+
+    - name: Add tor entry to /etc/hosts
+      ansible.builtin.lineinfile:
+        path: /etc/hosts
+        line: "127.0.0.1 tor"
+        state: present
+        backup: yes
+      when: tor_check.rc != 0
+
     - name: Tor Config
       blockinfile:
         path: /etc/tor/torrc
@@ -100,6 +114,7 @@
         group: root
         content: |
           #!/bin/sh
+          date >>/tmp/system-sleep-tor
           case "$1" in
               pre)
                   systemctl stop tor.service
@@ -373,7 +388,7 @@
           
           # use tor
           force_tcp = true
-          proxy = 'socks5://127.0.0.1:9050'
+          proxy = 'socks5://tor:9050'
           
           # how long (ms) a DNS query will wait for a response; reasonable max 10s
           timeout = 10000
