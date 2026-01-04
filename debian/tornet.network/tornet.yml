@@ -573,7 +573,7 @@
           # use possible alternative external tor server ip or reset to 127.0.0.1/localhost
           [[ $g_tor_host = localhost ]] && g_tor_host="127.0.0.1"
           g_valid_ip $g_tor_host || g_tor_host=$(host "$g_tor_host" | awk '/has address/ {print $NF; exit}')
-          g_valid_ip $g_tor_host && sed "s/^[0-9.]\+ tor$/${g_tor_host} tor/" /etc/hosts
+          g_valid_ip $g_tor_host && sed -i "s/^[0-9.]\+ tor$/${g_tor_host} tor/" /etc/hosts
 
           sleep 10
 
