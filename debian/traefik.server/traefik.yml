@@ -84,7 +84,10 @@
                 - --entrypoints.http.http.redirections.entrypoint.permanent=true
                 # https
                 - --entrypoints.https.address=:443
-                # ldaps
+                - --entrypoints.https.http.encodedcharacters.allowencodedsemicolon=true
+                - --entrypoints.https.http.encodedcharacters.allowencodedpercent=true
+                - --entrypoints.https.http.encodedcharacters.allowencodedquestionmark=true
+                - --entrypoints.https.http.encodedcharacters.allowencodedhash=true
                 # ldaps
                 - --entrypoints.ldaps.address=:636
                 # Docker
