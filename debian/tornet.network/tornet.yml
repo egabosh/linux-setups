@@ -428,12 +428,12 @@
           ignore_system_dns = true
           
           # explicit caching
-          cache = false
+          cache = true
           cache_size = 4096
-          cache_min_ttl = 2400
+          cache_min_ttl = 60
           cache_max_ttl = 86400
           cache_neg_min_ttl = 60
-          cache_neg_max_ttl = 600
+          cache_neg_max_ttl = 1800
           
           # I am not configuring this resolver as a local DoH listener, to do so
           # requires a TLS certificate and that's a world of pain
