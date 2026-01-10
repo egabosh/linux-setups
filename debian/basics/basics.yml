@@ -432,10 +432,7 @@
           if $hostname != '{{ ansible_facts['hostname'] }}' and $msg contains 'CGPrecv: socket 0x' and $programname contains 'citrix-wfica' then stop
           if $hostname != '{{ ansible_facts['hostname'] }}' and $msg contains 'doEncryptData inbuffersize: ' and $programname contains 'citrix-wfica' then stop
           if $hostname != '{{ ansible_facts['hostname'] }}' and $msg contains 'SSLPutDataFn inbuffersize: ' and $programname contains 'citrix-wfica' then stop
-          if $hostname != '{{ ansible_facts['hostname'] }}' and $msg contains 'SRC=192.168.' and $programname contains 'kernel' then stop
           
-          if $hostname startswith '192.168.1.1' then /var/log/zyxel.log
-          if $hostname startswith '192.168.1.1' then stop
           if $hostname startswith 'raspberry-' then /var/log/Raspberrys.log
           if $hostname startswith 'raspberry-' then stop
           if $hostname startswith 'pi-' then /var/log/Raspberrys.log
