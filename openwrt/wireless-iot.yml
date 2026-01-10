@@ -1,0 +1,40 @@
+---
+- name: create iot WLAN
+  hosts: all
+  gather_facts: no
+
+  vars:
+    uci_vars:
+      - { key: "wireless.wifinet1", value: "wifi-iface" }
+      - { key: "wireless.wifinet1.device", value: "radio1" }
+      - { key: "wireless.wifinet1.mode", value: "ap" }
+      #- { key: "wireless.wifinet1.key", value: "YEATANOTHERSUPERSECUREPASSPHRASE" }
+      - { key: "wireless.wifinet1.isolate", value: "1" }
+      - { key: "wireless.wifinet1.ssid", value: "WLANIOT" }
+      - { key: "wireless.wifinet1.network", value: "iot0" }
+      - { key: "wireless.wifinet1.encryption", value: "sae" }
+
+  tasks:
+    - name: set uci values if needed
+      raw: |
+        current=$(uci get {{ item.key }} 2>/dev/null || echo "NOT_SET")
+        desired="{{ item.value }}"
+        if [ "$current" != "$desired" ]
+        then
+          uci set {{ item.key }}="{{ item.value }}"
+          echo "changed"
+        else
+          echo "unchanged"
+        fi
+      loop: "{{ uci_vars }}"
+      register: uci_set_result
+      changed_when: "not 'unchanged' in uci_set_result.stdout"
+
+    - name: apply changes
+      block:
+        - name: commit enable and restart
+          raw: "{{ item }}"
+          loop:
+            - "uci commit"
+            - "wifi reload"
+          when: uci_set_result.changed

@@ -1,0 +1,95 @@
+---
+- name: create guest WLAN over tor
+  hosts: all
+  gather_facts: no
+
+  vars:
+    uci_vars:
+      # Wireless AP
+      - { key: "wireless.wifinet0", value: "wifi-iface" }
+      - { key: "wireless.wifinet0.device", value: "radio1" }
+      - { key: "wireless.wifinet0.mode", value: "ap" }
+      #- { key: "wireless.wifinet0.key", value: "SOMESECUREPASSPHRASEFORGUESTS" }
+      - { key: "wireless.wifinet0.isolate", value: "1" }
+      - { key: "wireless.wifinet0.ssid", value: "WLAN" }
+      - { key: "wireless.wifinet0.network", value: "tor" }
+      - { key: "wireless.wifinet0.encryption", value: "sae" }
+      # tor network
+      - { key: "network.tor", value: "interface" }
+      - { key: "network.tor.ipv6", value: "0" }
+      - { key: "network.tor.proto", value: "static" }
+      #- { key: "network.tor.ipaddr", value: "192.168.142.1" }
+      - { key: "network.tor.netmask", value: "255.255.255.0" }
+      #- { key: "network.tor.dns", value: "192.168.142.1" }
+      
+      # dhcp for tor network
+      - { key: "dhcp.tor", value: "dhcp" }
+      - { key: "dhcp.tor.interface", value: "tor" }
+      - { key: "dhcp.tor.start", value: "50" }
+      - { key: "dhcp.tor.limit", value: "150" }
+      - { key: "dhcp.tor.leasetime", value: "1h" }
+      - { key: "dhcp.tor.rebind_protection", value: "0" }
+
+      # Tor zone
+      - { key: "firewall.zone_tor", value: "zone" }
+      - { key: "firewall.zone_tor.name", value: "tor" }
+      - { key: "firewall.zone_tor.network", value: "tor" }
+      - { key: "firewall.zone_tor.input", value: "REJECT" }
+      - { key: "firewall.zone_tor.output", value: "ACCEPT" }
+      - { key: "firewall.zone_tor.forward", value: "REJECT" }
+      - { key: "firewall.zone_tor.log", value: "1" }
+      - { key: "firewall.zone_tor.masq", value: "1" }
+      - { key: "firewall.zone_tor.mtu_fix", value: "0" }
+
+      ## forwarding
+      - { key: "firewall.forwarding_tor_lan", value: "forwarding" }
+      - { key: "firewall.forwarding_tor_lan.src", value: "tor" }
+      - { key: "firewall.forwarding_tor_lan.dest", value: "lan" }
+
+      - { key: "firewall.forwarding_lan_tor", value: "forwarding" }
+      - { key: "firewall.forwarding_lan_tor.src", value: "lan" }
+      - { key: "firewall.forwarding_lan_tor.dest", value: "tor" }
+
+      # Allow-DHCP-TORLAN
+      - { key: "firewall.rule_allow_dhcp_tor",      value: "rule" }
+      - { key: "firewall.rule_allow_dhcp_tor.name",      value: "ansible_Allow-DHCP-tor" }
+      - { key: "firewall.rule_allow_dhcp_tor.src",       value: "tor" }
+      - { key: "firewall.rule_allow_dhcp_tor.proto",     value: "udp" }
+      - { key: "firewall.rule_allow_dhcp_tor.dest_port", value: "67-68" }
+      - { key: "firewall.rule_allow_dhcp_tor.target",    value: "ACCEPT" }
+
+      # Allow-DNS-TORLAN
+      - { key: "firewall.rule_allow_dns_tor",      value: "rule" }
+      - { key: "firewall.rule_allow_dns_tor.name",      value: "ansible_Allow-DNS-tor" }
+      - { key: "firewall.rule_allow_dns_tor.src",       value: "tor" }
+      - { key: "firewall.rule_allow_dns_tor.proto",     value: "udp" }
+      - { key: "firewall.rule_allow_dns_tor.dest_port", value: "53" }
+      - { key: "firewall.rule_allow_dns_tor.target",    value: "ACCEPT" }
+
+  tasks:
+    - name: set uci values if needed
+      raw: |
+        current=$(uci get {{ item.key }} 2>/dev/null || echo "NOT_SET")
+        desired="{{ item.value }}"
+        if [ "$current" != "$desired" ]
+        then
+          uci set {{ item.key }}="{{ item.value }}"
+          echo "changed"
+        else
+          echo "unchanged"
+        fi
+      loop: "{{ uci_vars }}"
+      register: uci_set_result
+      changed_when: "not 'unchanged' in uci_set_result.stdout"
+
+    - name: apply changes
+      block:
+        - name: commit enable and restart
+          raw: "{{ item }}"
+          loop:
+            - "uci commit"
+            - "wifi reload"
+            #- "/etc/init.d/network restart"
+            #- "/etc/init.d/dnsmasq restart"
+            - "/etc/init.d/firewall restart"
+          when: uci_set_result.changed

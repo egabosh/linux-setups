@@ -1,0 +1,90 @@
+---
+- name: basic OpenWRT config
+  hosts: all
+  gather_facts: no
+
+  vars:
+    openwrt_packages:
+      - strace
+      - rsync
+      - tmux
+      - htop
+      - diffutils
+      - bash
+      - fdisk
+      - usbutils
+      - bind-host
+      - whois
+      - coreutils-date
+      - openssh-client
+      - vim-full
+      - procps-ng-watch
+      - coreutils-nice
+      - curl
+      - coreutils-df
+      - tcpdump
+      - nfs-utils
+      - block-mount
+      - kmod-usb-storage
+      - kmod-fs-ext4
+      - e2fsprogs
+      - irqbalance
+      - telnet-bsd
+      - coreutils-base64
+
+    uci_vars:
+      ## Basics
+      #- { key: "system.@system[0].timezone", value: "Europe/Berlin" }
+      #- { key: "system.@system[0].hostname", value: "{{ inventory_hostname }}" }
+      - { key: "system.ntp.enable_server", value: "1" }
+      - { key: "irqbalance.irqbalance.enabled", value: "1" }
+      # Logging
+      #- { key: "system.@system[0].log_ip", value: "172.23.0.200" }
+      - { key: "system.@system[0].log_proto", value: "udp" }
+      - { key: "system.@system[0].cronloglevel", value: "5" }
+      - { key: "system.@system[0].log_size", value: "0" }
+
+  tasks:
+    - name: update opkg db
+      raw: opkg update
+      changed_when: false
+
+    - name: upgrade packages
+      raw: opkg list-upgradable | cut -f 1 -d ' ' | xargs -r opkg upgrade
+      changed_when: false
+
+    - name: check installed packages
+      raw: opkg list-installed
+      register: installed_packages
+      changed_when: false
+
+    - name: install packages if needed
+      raw: opkg install {{ item }}
+      loop: "{{ openwrt_packages }}"
+      when: item not in installed_packages.stdout
+
+    - name: set uci values if needed
+      raw: |
+        current=$(uci get {{ item.key }} 2>/dev/null || echo "NOT_SET")
+        desired="{{ item.value }}"
+        if [ "$current" != "$desired" ]
+        then
+          uci set {{ item.key }}="{{ item.value }}"
+          echo "changed"
+        else
+          echo "unchanged"
+        fi
+      loop: "{{ uci_vars }}"
+      register: uci_set_result
+      changed_when: "not 'unchanged' in uci_set_result.stdout"
+
+    - name: commit enable and restart
+      raw: "{{ item }}"
+      loop:
+        - "uci commit"
+        - "/etc/init.d/log restart"
+        - "/etc/init.d/irqbalance start"
+        - "/etc/init.d/irqbalance enable"
+      when: uci_set_result.changed
+
+
