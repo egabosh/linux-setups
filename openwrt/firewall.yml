@@ -1,0 +1,71 @@
+---
+- name: firewall-config
+  hosts: openwrt-og,openwrt-eg,openwrt-dg
+  gather_facts: no
+
+  vars:
+    uci_default_vars:
+      - 'firewall.@defaults'
+      - 'firewall.@zone'
+      - 'firewall.@forwarding'
+      - 'firewall.@rule'
+
+    uci_vars:
+      # global defaults
+      - { key: "firewall.defaults", value: "defaults" }
+      - { key: "firewall.defaults.input", value: "DROP" }
+      - { key: "firewall.defaults.output", value: "ACCEPT" }
+      - { key: "firewall.defaults.forward", value: "DROP" }
+      - { key: "firewall.defaults.synflood_protect", value: "1" }
+      - { key: "firewall.defaults.drop_invalid", value: "1" }
+
+      ## LAN zone
+      - { key: "firewall.zone_lan", value: "zone" }
+      - { key: "firewall.zone_lan.name", value: "lan" }
+      - { key: "firewall.zone_lan.network", value: "lan" }
+      - { key: "firewall.zone_lan.input", value: "ACCEPT" }
+      - { key: "firewall.zone_lan.output", value: "ACCEPT" }
+      - { key: "firewall.zone_lan.forward", value: "REJECT" }
+      - { key: "firewall.zone_lan.log", value: "1" }
+      - { key: "firewall.zone_lan.masq", value: "0" }
+      - { key: "firewall.zone_tor.mtu_fix", value: "0" }
+
+  tasks:
+
+    - name: detele config defaults
+      raw: |
+        # detele default config indices
+        while uci show | grep -q "^{{ item }}"
+        do
+          echo "changed"
+          uci delete {{ item }}[0]
+        done
+      loop: "{{ uci_default_vars }}"
+      register: uci_delete_result
+      changed_when: "'changed' in uci_delete_result.stdout"
+
+    - name: set uci values if needed
+      raw: |
+        current=$(uci get {{ item.key }} 2>/dev/null || echo "NOT_SET")
+        desired="{{ item.value }}"
+        
+        if [ "$current" != "$desired" ]
+        then
+          uci set {{ item.key }}="{{ item.value }}"
+          echo "changed"
+        else
+          echo "unchanged"
+        fi
+      loop: "{{ uci_vars }}"
+      register: uci_set_result
+      changed_when: "not 'unchanged' in uci_set_result.stdout"
+
+    - name: apply changes
+      block:
+        - name: commit enable and restart
+          raw: "{{ item }}"
+          loop:
+            - "uci commit"
+            - "/etc/init.d/firewall restart"
+          when: uci_set_result.changed
+

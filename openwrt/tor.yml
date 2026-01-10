@@ -1,0 +1,87 @@
+---
+- name: tor infrastructure
+  hosts: all
+  gather_facts: no
+
+  vars:
+    openwrt_packages:
+      - tor
+      - luci-app-tor
+      - privoxy
+      - luci-app-privoxy
+ 
+    uci_vars:
+      ## privoxy
+      - { key: "privoxy.privoxy.listen_address", value: "0.0.0.0:8118" }
+      - { key: "privoxy.privoxy.forward_socks5t", value: "/ localhost:9050 ." }
+      - { key: "privoxy.privoxy.permit_access", value: "0.0.0.0/0" }
+
+  tasks:
+    - name: update opkg db
+      raw: opkg update
+      changed_when: false
+  
+    - name: check installed packages
+      raw: opkg list-installed
+      register: installed_packages
+      changed_when: false
+
+    - name: install packages if needed
+      raw: opkg install {{ item }}
+      loop: "{{ openwrt_packages }}"
+      when: item not in installed_packages.stdout
+
+    - name: create tor config and run tor
+      raw: |
+        mkdir -p /etc/scripts
+        cat << 'EOF' > /etc/tor/torrc
+        # individual Tor-Config
+        Log notice syslog
+        DataDirectory /var/lib/tor
+        User tor
+        BridgeRelay 0
+        SOCKSPort 0.0.0.0:9050
+        SOCKSPort [::]:9050
+        ExitPolicy reject *:*
+        #ControlPort 0.0.0.0:9051
+        #ControlPort [::]:9051
+        #HashedControlPassword 16:F7222A0CBC254E536056DCBBD27A7D051D68BCF1E9020681C0A3656B84
+        # Seting up TOR transparent proxy for tor-router
+        #VirtualAddrNetwork 10.192.0.0/10
+        AutomapHostsOnResolve 1
+        TransPort 172.23.0.220:9040
+        DNSPort 9053
+        DNSListenAddress 127.0.0.1
+        EOF
+        chmod 600 /etc/tor/torrc
+        /etc/init.d/tor restart
+        /etc/init.d/tor enable
+      changed_when: false
+
+
+    - name: set uci values if needed
+      raw: |
+        current=$(uci get {{ item.key }} 2>/dev/null || echo "NOT_SET")
+        desired="{{ item.value }}"
+        if [ "$current" != "$desired" ]
+        then
+          uci set {{ item.key }}="{{ item.value }}"
+          echo "changed"
+        else
+          echo "unchanged"
+        fi
+      loop: "{{ uci_vars }}"
+      register: uci_set_result
+      changed_when: "not 'unchanged' in uci_set_result.stdout"
+
+    - name: apply changes
+      block:
+        - name: commit enable and restart
+          raw: "{{ item }}"
+          loop:
+            - "uci commit"
+            - "/etc/init.d/tor restart"
+            - "/etc/init.d/privoxy restart"
+            - "/etc/init.d/dnscrypt-proxy restart"
+          when: uci_set_result.changed
+

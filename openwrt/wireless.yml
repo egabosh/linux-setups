@@ -1,0 +1,45 @@
+---
+- name: basic OpenWRT config
+  hosts: all
+  gather_facts: no
+
+  vars:
+    uci_vars:
+      - { key: "wireless.radio1.disabled", value: "0" }
+      - { key: "wireless.radio2.disabled", value: "0" }
+      # default WLAN
+      - { key: "wireless.default_radio1.ssid", value: "WLANPRIV" }
+      - { key: "wireless.default_radio1.encryption", value: "sae" }
+      #- { key: "wireless.default_radio1.key", value: "SOMESUPERSECUREPASSPHRASE" }
+      - { key: "wireless.default_radio1.mode", value: "ap" }
+      - { key: "wireless.default_radio1.network", value: "lan" }
+      - { key: "wireless.default_radio2.ssid", value: "WLANPRIV" }
+      - { key: "wireless.default_radio2.encryption", value: "sae" }
+      #- { key: "wireless.default_radio2.key", value: "SOMESUPERSECUREPASSPHRASE" }
+      - { key: "wireless.default_radio2.mode", value: "ap" }
+      - { key: "wireless.default_radio2.network", value: "lan" }
+
+  tasks:
+    - name: set uci values if needed
+      raw: |
+        current=$(uci get {{ item.key }} 2>/dev/null || echo "NOT_SET")
+        desired="{{ item.value }}"
+        if [ "$current" != "$desired" ]
+        then
+          uci set {{ item.key }}="{{ item.value }}"
+          echo "changed"
+        else
+          echo "unchanged"
+        fi
+      loop: "{{ uci_vars }}"
+      register: uci_set_result
+      changed_when: "not 'unchanged' in uci_set_result.stdout"
+
+    - name: apply changes
+      block:
+        - name: commit enable and restart
+          raw: "{{ item }}"
+          loop:
+            - "uci commit"
+            - "wifi reload"
+          when: uci_set_result.changed
