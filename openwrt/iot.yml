@@ -1,0 +1,124 @@
+---
+- name: iot infrastructure
+  hosts: all
+  gather_facts: no
+
+  vars:
+    uci_vars:
+      # Bridge device for iot network
+      - { key: "network.iot_dev", value: "device" }
+      - { key: "network.iot_dev.name", value: "br-iot" }
+      - { key: "network.iot_dev.type", value: "bridge" }
+      - { key: "network.iot_dev.bridge_empty", value: "0" }
+
+      # iot network (uses br-iot device with static IP)
+      - { key: "network.iot", value: "interface" }
+      - { key: "network.iot.device", value: "br-iot" }
+      - { key: "network.iot.ipv6", value: "1" }
+      - { key: "network.iot.proto", value: "static" }
+      - { key: "network.iot.ipaddr", value: "192.168.143.1" }
+      - { key: "network.iot.netmask", value: "255.255.255.0" }
+      - { key: "network.iot.dns", value: "192.168.143.1" }
+      - { key: "network.iot.ip6addr", value: "fd12:3456:143::1/64" }
+
+      # dhcp for iot network
+      - { key: "dhcp.iot", value: "dhcp" }
+      - { key: "dhcp.iot.interface", value: "iot" }
+      - { key: "dhcp.iot.start", value: "50" }
+      - { key: "dhcp.iot.limit", value: "150" }
+      - { key: "dhcp.iot.leasetime", value: "1h" }
+      - { key: "dhcp.iot.rebind_protection", value: "0" }
+      - { key: "dhcp.iot.dhcpv4", value: "server" }
+      - { key: "dhcp.iot.dhcpv6", value: "server" }
+      - { key: "dhcp.iot.ra", value: "server" }
+      - { key: "dhcp.iot.ra_management", value: '1' }
+      - { key: "dhcp.iot.force", value: "1" }
+
+      # Tor zone
+      - { key: "firewall.zone_iot", value: "zone" }
+      - { key: "firewall.zone_iot.name", value: "iot" }
+      - { key: "firewall.zone_iot.network", value: "iot" }
+      - { key: "firewall.zone_iot.input", value: "REJECT" }
+      - { key: "firewall.zone_iot.output", value: "ACCEPT" }
+      - { key: "firewall.zone_iot.forward", value: "REJECT" }
+      - { key: "firewall.zone_iot.log", value: "1" }
+      - { key: "firewall.zone_iot.masq", value: "1" }
+      - { key: "firewall.zone_iot.mtu_fix", value: "0" }
+
+      ## forwarding
+      - { key: "firewall.forwarding_iot_lan", value: "forwarding" }
+      - { key: "firewall.forwarding_iot_lan.src", value: "iot" }
+      - { key: "firewall.forwarding_iot_lan.dest", value: "lan" }
+
+      - { key: "firewall.forwarding_lan_iot", value: "forwarding" }
+      - { key: "firewall.forwarding_lan_iot.src", value: "lan" }
+      - { key: "firewall.forwarding_lan_iot.dest", value: "iot" }
+
+      # Allow-DHCP-IOTLAN
+      - { key: "firewall.rule_allow_dhcp_iot",      value: "rule" }
+      - { key: "firewall.rule_allow_dhcp_iot.name",      value: "ansible_Allow-DHCP-iot" }
+      - { key: "firewall.rule_allow_dhcp_iot.src",       value: "iot" }
+      - { key: "firewall.rule_allow_dhcp_iot.proto",     value: "udp" }
+      - { key: "firewall.rule_allow_dhcp_iot.dest_port", value: "67-68" }
+      - { key: "firewall.rule_allow_dhcp_iot.target",    value: "ACCEPT" }
+
+      # Allow-DNS-IOTLAN
+      - { key: "firewall.rule_allow_dns_iot",      value: "rule" }
+      - { key: "firewall.rule_allow_dns_iot.name",      value: "ansible_Allow-DNS-iot" }
+      - { key: "firewall.rule_allow_dns_iot.src",       value: "iot" }
+      - { key: "firewall.rule_allow_dns_iot.proto",     value: "udp" }
+      - { key: "firewall.rule_allow_dns_iot.dest_port", value: "53" }
+      - { key: "firewall.rule_allow_dns_iot.target",    value: "ACCEPT" }
+
+      ## All DNS Port 53 to router -> hijack DNS for iot zone
+      - { key: "firewall.redirect_dns_hijack_iot",      value: "redirect" }
+      - { key: "firewall.redirect_dns_hijack_iot.target",    value: "DNAT" }
+      - { key: "firewall.redirect_dns_hijack_iot.name",      value: "ansible_dns_hijack_iot" }
+      - { key: "firewall.redirect_dns_hijack_iot.proto",     value: "tcp udp" }
+      - { key: "firewall.redirect_dns_hijack_iot.src",       value: "iot" }
+      - { key: "firewall.redirect_dns_hijack_iot.dest",      value: "wan" }
+      - { key: "firewall.redirect_dns_hijack_iot.src_dport", value: "53" }
+      - { key: "firewall.redirect_dns_hijack_iot.dest_ip",   value: "172.23.0.220" }
+      - { key: "firewall.redirect_dns_hijack_iot.dest_port", value: "53" }
+
+      ## All NTP Port 123 to router -> hijack NTP for iot zone
+      - { key: "firewall.redirect_ntp_hijack_iot",      value: "redirect" }
+      - { key: "firewall.redirect_ntp_hijack_iot.target",    value: "DNAT" }
+      - { key: "firewall.redirect_ntp_hijack_iot.name",      value: "ansible_ntp_hijack_iot" }
+      - { key: "firewall.redirect_ntp_hijack_iot.proto",     value: "tcp udp" }
+      - { key: "firewall.redirect_ntp_hijack_iot.src",       value: "iot" }
+      - { key: "firewall.redirect_ntp_hijack_iot.dest",      value: "wan" }
+      - { key: "firewall.redirect_ntp_hijack_iot.src_dport", value: "123" }
+      - { key: "firewall.redirect_ntp_hijack_iot.dest_ip",   value: "172.23.0.220" }
+      - { key: "firewall.redirect_ntp_hijack_iot.dest_port", value: "123" }
+
+
+  tasks:
+
+    - name: set uci values if needed
+      raw: |
+        current=$(uci get {{ item.key }} 2>/dev/null || echo "NOT_SET")
+        desired="{{ item.value }}"
+        if [ "$current" != "$desired" ]
+        then
+          uci set {{ item.key }}="{{ item.value }}"
+          echo "changed"
+        else
+          echo "unchanged"
+        fi
+      loop: "{{ uci_vars }}"
+      register: uci_set_result
+      changed_when: "not 'unchanged' in uci_set_result.stdout"
+
+    - name: apply changes
+      block:
+        - name: commit enable and restart
+          raw: "{{ item }}"
+          loop:
+            - "uci commit"
+            - "/etc/init.d/network reload"
+            - "/etc/init.d/firewall restart"
+            - "/etc/init.d/odhcpd restart"
+            - "/etc/init.d/dnsmasq restart"
+          when: uci_set_result.changed
+

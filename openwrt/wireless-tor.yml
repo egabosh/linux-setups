@@ -1,0 +1,43 @@
+---
+- name: create WLAN over tor
+  hosts: all
+  gather_facts: no
+
+  vars:
+    uci_vars:
+
+      # Wireless AP  (joins br-tor via network=tor)
+      - { key: "wireless.wifinet0", value: "wifi-iface" }
+      - { key: "wireless.wifinet0.device", value: "radio1" }
+      - { key: "wireless.wifinet0.mode", value: "ap" }
+      #- { key: "wireless.wifinet0.key", value: "SOMESECUREPASSPHRASEFORGUESTS" }
+      - { key: "wireless.wifinet0.isolate", value: "1" }
+      - { key: "wireless.wifinet0.ssid", value: "WLAN" }
+      - { key: "wireless.wifinet0.network", value: "tor" }
+      - { key: "wireless.wifinet0.encryption", value: "sae-mixed" }
+
+  tasks:
+    - name: set uci values if needed
+      raw: |
+        current=$(uci get {{ item.key }} 2>/dev/null || echo "NOT_SET")
+        desired="{{ item.value }}"
+        if [ "$current" != "$desired" ]
+        then
+          uci set {{ item.key }}="{{ item.value }}"
+          echo "changed"
+        else
+          echo "unchanged"
+        fi
+      loop: "{{ uci_vars }}"
+      register: uci_set_result
+      changed_when: "not 'unchanged' in uci_set_result.stdout"
+
+    - name: apply changes
+      block:
+        - name: commit enable and restart
+          raw: "{{ item }}"
+          loop:
+            - "uci commit"
+            - "wifi reload"
+            - "/etc/init.d/firewall restart"
+          when: uci_set_result.changed

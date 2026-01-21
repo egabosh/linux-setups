@@ -7,6 +7,8 @@
     uci_vars:
       - { key: "wireless.radio1.disabled", value: "0" }
       - { key: "wireless.radio2.disabled", value: "0" }
+      - { key: "wireless.radio1.country", value: "DE" }
+      - { key: "wireless.radio2.country", value: "DE" }
       # default WLAN
       - { key: "wireless.default_radio1.ssid", value: "WLANPRIV" }
       - { key: "wireless.default_radio1.encryption", value: "sae" }

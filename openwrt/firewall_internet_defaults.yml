@@ -5,11 +5,23 @@
 
   vars:
     uci_vars:
+
+      ## WAN zone
+      - { key: "firewall.zone_wan", value: "zone" }
+      - { key: "firewall.zone_wan.name", value: "wan" }
+      - { key: "firewall.zone_wan.network", value: "ppp0" }
+      - { key: "firewall.zone_wan.input", value: "DROP" }
+      - { key: "firewall.zone_wan.output", value: "ACCEPT" }
+      - { key: "firewall.zone_wan.forward", value: "DROP" }
+      - { key: "firewall.zone_wan.log", value: "1" }
+      - { key: "firewall.zone_wan.masq", value: "1" }
+      - { key: "firewall.zone_wan.mtu_fix", value: "1" }
+
       ## rules
       # DHCP-Renew
       - { key: "firewall.rule_dhcp_renew",      value: "rule" }
       - { key: "firewall.rule_dhcp_renew.name",      value: "ansible_default_DHCP-Renew" }
-      - { key: "firewall.rule_dhcp_renew.src",       value: "wan" }
+      - { key: "firewall.rule_dhcp_renew.src",       value: "*" }
       - { key: "firewall.rule_dhcp_renew.proto",     value: "udp" }
       - { key: "firewall.rule_dhcp_renew.dest_port", value: "68" }
       - { key: "firewall.rule_dhcp_renew.target",    value: "ACCEPT" }
@@ -27,7 +39,7 @@
       # IGMP
       - { key: "firewall.rule_igmp",    value: "rule" }
       - { key: "firewall.rule_igmp.name",    value: "ansible_default-IGMP" }
-      - { key: "firewall.rule_igmp.src",     value: "wan" }
+      - { key: "firewall.rule_igmp.src",     value: "*" }
       - { key: "firewall.rule_igmp.proto",   value: "igmp" }
       - { key: "firewall.rule_igmp.family",  value: "ipv4" }
       - { key: "firewall.rule_igmp.target",  value: "ACCEPT" }
@@ -35,7 +47,7 @@
       # DHCPv6
       - { key: "firewall.rule_dhcpv6",      value: "rule" }
       - { key: "firewall.rule_dhcpv6.name",      value: "ansible_default-DHCPv6" }
-      - { key: "firewall.rule_dhcpv6.src",       value: "wan" }
+      - { key: "firewall.rule_dhcpv6.src",       value: "*" }
       - { key: "firewall.rule_dhcpv6.proto",     value: "udp" }
       - { key: "firewall.rule_dhcpv6.dest_port", value: "546" }
       - { key: "firewall.rule_dhcpv6.family",    value: "ipv6" }
@@ -44,7 +56,7 @@
       # MLD
       - { key: "firewall.rule_mld",      value: "rule" }
       - { key: "firewall.rule_mld.name",      value: "ansible_default-MLD" }
-      - { key: "firewall.rule_mld.src",       value: "wan" }
+      - { key: "firewall.rule_mld.src",       value: "*" }
       - { key: "firewall.rule_mld.proto",     value: "icmp" }
       - { key: "firewall.rule_mld.src_ip",    value: "fe80::/10" }
       - { key: "firewall.rule_mld.icmp_type", value: "130/0 131/0 132/0 143/0" }
@@ -70,7 +82,7 @@
       - { key: "firewall.rule_icmpv6_forward.icmp_type", value: "echo-request echo-reply destination-unreachable packet-too-big time-exceeded bad-header unknown-header-type" }
       - { key: "firewall.rule_icmpv6_forward.limit",     value: "1000/sec" }
       - { key: "firewall.rule_icmpv6_forward.family",    value: "ipv6" }
-      - { key: "firewall.rule_icmpv6_forward.target",    value: "ACCEPT" }
+      - { key: "firewall.rule_icmpv6_forward.target",    value: "DROP" }
 
       # IPSec-ESP
       - { key: "firewall.rule_ipsec_esp",   value: "rule" }
@@ -88,18 +100,6 @@
       - { key: "firewall.rule_isakmp.dest_port", value: "500" }
       - { key: "firewall.rule_isakmp.proto",     value: "udp" }
       - { key: "firewall.rule_isakmp.target",    value: "ACCEPT" }
-
-      # 1und1-SIP incoming calls
-      - { key: "firewall.rule_1und1_sip_incoming",    value: "rule" }
-      - { key: "firewall.rule_1und1_sip_incoming.src",     value: "wan" }
-      - { key: "firewall.rule_1und1_sip_incoming.target",  value: "ACCEPT" }
-      - { key: "firewall.rule_1und1_sip_incoming.family",  value: "ipv4" }
-      - { key: "firewall.rule_1und1_sip_incoming.proto",   value: "udp" }
-      - { key: "firewall.rule_1und1_sip_incoming.src_ip",  value: "212.227.124.129 212.227.124.130" }
-      - { key: "firewall.rule_1und1_sip_incoming.src_port",value: "5060" }
-      - { key: "firewall.rule_1und1_sip_incoming.dest_port",value: "5060" }
-      - { key: "firewall.rule_1und1_sip_incoming.name",    value: "ansible_1und1-SIP-incoming-calls" }
-
 
 
   tasks:
