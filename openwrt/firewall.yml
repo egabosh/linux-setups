@@ -1,6 +1,6 @@
 ---
 - name: firewall-config
-  hosts: openwrt-og,openwrt-eg,openwrt-dg
+  hosts: all
   gather_facts: no
 
   vars:
@@ -28,7 +28,7 @@
       - { key: "firewall.zone_lan.forward", value: "REJECT" }
       - { key: "firewall.zone_lan.log", value: "1" }
       - { key: "firewall.zone_lan.masq", value: "0" }
-      - { key: "firewall.zone_tor.mtu_fix", value: "0" }
+      - { key: "firewall.zone_lan.mtu_fix", value: "0" }
 
   tasks:
 

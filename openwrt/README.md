@@ -58,8 +58,6 @@ vim /etc/dropbear/authorized_keys
 # change to your local network needs
 uci set network.lan.ipaddr='172.23.0.219'
 uci set network.lan.netmask='255.255.0.0'
-uci set network.lan.gateway='172.23.0.220'
-uci set network.lan.dns='172.23.0.220'
 uci commit
 /etc/init.d/network restart
 ```
