@@ -1,18 +1,20 @@
 ---
-- name: create iot WLAN
+- name: create WLAN over tor
   hosts: all
   gather_facts: no
 
   vars:
     uci_vars:
-      - { key: "wireless.wifinet1", value: "wifi-iface" }
-      - { key: "wireless.wifinet1.device", value: "radio1" }
-      - { key: "wireless.wifinet1.mode", value: "ap" }
-      #- { key: "wireless.wifinet1.key", value: "YEATANOTHERSUPERSECUREPASSPHRASE" }
-      - { key: "wireless.wifinet1.isolate", value: "1" }
-      - { key: "wireless.wifinet1.ssid", value: "WLANIOT" }
-      - { key: "wireless.wifinet1.network", value: "iot" }
-      - { key: "wireless.wifinet1.encryption", value: "sae-mixed" }
+
+      # Wireless AP  (joins br-tor via network=tor)
+      - { key: "wireless.wifinet0", value: "wifi-iface" }
+      - { key: "wireless.wifinet0.device", value: "radio1" }
+      - { key: "wireless.wifinet0.mode", value: "ap" }
+      #- { key: "wireless.wifinet0.key", value: "SOMESECUREPASSPHRASEFORGUESTS" }
+      - { key: "wireless.wifinet0.isolate", value: "1" }
+      - { key: "wireless.wifinet0.ssid", value: "WLAN" }
+      - { key: "wireless.wifinet0.network", value: "tor" }
+      - { key: "wireless.wifinet0.encryption", value: "sae-mixed" }
 
   tasks:
     - name: set uci values if needed
@@ -37,4 +39,5 @@
           loop:
             - "uci commit"
             - "wifi reload"
+            - "/etc/init.d/firewall restart"
           when: uci_set_result.changed

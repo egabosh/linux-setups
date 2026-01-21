@@ -29,8 +29,15 @@
       - kmod-fs-ext4
       - e2fsprogs
       - irqbalance
+      - luci-app-irqbalance
       - telnet-bsd
       - coreutils-base64
+      - openvpn
+      - luci-app-openvpn
+      - luci-i18n-openvpn-de
+      - openvpn-easy-rsa
+      - openssh-keygen
+      - luci-i18n-base-de
 
     uci_vars:
       ## Basics
@@ -38,6 +45,7 @@
       #- { key: "system.@system[0].hostname", value: "{{ inventory_hostname }}" }
       - { key: "system.ntp.enable_server", value: "1" }
       - { key: "irqbalance.irqbalance.enabled", value: "1" }
+      - { key: "network.lan.ula_prefix", value: "fd12:3456::/48" }
       # Logging
       #- { key: "system.@system[0].log_ip", value: "172.23.0.200" }
       - { key: "system.@system[0].log_proto", value: "udp" }
@@ -62,6 +70,22 @@
       raw: opkg install {{ item }}
       loop: "{{ openwrt_packages }}"
       when: item not in installed_packages.stdout
+
+    - name: generate ssh-keys if not exist
+      raw: |
+        mkdir -p /root/.ssh
+        chmod 700 /root/.ssh
+        [ -s /root/.ssh/id_ed25519 ] || ssh-keygen -t ed25519 -f /root/.ssh/id_ed25519 -N '' -q
+      changed_when: false
+
+    - name: write  /root/.vimrc
+      raw: |
+        cat << 'EOF' > /root/.vimrc
+        set mouse=
+        set paste
+        syntax on
+        EOF
+      changed_when: false
 
     - name: set uci values if needed
       raw: |
