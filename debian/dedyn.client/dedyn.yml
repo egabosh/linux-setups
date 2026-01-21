@@ -33,13 +33,20 @@
           then
             # IPv6 (and maybe IPv4)
             ipv6=$(curl https://checkipv6.dedyn.io/ 2>/dev/null)
-            g_valid_ipv6 "$ipv6" || g_echo_error_exit "Didn't receive a vaild IPv6-address: $ipv6"
+            if ! g_valid_ipv6 "$ipv6"
+            then
+              g_echo_error "Didn't receive a vaild IPv6-address: $ipv6"
+              unset doipv6
+            fi
           fi
           if ! echo $doipv6 | grep -q "only"
           then
             # IPv4 and IPv6
             ipv4=$(curl https://checkipv4.dedyn.io/ 2>/dev/null)
-            g_valid_ipv4 "$ipv4" || g_echo_error_exit "Didn't receive a vaild IPv4-address: $ipv4"
+            if ! g_valid_ipv4 "$ipv4"
+            then
+              g_echo_error_exit "Didn't receive a vaild IPv4-address: $ipv4"
+            fi
           fi
 
           # Get Updateserver and string
