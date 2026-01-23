@@ -25,9 +25,6 @@
       - { key: "openvpn.torvpn.key", value: "/etc/openvpn/tor-easy-rsa/pki/private/openvpn-server.key" }
       - { key: "openvpn.torvpn.dh", value: "/etc/openvpn/dh.pem" }
 
-      # server-bridge (ohne konkrete IP-Parameter – bei Bedarf anpassen)
-      #- { key: "openvpn.torvpn.server_bridge", value: "" }
-
       - { key: "openvpn.torvpn.keepalive", value: "10 120" }
       - { key: "openvpn.torvpn.cipher", value: "AES-256-CBC" }
       - { key: "openvpn.torvpn.auth", value: "SHA256" }
@@ -45,8 +42,6 @@
 
       - { key: "openvpn.torvpn.script_security", value: "2" }
       - { key: "openvpn.torvpn.up", value: "/etc/openvpn/tor-dev2bridge.sh" }
-
-      #- { key: "openvpn.torvpn.log_append", value: "/var/log/openvpn/tor.log" }
 
   tasks:
     - name: update opkg db
@@ -192,6 +187,11 @@
           ssh -o BatchMode=yes ${CLIENT_HOSTNAME} "/etc/init.d/network reload"
           ssh -o BatchMode=yes ${CLIENT_HOSTNAME} "/etc/init.d/openvpn enable"
           ssh -o BatchMode=yes ${CLIENT_HOSTNAME} "/etc/init.d/openvpn restart"
+
+          ssh -o StrictHostKeyChecking=accept-new -o BatchMode=yes ${CLIENT_HOSTNAME} "mkdir -p /etc/scripts"
+          scp -B -O -p -q /etc/scripts/openvpn-tor-tap-in-bridge.sh ${CLIENT_HOSTNAME}:/etc/scripts/
+          ssh -o BatchMode=yes ${CLIENT_HOSTNAME} "grep -Fq \"$cronjob\" /etc/crontabs/root || echo \"$cronjob\" >>/etc/crontabs/root"
+
         done
 
         # use/activate new pki
@@ -248,14 +248,6 @@
 
         cronjob="*/5 * * * *   /etc/scripts/openvpn-tor-tap-in-bridge.sh"
         grep -Fq "$cronjob" /etc/crontabs/root || echo "$cronjob" >>/etc/crontabs/root
-
-        while read -r CLIENT_HOSTNAME
-        do
-          ssh -o StrictHostKeyChecking=accept-new -o BatchMode=yes ${CLIENT_HOSTNAME} "mkdir -p /etc/scripts"
-          scp -B -O -p -q /etc/scripts/openvpn-tor-tap-in-bridge.sh ${CLIENT_HOSTNAME}:/etc/scripts/
-          ssh -o BatchMode=yes ${CLIENT_HOSTNAME} "grep -Fq \"$cronjob\" /etc/crontabs/root || echo \"$cronjob\" >>/etc/crontabs/root"
-        done < /etc/openwrt-slaves
-        exit 0
       changed_when: false
 
 

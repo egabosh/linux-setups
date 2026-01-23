@@ -38,6 +38,7 @@
       - openvpn-easy-rsa
       - openssh-keygen
       - luci-i18n-base-de
+      - nano-full
 
     uci_vars:
       ## Basics
