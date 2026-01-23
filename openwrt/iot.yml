@@ -33,8 +33,14 @@
       - { key: "dhcp.iot.ra", value: "server" }
       - { key: "dhcp.iot.ra_management", value: '1' }
       - { key: "dhcp.iot.force", value: "1" }
+      - { key: "dhcp.iot_dnsmasq", value: "dnsmasq" }
+      - { key: "dhcp.iot_dnsmasq.resolvfile", value: "/etc/resolv.dnsmasq.iot" }
+      - { key: "dhcp.iot_dnsmasq.listen_address", value: "192.168.143.1" }
+      - { key: "dhcp.iot_dnsmasq.logqueries", value: "1" }
+      - { key: "dhcp.iot_dnsmasq.authoritative", value: "1" }
+      - { key: "dhcp.iot_dnsmasq.sequential_ip", value: "1" }
 
-      # Tor zone
+      # IoT zone
       - { key: "firewall.zone_iot", value: "zone" }
       - { key: "firewall.zone_iot.name", value: "iot" }
       - { key: "firewall.zone_iot.network", value: "iot" }
@@ -95,13 +101,27 @@
 
   tasks:
 
+    - name: use local upstream dns
+      raw: |
+        cat << 'EOF' > /etc/resolv.dnsmasq.iot
+        nameserver 127.0.0.56
+        EOF
+      changed_when: false
+
     - name: set uci values if needed
       raw: |
         current=$(uci get {{ item.key }} 2>/dev/null || echo "NOT_SET")
         desired="{{ item.value }}"
-        if [ "$current" != "$desired" ]
+
+        #if [ "$current" != "$desired" ]
+        if ! echo "$current" | grep "$desired"
         then
-          uci set {{ item.key }}="{{ item.value }}"
+          if echo "{{ item.key }}" | grep -q "dhcp.iot_dnsmasq.listen_address"
+          then
+            uci add_list {{ item.key }}="{{ item.value }}"
+          else
+            uci set {{ item.key }}="{{ item.value }}"
+          fi
           echo "changed"
         else
           echo "unchanged"
@@ -110,6 +130,7 @@
       register: uci_set_result
       changed_when: "not 'unchanged' in uci_set_result.stdout"
 
+
     - name: apply changes
       block:
         - name: commit enable and restart
@@ -117,8 +138,7 @@
           loop:
             - "uci commit"
             - "/etc/init.d/network reload"
-            - "/etc/init.d/firewall restart"
-            - "/etc/init.d/odhcpd restart"
+            - "/etc/init.d/firewall reload"
             - "/etc/init.d/dnsmasq restart"
           when: uci_set_result.changed
 

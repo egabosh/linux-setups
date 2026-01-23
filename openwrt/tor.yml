@@ -44,6 +44,12 @@
       - { key: "dhcp.tor.ra", value: "server" }
       - { key: "dhcp.tor.ra_management", value: '1' }
       - { key: "dhcp.tor.force", value: "1" }
+      - { key: "dhcp.tor_dnsmasq", value: "dnsmasq" }
+      - { key: "dhcp.tor_dnsmasq.resolvfile", value: "/etc/resolv.dnsmasq.tor" }
+      - { key: "dhcp.tor_dnsmasq.listen_address", value: "192.168.142.1" }
+      - { key: "dhcp.tor_dnsmasq.logqueries", value: "1" }
+      - { key: "dhcp.tor_dnsmasq.authoritative", value: "1" }
+      - { key: "dhcp.tor_dnsmasq.sequential_ip", value: "1" }
 
       # Tor zone
       - { key: "firewall.zone_tor", value: "zone" }
@@ -190,6 +196,13 @@
       loop: "{{ openwrt_packages }}"
       when: item not in installed_packages.stdout
 
+    - name: use local upstream dns
+      raw: |
+        cat << 'EOF' > /etc/resolv.dnsmasq.tor
+        nameserver 127.0.0.56
+        EOF
+      changed_when: false
+
     - name: create tor config and run tor
       raw: |
         mkdir -p /etc/scripts
@@ -225,9 +238,16 @@
       raw: |
         current=$(uci get {{ item.key }} 2>/dev/null || echo "NOT_SET")
         desired="{{ item.value }}"
-        if [ "$current" != "$desired" ]
+
+        #if [ "$current" != "$desired" ]
+        if ! echo "$current" | grep "$desired"
         then
-          uci set {{ item.key }}="{{ item.value }}"
+          if echo "{{ item.key }}" | grep -q "dhcp.tor_dnsmasq.listen_address"
+          then
+            uci add_list {{ item.key }}="{{ item.value }}"
+          else
+            uci set {{ item.key }}="{{ item.value }}"
+          fi
           echo "changed"
         else
           echo "unchanged"
@@ -235,6 +255,7 @@
       loop: "{{ uci_vars }}"
       register: uci_set_result
       changed_when: "not 'unchanged' in uci_set_result.stdout"
+
 
     - name: write, run and create cronjob /etc/scripts/tor-nodes-blocklist-update.sh
       raw: |
@@ -367,7 +388,6 @@
             - "/etc/init.d/tor restart"
             - "/etc/init.d/privoxy restart"
             - "/etc/init.d/firewall reload"
-            - "/etc/init.d/odhcpd restart"
             - "/etc/init.d/dnsmasq restart"
           when: uci_set_result.changed
 
