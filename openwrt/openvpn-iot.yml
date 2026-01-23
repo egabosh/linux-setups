@@ -25,9 +25,6 @@
       - { key: "openvpn.iotvpn.key", value: "/etc/openvpn/iot-easy-rsa/pki/private/openvpn-server.key" }
       - { key: "openvpn.iotvpn.dh", value: "/etc/openvpn/dh.pem" }
 
-      # server-bridge (ohne konkrete IP-Parameter – bei Bedarf anpassen)
-      #- { key: "openvpn.iotvpn.server_bridge", value: "" }
-
       - { key: "openvpn.iotvpn.keepalive", value: "10 120" }
       - { key: "openvpn.iotvpn.cipher", value: "AES-256-CBC" }
       - { key: "openvpn.iotvpn.auth", value: "SHA256" }
@@ -45,8 +42,6 @@
 
       - { key: "openvpn.iotvpn.script_security", value: "2" }
       - { key: "openvpn.iotvpn.up", value: "/etc/openvpn/iot-dev2bridge.sh" }
-
-      #- { key: "openvpn.iotvpn.log_append", value: "/var/log/openvpn/iot.log" }
 
   tasks:
     - name: update opkg db
@@ -169,7 +164,7 @@
           </key>" >"${CLIENT_NAME}.ovpn"
          
           # stop here if homeassistant (server) client
-          [[ $CLIENT_NAME = homeassistant ]] & continue
+          [[ $CLIENT_HOSTNAME = homeassistant ]] && continue
 
           # push to client
           ssh -o StrictHostKeyChecking=accept-new -o BatchMode=yes ${CLIENT_HOSTNAME} "echo OK" || continue
@@ -195,6 +190,11 @@
           ssh -o BatchMode=yes ${CLIENT_HOSTNAME} "/etc/init.d/network reload"
           ssh -o BatchMode=yes ${CLIENT_HOSTNAME} "/etc/init.d/openvpn enable"
           ssh -o BatchMode=yes ${CLIENT_HOSTNAME} "/etc/init.d/openvpn restart"
+
+          ssh -o StrictHostKeyChecking=accept-new -o BatchMode=yes ${CLIENT_HOSTNAME} "mkdir -p /etc/scripts"
+          scp -B -O -p -q /etc/scripts/openvpn-iot-tap-in-bridge.sh ${CLIENT_HOSTNAME}:/etc/scripts/
+          ssh -o BatchMode=yes ${CLIENT_HOSTNAME} "grep -Fq \"$cronjob\" /etc/crontabs/root || echo \"$cronjob\" >>/etc/crontabs/root"
+
         done
 
         # use/activate new pki
@@ -252,14 +252,6 @@
 
         cronjob="*/5 * * * *   /etc/scripts/openvpn-iot-tap-in-bridge.sh"
         grep -Fq "$cronjob" /etc/crontabs/root || echo "$cronjob" >>/etc/crontabs/root
-        
-        while read -r CLIENT_HOSTNAME
-        do
-          ssh -o StrictHostKeyChecking=accept-new -o BatchMode=yes ${CLIENT_HOSTNAME} "mkdir -p /etc/scripts"
-          scp -B -O -p -q /etc/scripts/openvpn-iot-tap-in-bridge.sh ${CLIENT_HOSTNAME}:/etc/scripts/
-          ssh -o BatchMode=yes ${CLIENT_HOSTNAME} "grep -Fq \"$cronjob\" /etc/crontabs/root || echo \"$cronjob\" >>/etc/crontabs/root"
-        done < /etc/openwrt-slaves
-        exit 0
       changed_when: false
 
 

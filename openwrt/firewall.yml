@@ -27,7 +27,7 @@
       - { key: "firewall.zone_lan.output", value: "ACCEPT" }
       - { key: "firewall.zone_lan.forward", value: "REJECT" }
       - { key: "firewall.zone_lan.log", value: "1" }
-      - { key: "firewall.zone_lan.masq", value: "0" }
+      - { key: "firewall.zone_lan.masq", value: "1" }
       - { key: "firewall.zone_lan.mtu_fix", value: "0" }
 
   tasks:
@@ -48,14 +48,19 @@
       raw: |
         current=$(uci get {{ item.key }} 2>/dev/null || echo "NOT_SET")
         desired="{{ item.value }}"
-        
-        if [ "$current" != "$desired" ]
+      
+        if ! echo "$current" | grep "$desired"
         then
-          uci set {{ item.key }}="{{ item.value }}"
+          if echo "{{ item.key }}" | egrep -q "firewall\..+\.network"
+          then
+            uci add_list {{ item.key }}="{{ item.value }}"
+          else
+            uci set {{ item.key }}="{{ item.value }}"
+          fi
           echo "changed"
         else
           echo "unchanged"
-        fi
+        fi 
       loop: "{{ uci_vars }}"
       register: uci_set_result
       changed_when: "not 'unchanged' in uci_set_result.stdout"
