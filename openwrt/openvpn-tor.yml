@@ -17,7 +17,7 @@
       - { key: "openvpn.torvpn.enabled", value: "1" }
       - { key: "openvpn.torvpn.port", value: "1194" }
       - { key: "openvpn.torvpn.proto", value: "udp" }
-      - { key: "openvpn.torvpn.dev", value: "tap0" }
+      - { key: "openvpn.torvpn.dev", value: "tap2" }
       - { key: "openvpn.torvpn.mode", value: "server" }
       - { key: "openvpn.torvpn.client_to_client", value: "1" }
       - { key: "openvpn.torvpn.ca", value: "/etc/openvpn/tor-easy-rsa/pki/ca.crt" }
@@ -63,7 +63,7 @@
         cat << 'EOF' >/etc/hotplug.d/iface/99-openvpn-br-tor
         [ "$ACTION" = "ifup" -a "$INTERFACE" = "br-tor" ] && {
           #echo 1 >/proc/sys/net/ipv6/conf/br-tor/disable_ipv6
-          /sbin/ip link set dev tap0 master br-tor
+          /sbin/ip link set dev tap2 master br-tor
         }
         EOF
         chmod 644 /etc/hotplug.d/iface/99-openvpn-br-tor
@@ -135,7 +135,7 @@
           CLIENT_KEY="$EASYRSA_DIR/pki/private/$CLIENT_NAME.key"
 
           echo "client
-          dev tap0
+          dev tap2
           proto udp
           remote $(uci get network.lan.ipaddr) 1194
           resolv-retry infinite
@@ -213,7 +213,7 @@
         cat << 'EOF' > /etc/scripts/openvpn-tor-tap-in-bridge.sh
         #!/bin/bash
 
-        DEV="tap0"
+        DEV="tap2"
         BR="br-tor"
 
         # does dev exist?

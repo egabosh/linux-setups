@@ -36,6 +36,7 @@
       - { key: "dhcp.iot_dnsmasq", value: "dnsmasq" }
       - { key: "dhcp.iot_dnsmasq.resolvfile", value: "/etc/resolv.dnsmasq.iot" }
       - { key: "dhcp.iot_dnsmasq.listen_address", value: "192.168.143.1" }
+      - { key: "dhcp.iot_dnsmasq.listen_address", value: "fd12:3456:143::1" }
       - { key: "dhcp.iot_dnsmasq.logqueries", value: "1" }
       - { key: "dhcp.iot_dnsmasq.authoritative", value: "1" }
       - { key: "dhcp.iot_dnsmasq.sequential_ip", value: "1" }
