@@ -31,6 +31,7 @@
       - { key: "network.tor.netmask", value: "255.255.255.0" }
       - { key: "network.tor.dns", value: "127.0.0.56" }
       - { key: "network.tor.ip6addr", value: "fd12:3456:142::1/64" }
+      - { key: 'network.tor.ip6assign', value: '64'}
 
       # dhcp for tor network
       - { key: "dhcp.tor", value: "dhcp" }
@@ -47,6 +48,7 @@
       - { key: "dhcp.tor_dnsmasq", value: "dnsmasq" }
       - { key: "dhcp.tor_dnsmasq.resolvfile", value: "/etc/resolv.dnsmasq.tor" }
       - { key: "dhcp.tor_dnsmasq.listen_address", value: "192.168.142.1" }
+      - { key: "dhcp.tor_dnsmasq.listen_address", value: "fd12:3456:142::1" }
       - { key: "dhcp.tor_dnsmasq.logqueries", value: "1" }
       - { key: "dhcp.tor_dnsmasq.authoritative", value: "1" }
       - { key: "dhcp.tor_dnsmasq.sequential_ip", value: "1" }
