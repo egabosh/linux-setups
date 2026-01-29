@@ -65,6 +65,9 @@
           - flameshot
           # print
           - printer-driver-escpr
+          - openvpn
+          - network-manager-openvpn
+          - network-manager-openvpn-gnome
         update_cache: yes
         install_recommends: no
 
