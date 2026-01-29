@@ -11,11 +11,17 @@
       - openvpn-easy-rsa
       - openssh-keygen
 
+    uci_delete_vars:
+      - openvpn.custom_config
+      - openvpn.sample_server
+      - openvpn.sample_client
+
     uci_vars:
       # openvpn server
       - { key: "openvpn.lanvpn", value: "openvpn" }
       - { key: "openvpn.lanvpn.enabled", value: "1" }
       - { key: "openvpn.lanvpn.port", value: "1196" }
+      - { key: "openvpn.lanvpn.local", value: "::" }
       - { key: "openvpn.lanvpn.proto", value: "udp" }
       - { key: "openvpn.lanvpn.dev", value: "tap0" }
       - { key: "openvpn.lanvpn.mode", value: "server" }
@@ -43,6 +49,13 @@
       - { key: "openvpn.lanvpn.script_security", value: "2" }
       - { key: "openvpn.lanvpn.up", value: "/etc/openvpn/lan-dev2bridge.sh" }
 
+      - { key: "firewall.rule_allowopenvpn_lanvpn",      value: "rule" }
+      - { key: "firewall.rule_allowopenvpn_lanvpn.name",      value: "ansible_allowopenvpn_lanvpn" }
+      - { key: "firewall.rule_allowopenvpn_lanvpn.src",       value: "wan" }
+      - { key: "firewall.rule_allowopenvpn_lanvpn.proto",     value: "udp" }
+      - { key: "firewall.rule_allowopenvpn_lanvpn.dest_port", value: "1196" }
+      - { key: "firewall.rule_allowopenvpn_lanvpn.target",    value: "ACCEPT" }
+
   tasks:
     - name: update opkg db
       raw: opkg update
@@ -57,6 +70,21 @@
       raw: opkg install {{ item }}
       loop: "{{ openwrt_packages }}"
       when: item not in installed_packages.stdout
+
+    - name: detele config defaults
+      raw: |
+        # detele default config indices
+        while uci show | grep -q "^{{ item }}="
+        do
+          echo "{{ item }}" >/tmp/x
+          echo "changed"
+          uci delete {{ item }}[0]
+          uci delete {{ item }}
+        done
+      loop: "{{ uci_delete_vars }}"
+      register: uci_delete_result
+      changed_when: "'changed' in uci_delete_result.stdout"
+
 
     - name: hotplug skript if br-lan is restarted
       raw: |
@@ -98,9 +126,7 @@
       raw: |
         cat << 'EOF' > /etc/openvpn/lan-clients
         olli-laptop
-        olli-smartphone
         becky-laptop
-        becky-smartphone
         EOF
       changed_when: false
 
@@ -146,7 +172,7 @@
           echo "client
           dev tap0
           proto udp
-          remote $(uci get ddns.dedyn.domain) 1196
+          remote $(uci get ddns.dedyn_ipv6_openwrt.domain) 1196
           resolv-retry infinite
           nobind
           persist-key
@@ -154,7 +180,9 @@
           ca [inline]
           cert [inline]
           key [inline]
-          cipher AES-256-CBC
+          #cipher AES-256-CBC
+          data-ciphers AES-256-GCM:AES-128-GCM:CHACHA20-POLY1305
+          data-ciphers-fallback AES-256-GCM
           auth SHA256
           verb 3
           remote-cert-tls server
@@ -172,6 +200,8 @@
           $(cat "$CLIENT_KEY")
           </key>" >"${CLIENT_NAME}.ovpn"
          
+          sed -i 's/^[[:space:]]*-----/-----/' "${CLIENT_NAME}.ovpn"
+
           # stop here if homeassistant (server) client
           [[ $CLIENT_HOSTNAME = homeassistant ]] && continue
 
@@ -217,7 +247,7 @@
         chmod 500 /etc/scripts/openvpn-lan-easyrsa.sh
         [ -s /etc/openvpn/lan-easy-rsa/pki/issued/openvpn-server.crt ] || /etc/scripts/openvpn-lan-easyrsa.sh
 
-        cronjob="15 10 * * *   /etc/scripts/openvpn-lan-easyrsa.sh"
+        cronjob="45 5 * * *   /etc/scripts/openvpn-lan-easyrsa.sh"
         grep -Fq "$cronjob" /etc/crontabs/root || echo "$cronjob" >>/etc/crontabs/root
       changed_when: false
 
@@ -285,5 +315,6 @@
           loop:
             - "uci commit"
             - "/etc/init.d/openvpn restart"
+            - "/etc/init.d/firewall reload"
           when: uci_set_result.changed
 

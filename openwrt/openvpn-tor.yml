@@ -16,6 +16,7 @@
       - { key: "openvpn.torvpn", value: "openvpn" }
       - { key: "openvpn.torvpn.enabled", value: "1" }
       - { key: "openvpn.torvpn.port", value: "1194" }
+      - { key: "openvpn.torvpn.local", value: "$(uci get network.lan.ipaddr)" }
       - { key: "openvpn.torvpn.proto", value: "udp" }
       - { key: "openvpn.torvpn.dev", value: "tap2" }
       - { key: "openvpn.torvpn.mode", value: "server" }
@@ -162,7 +163,9 @@
           <key>
           $(cat "$CLIENT_KEY")
           </key>" >"${CLIENT_NAME}.ovpn"
-         
+ 
+          sed -i 's/^[[:space:]]*-----/-----/' "${CLIENT_NAME}.ovpn"
+        
           # push to client
           ssh -o StrictHostKeyChecking=accept-new -o BatchMode=yes ${CLIENT_HOSTNAME} "echo OK"
           # copy openvpn client config

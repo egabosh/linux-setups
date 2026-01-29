@@ -16,6 +16,7 @@
       - { key: "openvpn.iotvpn", value: "openvpn" }
       - { key: "openvpn.iotvpn.enabled", value: "1" }
       - { key: "openvpn.iotvpn.port", value: "1195" }
+      - { key: "openvpn.iotvpn.local", value: "$(uci get network.lan.ipaddr)" }
       - { key: "openvpn.iotvpn.proto", value: "udp" }
       - { key: "openvpn.iotvpn.dev", value: "tap1" }
       - { key: "openvpn.iotvpn.mode", value: "server" }
@@ -163,6 +164,8 @@
           $(cat "$CLIENT_KEY")
           </key>" >"${CLIENT_NAME}.ovpn"
          
+          sed -i 's/^[[:space:]]*-----/-----/' "${CLIENT_NAME}.ovpn"
+
           # stop here if homeassistant (server) client
           [[ $CLIENT_HOSTNAME = homeassistant ]] && continue
 

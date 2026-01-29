@@ -7,17 +7,17 @@
     uci_vars:
       - { key: "wireless.radio1.disabled", value: "0" }
       - { key: "wireless.radio2.disabled", value: "0" }
-      - { key: "wireless.radio1.country", value: "DE" }
-      - { key: "wireless.radio2.country", value: "DE" }
+      - { key: "wireless.radio1.country", value: "{{ wlan_contry }}" }
+      - { key: "wireless.radio2.country", value: "{{ wlan_contry }}" }
       # default WLAN
-      - { key: "wireless.default_radio1.ssid", value: "WLANPRIV" }
+      - { key: "wireless.default_radio1.ssid", value: "{{ wlan_ssid }}" }
       - { key: "wireless.default_radio1.encryption", value: "sae" }
-      #- { key: "wireless.default_radio1.key", value: "SOMESUPERSECUREPASSPHRASE" }
+      - { key: "wireless.default_radio1.key", value: "{{ wlan_key }}" }
       - { key: "wireless.default_radio1.mode", value: "ap" }
       - { key: "wireless.default_radio1.network", value: "lan" }
-      - { key: "wireless.default_radio2.ssid", value: "WLANPRIV" }
+      - { key: "wireless.default_radio2.ssid", value: "{{ wlan_ssid }}" }
       - { key: "wireless.default_radio2.encryption", value: "sae" }
-      #- { key: "wireless.default_radio2.key", value: "SOMESUPERSECUREPASSPHRASE" }
+      - { key: "wireless.default_radio2.key", value: "{{ wlan_key }}" }
       - { key: "wireless.default_radio2.mode", value: "ap" }
       - { key: "wireless.default_radio2.network", value: "lan" }
 
