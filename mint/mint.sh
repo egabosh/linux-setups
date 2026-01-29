@@ -155,6 +155,8 @@ sudo usermod -aG docker ${defaultuser}
 # Add User to vboxusers group
 sudo usermod -aG vboxusers ${defaultuser}
 
+# Add User to nm-openvpn group
+sudo usermod -aG nm-openvpn ${defaultuser}
 
 # Personal settings with .xsessionrc
 sudo cat <<EOF >${defaultuserhome}/.xsessionrc
