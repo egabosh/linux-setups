@@ -32,29 +32,18 @@
       - luci-app-irqbalance
       - telnet-bsd
       - coreutils-base64
-      - openvpn
-      - luci-app-openvpn
-      - luci-i18n-openvpn-de
-      - openvpn-easy-rsa
-      - openssh-keygen
-      - luci-i18n-base-de
       - nano-full
       - less
 
     uci_vars:
       ## Basics
-      #- { key: "system.@system[0].timezone", value: "Europe/Berlin" }
-      #- { key: "system.@system[0].hostname", value: "{{ inventory_hostname }}" }
+      - { key: "system.@system[0].timezone", value: "{{ timezone }}" }
+      - { key: "system.@system[0].hostname", value: "{{ inventory_hostname }}" 
       - { key: "system.ntp.enable_server", value: "1" }
       - { key: "irqbalance.irqbalance.enabled", value: "1" }
-      - { key: "network.lan.ula_prefix", value: "fd12:3456::/48" }
-      - { key: "network.globals.ula_prefix", value: "fd12:3456::/48" }
-      # Logging
-      #- { key: "system.@system[0].log_ip", value: "172.23.0.200" }
-      - { key: "system.@system[0].log_proto", value: "udp" }
-      - { key: "system.@system[0].cronloglevel", value: "5" }
-      - { key: "system.@system[0].log_size", value: "0" }
-      - { key: "system.ntp.server", value: "de.pool.ntp.org" }
+      - { key: "network.lan.ula_prefix", value: "{{ ipv6_ula_prefix }}" }
+      - { key: "network.globals.ula_prefix", value: "{{ ipv6_ula_prefix }}" }
+      - { key: "system.ntp.server", value: "{{ ntp_server }}" }
 
   tasks:
     - name: update opkg db
@@ -110,7 +99,6 @@
       raw: "{{ item }}"
       loop:
         - "uci commit"
-        - "/etc/init.d/log restart"
         - "/etc/init.d/irqbalance start"
         - "/etc/init.d/irqbalance enable"
       when: uci_set_result.changed

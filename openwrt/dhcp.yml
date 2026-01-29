@@ -1,0 +1,87 @@
+---
+- name: dhcp and dns server
+  hosts: openwrt-og
+  gather_facts: no
+ 
+  vars:
+    uci_default_vars:
+      - 'dhcp.@dnsmasq'
+
+    uci_vars:
+      - { key: "dhcp.lan", value: "dhcp" }
+      - { key: "dhcp.lan.interface", value: "lan" }
+      - { key: "dhcp.lan.start",  value: "{{ dhcp_ip_start }}" }
+      - { key: "dhcp.lan.limit",  value: "{{ dhcp_ip_limit }}" }
+      - { key: "dhcp.lan.leasetime",  value: "1h" }
+      - { key: "dhcp.lan.rebind_protection", value: "1" }
+      - { key: "dhcp.lan.dhcpv4", value: "server" }
+      - { key: "dhcp.lan.dhcpv6", value: "server" }
+      - { key: "dhcp.lan.ra", value: "server" }
+      - { key: "dhcp.lan.ra_management", value: '1' }
+      - { key: "dhcp.lan.force",  value: "1" }
+      - { key: "dhcp.lan_dnsmasq", value: "dnsmasq" }
+      - { key: "dhcp.lan_dnsmasq.resolvfile", value: "/etc/resolv.dnsmasq.lan" }
+      - { key: "dhcp.lan_dnsmasq.listen_address", value: "127.0.0.1" }
+      - { key: "dhcp.lan_dnsmasq.listen_address", value: "$(uci get network.lan.ipaddr)" }
+      - { key: "dhcp.lan_dnsmasq.listen_address", value: "$(uci get network.lan.ip6addr | cut -d/ -f1)" }
+      - { key: "dhcp.lan_dnsmasq.logqueries", value: "1" }
+      - { key: "dhcp.lan_dnsmasq.authoritative", value: "1" }
+      - { key: "dhcp.lan_dnsmasq.sequential_ip", value: "1" }
+
+  tasks:
+    - name: use local upstream dns
+      raw: |
+        cat << 'EOF' > /etc/resolv.dnsmasq.lan
+        nameserver {{ upstream_dns }}
+        EOF
+      changed_when: false
+
+    - name: detele config defaults
+      raw: |
+        # detele default config indices
+        while uci show | grep -q "^{{ item }}"
+        do
+          echo "changed"
+          uci delete {{ item }}[0]
+        done
+      loop: "{{ uci_default_vars }}"
+      register: uci_delete_result
+      changed_when: "'changed' in uci_delete_result.stdout"
+
+    - name: set uci values if needed
+      raw: |
+        current=$(uci get {{ item.key }} 2>/dev/null || echo "NOT_SET")
+        desired="{{ item.value }}"
+        
+        #if [ "$current" != "$desired" ]
+        if ! echo "$current" | grep "$desired"
+        then
+          if echo "{{ item.key }}" | grep -q "dhcp.lan_dnsmasq.listen_address"
+          then
+            uci add_list {{ item.key }}="{{ item.value }}"
+          else
+            uci set {{ item.key }}="{{ item.value }}"
+          fi
+          echo "changed"
+        else
+          echo "unchanged"
+        fi
+      loop: "{{ uci_vars }}"
+      register: uci_set_result
+      changed_when: "not 'unchanged' in uci_set_result.stdout"
+
+    - name: apply changes
+      block:
+        - name: commit enable and restart
+          raw: "{{ item }}"
+          loop:
+            - "uci commit"
+            - "/etc/init.d/dnsmasq enable"
+            - "/etc/init.d/dnsmasq restart"
+            - "/etc/init.d/odhcpd enable"
+            - "/etc/init.d/odhcpd restart"
+            - "rm /etc/resolv.conf"
+            - "echo 'nameserver 127.0.0.1' >/etc/resolv.conf"
+            - "chmod 644 /etc/resolv.conf"
+          when: uci_set_result.changed
+
