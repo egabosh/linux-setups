@@ -1,0 +1,86 @@
+---
+- name: Avahi - discover serices like printers and chromecast over networks
+  hosts: openwrt-og
+  gather_facts: no
+
+  vars:
+    openwrt_packages:
+      - avahi-dbus-daemon
+      - avahi-utils
+
+    uci_vars:
+      ## Allow mDNS Avahi Input (UDP 5353 Multicast)
+      - { key: "firewall.allow_mdns_avahi", value: "rule" }
+      - { key: "firewall.allow_mdns_avahi.target", value: "ACCEPT" }
+      - { key: "firewall.allow_mdns_avahi.name", value: "Allow-mDNS-Avahi" }
+      - { key: "firewall.allow_mdns_avahi.proto", value: "udp" }
+      - { key: "firewall.allow_mdns_avahi.src", value: "*" }
+      - { key: "firewall.allow_mdns_avahi.dest_port", value: "5353" }
+      - { key: "firewall.allow_mdns_avahi.dest_ip", value: "224.0.0.251" }
+      - { key: "firewall.allow_mdns_avahi.family", value: "ipv4" }
+
+      ## Allow mDNS Avahi Input IPv6 (ff02::fb)
+      - { key: "firewall.allow_mdns_avahi_v6", value: "rule" }
+      - { key: "firewall.allow_mdns_avahi_v6.target", value: "ACCEPT" }
+      - { key: "firewall.allow_mdns_avahi_v6.name", value: "Allow-mDNS-Avahi-v6" }
+      - { key: "firewall.allow_mdns_avahi_v6.proto", value: "udp" }
+      - { key: "firewall.allow_mdns_avahi_v6.src", value: "*" }
+      - { key: "firewall.allow_mdns_avahi_v6.dest_port", value: "5353" }
+      - { key: "firewall.allow_mdns_avahi_v6.dest_ip", value: "ff02::fb" }
+      - { key: "firewall.allow_mdns_avahi_v6.family", value: "ipv6" }
+
+  tasks:
+
+    - name: update opkg db
+      raw: opkg update
+      changed_when: false
+
+    - name: check installed packages
+      raw: opkg list-installed
+      register: installed_packages
+      changed_when: false
+
+    - name: install packages if needed
+      raw: opkg install {{ item }}
+      loop: "{{ openwrt_packages }}"
+      when: item not in installed_packages.stdout
+
+    - name: write /etc/avahi/avahi-daemon.conf
+      raw: |
+        cat << 'EOF' > /etc/avahi/avahi-daemon.conf
+        [server]
+        allow-interfaces={{ bridges }}
+
+        [reflector]
+        enable-reflector=yes
+        EOF
+        /etc/init.d/avahi-daemon enable
+        /etc/init.d/avahi-daemon restart
+      changed_when: false
+
+    - name: set uci values if needed
+      raw: |
+        current=$(uci get {{ item.key }} 2>/dev/null || echo "NOT_SET")
+        desired="{{ item.value }}"
+        
+        if [ "$current" != "$desired" ]
+        then
+          uci set {{ item.key }}="{{ item.value }}"
+          echo "changed"
+        else
+          echo "unchanged"
+        fi
+      loop: "{{ uci_vars }}"
+      register: uci_set_result
+      changed_when: "not 'unchanged' in uci_set_result.stdout"
+
+    - name: apply changes
+      block:
+        - name: commit enable and restart
+          raw: "{{ item }}"
+          loop:
+            - "uci commit"
+            - "/etc/init.d/avahi-daemon enable"
+            - "/etc/init.d/avahi-daemon restart"
+          when: uci_set_result.changed
+

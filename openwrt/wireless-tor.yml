@@ -10,9 +10,9 @@
       - { key: "wireless.wifinet0", value: "wifi-iface" }
       - { key: "wireless.wifinet0.device", value: "radio1" }
       - { key: "wireless.wifinet0.mode", value: "ap" }
-      #- { key: "wireless.wifinet0.key", value: "SOMESECUREPASSPHRASEFORGUESTS" }
+      - { key: "wireless.wifinet0.key", value: "{{ wlan_key }}" }
       - { key: "wireless.wifinet0.isolate", value: "1" }
-      - { key: "wireless.wifinet0.ssid", value: "WLAN" }
+      - { key: "wireless.wifinet0.ssid", value: "{{ wlan_ssid }}" }
       - { key: "wireless.wifinet0.network", value: "tor" }
       - { key: "wireless.wifinet0.encryption", value: "sae-mixed" }
 
