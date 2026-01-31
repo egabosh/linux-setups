@@ -1,0 +1,46 @@
+---
+- name: 
+  hosts: all
+  gather_facts: no
+
+  vars:
+    uci_vars:
+      ## redirects / portforwarding
+      # ssh
+      - { key: "firewall.redirect_{{ name }}",        value: "redirect" }
+      - { key: "firewall.redirect_{{ name }}.target",      value: "DNAT" }
+      - { key: "firewall.redirect_{{ name }}.name",        value: "ansible_{{ name }}" }
+      - { key: "firewall.redirect_{{ name }}.proto",       value: "{{ proto }}" }
+      - { key: "firewall.redirect_{{ name }}.src",         value: "wan" }
+      - { key: "firewall.redirect_{{ name }}.dest",        value: "lan" }
+      - { key: "firewall.redirect_{{ name }}.src_dport",   value: "{{ port}}" }
+      - { key: "firewall.redirect_{{ name }}.dest_ip",     value: "{{ target }}" }
+      - { key: "firewall.redirect_{{ name }}.dest_port",   value: "{{ to_port }}" }
+
+  tasks:
+
+    - name: set uci values if needed
+      raw: |
+        current=$(uci get {{ item.key }} 2>/dev/null || echo "NOT_SET")
+        desired="{{ item.value }}"
+        
+        if [ "$current" != "$desired" ]
+        then
+          uci set {{ item.key }}="{{ item.value }}"
+          echo "changed"
+        else
+          echo "unchanged"
+        fi
+      loop: "{{ uci_vars }}"
+      register: uci_set_result
+      changed_when: "not 'unchanged' in uci_set_result.stdout"
+
+    - name: apply changes
+      block:
+        - name: commit enable and restart
+          raw: "{{ item }}"
+          loop:
+            - "uci commit"
+            - "/etc/init.d/firewall reload"
+          when: uci_set_result.changed
+
