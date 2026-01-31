@@ -1,0 +1,44 @@
+---
+- name: Hijack outgoing internet connections
+  hosts: all
+  gather_facts: no
+
+  vars:
+    uci_vars:
+      - { key: "firewall.redirect_hijack_{{ src }}_{{ name }}",           value: "redirect" }
+      - { key: "firewall.redirect_hijack_{{ src }}_{{ name }}.target",    value: "DNAT" }
+      - { key: "firewall.redirect_hijack_{{ src }}_{{ name }}.name",      value: "ansible_hijack_{{ src }}_{{ name }}" }
+      - { key: "firewall.redirect_hijack_{{ src }}_{{ name }}.proto",     value: "{{ proto }}" }
+      - { key: "firewall.redirect_hijack_{{ src }}_{{ name }}.src",       value: "{{ src }}" }
+      - { key: "firewall.redirect_hijack_{{ src }}_{{ name }}.dest",      value: "wan" }
+      - { key: "firewall.redirect_hijack_{{ src }}_{{ name }}.src_dport", value: "{{ port }}" }
+      - { key: "firewall.redirect_hijack_{{ src }}_{{ name }}.dest_ip",   value: "{{ target }}" }
+      - { key: "firewall.redirect_hijack_{{ src }}_{{ name }}.dest_port", value: "{{ to_port }}" }
+
+  tasks:
+
+    - name: set uci values if needed
+      raw: |
+        current=$(uci get {{ item.key }} 2>/dev/null || echo "NOT_SET")
+        desired="{{ item.value }}"
+        
+        if [ "$current" != "$desired" ]
+        then
+          uci set {{ item.key }}="{{ item.value }}"
+          echo "changed"
+        else
+          echo "unchanged"
+        fi
+      loop: "{{ uci_vars }}"
+      register: uci_set_result
+      changed_when: "not 'unchanged' in uci_set_result.stdout"
+
+    - name: apply changes
+      block:
+        - name: commit enable and restart
+          raw: "{{ item }}"
+          loop:
+            - "uci commit"
+            - "/etc/init.d/firewall reload"
+          when: uci_set_result.changed
+

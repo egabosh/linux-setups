@@ -1,0 +1,47 @@
+---
+- name: Allow acces to server via ipv6
+  hosts: all
+  gather_facts: no
+
+  vars:
+    uci_vars:
+
+      # ipv6 access from the internet forward
+      - { key: "firewall.rule_{{ name }}_ipv6_access",     value: "rule" }
+      - { key: "firewall.rule_{{ name }}_ipv6_access.family",   value: "ipv6" }
+      - { key: "firewall.rule_{{ name }}_ipv6_access.proto",    value: "{{ proto }}" }
+      - { key: "firewall.rule_{{ name }}_ipv6_access.src",      value: "wan" }
+      - { key: "firewall.rule_{{ name }}_ipv6_access.dest",     value: "lan" }
+      - { key: "firewall.rule_{{ name }}_ipv6_access.target",   value: "ACCEPT" }
+      - { key: "firewall.rule_{{ name }}_ipv6_access.dest_port",value: "{{ ports }}" }
+      - { key: "firewall.rule_{{ name }}_ipv6_access.name",     value: "ansible_{{ name }}_ipv6_access" }
+      - { key: "firewall.rule_{{ name }}_ipv6_access.dest_ip",  value: "{{ suffix }}" }
+
+
+  tasks:
+    - name: set uci values if needed
+      raw: |
+        current=$(uci get {{ item.key }} 2>/dev/null || echo "NOT_SET")
+        desired="{{ item.value }}"
+
+        if [ "$current" != "$desired" ]
+        then
+          uci set {{ item.key }}="{{ item.value }}"
+          echo "changed"
+        else
+          echo "unchanged"
+        fi
+      loop: "{{ uci_vars }}"
+      register: uci_set_result
+      changed_when: "not 'unchanged' in uci_set_result.stdout"
+
+    - name: apply changes
+      block:
+        - name: commit enable and restart
+          raw: "{{ item }}"
+          loop:
+            - "uci commit"
+            - "/etc/init.d/firewall reload"
+          when: uci_set_result.changed
+
+
