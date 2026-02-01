@@ -7,15 +7,15 @@
     uci_vars:
       ## redirects / portforwarding
       # ssh
-      - { key: "firewall.redirect_{{ name }}",        value: "redirect" }
-      - { key: "firewall.redirect_{{ name }}.target",      value: "DNAT" }
-      - { key: "firewall.redirect_{{ name }}.name",        value: "ansible_{{ name }}" }
-      - { key: "firewall.redirect_{{ name }}.proto",       value: "{{ proto }}" }
-      - { key: "firewall.redirect_{{ name }}.src",         value: "wan" }
-      - { key: "firewall.redirect_{{ name }}.dest",        value: "lan" }
-      - { key: "firewall.redirect_{{ name }}.src_dport",   value: "{{ port}}" }
-      - { key: "firewall.redirect_{{ name }}.dest_ip",     value: "{{ target }}" }
-      - { key: "firewall.redirect_{{ name }}.dest_port",   value: "{{ to_port }}" }
+      - { key: "firewall.redirect_{{ redirect_name }}",        value: "redirect" }
+      - { key: "firewall.redirect_{{ redirect_name }}.target",      value: "DNAT" }
+      - { key: "firewall.redirect_{{ redirect_name }}.name",        value: "ansible_{{ redirect_name }}" }
+      - { key: "firewall.redirect_{{ redirect_name }}.proto",       value: "{{ proto }}" }
+      - { key: "firewall.redirect_{{ redirect_name }}.src",         value: "wan" }
+      - { key: "firewall.redirect_{{ redirect_name }}.dest",        value: "lan" }
+      - { key: "firewall.redirect_{{ redirect_name }}.src_dport",   value: "{{ from_port}}" }
+      - { key: "firewall.redirect_{{ redirect_name }}.dest_ip",     value: "{{ target }}" }
+      - { key: "firewall.redirect_{{ redirect_name }}.dest_port",   value: "{{ to_port }}" }
 
   tasks:
 

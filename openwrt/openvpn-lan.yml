@@ -122,14 +122,6 @@
         chmod 500 /etc/openvpn/lan-dev2bridge.sh
       changed_when: false
 
-    - name: lost of clients
-      raw: |
-        cat << 'EOF' > /etc/openvpn/lan-clients
-        olli-laptop
-        becky-laptop
-        EOF
-      changed_when: false
-
     - name: create script for easy-rsa pki and cronjob
       raw: |
         mkdir -p /etc/scripts
@@ -157,7 +149,7 @@
         /usr/bin/easyrsa --batch --days=${CERT_DAYS} build-server-full openvpn-server nopass || exit 5
 
         # go through clients
-        for CLIENT_HOSTNAME in $(cat /etc/openvpn/lan-clients)
+        for CLIENT_HOSTNAME in {{ clients }}
         do
           CLIENT_NAME=${CLIENT_HOSTNAME}.${VPNNAME}
 

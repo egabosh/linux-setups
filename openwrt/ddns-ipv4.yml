@@ -24,7 +24,7 @@
       - { key: "ddns.dedyn_ipv4.use_https", value: "1" }
       - { key: "ddns.dedyn_ipv4.cacert", value: "/etc/ssl/certs" }
       - { key: "ddns.dedyn_ipv4.ip_source", value: "web" }
-      - { key: "ddns.dedyn_ipv4.interface", value: "ppp0" }
+      - { key: "ddns.dedyn_ipv4.interface", value: "wan" }
       - { key: "ddns.dedyn_ipv4.use_syslog", value: "1" }
       - { key: "ddns.dedyn_ipv4.dns_server", value: "45.54.76.1" }
       - { key: "ddns.dedyn_ipv4.ip_url", value: "https://checkipv4.dedyn.io" }

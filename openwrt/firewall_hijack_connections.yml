@@ -5,15 +5,15 @@
 
   vars:
     uci_vars:
-      - { key: "firewall.redirect_hijack_{{ src }}_{{ name }}",           value: "redirect" }
-      - { key: "firewall.redirect_hijack_{{ src }}_{{ name }}.target",    value: "DNAT" }
-      - { key: "firewall.redirect_hijack_{{ src }}_{{ name }}.name",      value: "ansible_hijack_{{ src }}_{{ name }}" }
-      - { key: "firewall.redirect_hijack_{{ src }}_{{ name }}.proto",     value: "{{ proto }}" }
-      - { key: "firewall.redirect_hijack_{{ src }}_{{ name }}.src",       value: "{{ src }}" }
-      - { key: "firewall.redirect_hijack_{{ src }}_{{ name }}.dest",      value: "wan" }
-      - { key: "firewall.redirect_hijack_{{ src }}_{{ name }}.src_dport", value: "{{ port }}" }
-      - { key: "firewall.redirect_hijack_{{ src }}_{{ name }}.dest_ip",   value: "{{ target }}" }
-      - { key: "firewall.redirect_hijack_{{ src }}_{{ name }}.dest_port", value: "{{ to_port }}" }
+      - { key: "firewall.redirect_hijack_{{ src }}_{{ redirect_name }}",           value: "redirect" }
+      - { key: "firewall.redirect_hijack_{{ src }}_{{ redirect_name }}.target",    value: "DNAT" }
+      - { key: "firewall.redirect_hijack_{{ src }}_{{ redirect_name }}.name",      value: "ansible_hijack_{{ src }}_{{ redirect_name }}" }
+      - { key: "firewall.redirect_hijack_{{ src }}_{{ redirect_name }}.proto",     value: "{{ proto }}" }
+      - { key: "firewall.redirect_hijack_{{ src }}_{{ redirect_name }}.src",       value: "{{ src }}" }
+      - { key: "firewall.redirect_hijack_{{ src }}_{{ redirect_name }}.dest",      value: "wan" }
+      - { key: "firewall.redirect_hijack_{{ src }}_{{ redirect_name }}.src_dport", value: "{{ from_port }}" }
+      - { key: "firewall.redirect_hijack_{{ src }}_{{ redirect_name }}.dest_ip",   value: "{{ target }}" }
+      - { key: "firewall.redirect_hijack_{{ src }}_{{ redirect_name }}.dest_port", value: "{{ to_port }}" }
 
   tasks:
 
