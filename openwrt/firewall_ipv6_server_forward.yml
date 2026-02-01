@@ -7,15 +7,15 @@
     uci_vars:
 
       # ipv6 access from the internet forward
-      - { key: "firewall.rule_{{ name }}_ipv6_access",     value: "rule" }
-      - { key: "firewall.rule_{{ name }}_ipv6_access.family",   value: "ipv6" }
-      - { key: "firewall.rule_{{ name }}_ipv6_access.proto",    value: "{{ proto }}" }
-      - { key: "firewall.rule_{{ name }}_ipv6_access.src",      value: "wan" }
-      - { key: "firewall.rule_{{ name }}_ipv6_access.dest",     value: "lan" }
-      - { key: "firewall.rule_{{ name }}_ipv6_access.target",   value: "ACCEPT" }
-      - { key: "firewall.rule_{{ name }}_ipv6_access.dest_port",value: "{{ ports }}" }
-      - { key: "firewall.rule_{{ name }}_ipv6_access.name",     value: "ansible_{{ name }}_ipv6_access" }
-      - { key: "firewall.rule_{{ name }}_ipv6_access.dest_ip",  value: "{{ suffix }}" }
+      - { key: "firewall.rule_{{ redirect_name }}_ipv6_access",     value: "rule" }
+      - { key: "firewall.rule_{{ redirect_name }}_ipv6_access.family",   value: "ipv6" }
+      - { key: "firewall.rule_{{ redirect_name }}_ipv6_access.proto",    value: "{{ proto }}" }
+      - { key: "firewall.rule_{{ redirect_name }}_ipv6_access.src",      value: "wan" }
+      - { key: "firewall.rule_{{ redirect_name }}_ipv6_access.dest",     value: "lan" }
+      - { key: "firewall.rule_{{ redirect_name }}_ipv6_access.target",   value: "ACCEPT" }
+      - { key: "firewall.rule_{{ redirect_name }}_ipv6_access.dest_port",value: "{{ ports }}" }
+      - { key: "firewall.rule_{{ redirect_name }}_ipv6_access.name",     value: "ansible_{{ redirect_name }}_ipv6_access" }
+      - { key: "firewall.rule_{{ redirect_name }}_ipv6_access.dest_ip",  value: "{{ suffix }}" }
 
 
   tasks:

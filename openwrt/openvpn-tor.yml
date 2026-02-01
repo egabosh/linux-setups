@@ -123,7 +123,7 @@
         /usr/bin/easyrsa --batch --days=${CERT_DAYS} build-server-full openvpn-server nopass || exit 5
 
         # go through clients
-        for CLIENT_HOSTNAME in $(cat /etc/openwrt-slaves)
+        for CLIENT_HOSTNAME in {{ clients }}
         do
           CLIENT_NAME=${CLIENT_HOSTNAME}.${VPNNAME}
 

@@ -77,28 +77,6 @@
       - { key: "firewall.rule_allow_dns_iot.dest_port", value: "53" }
       - { key: "firewall.rule_allow_dns_iot.target",    value: "ACCEPT" }
 
-      ## All DNS Port 53 to router -> hijack DNS for iot zone
-      - { key: "firewall.redirect_dns_hijack_iot",      value: "redirect" }
-      - { key: "firewall.redirect_dns_hijack_iot.target",    value: "DNAT" }
-      - { key: "firewall.redirect_dns_hijack_iot.name",      value: "ansible_dns_hijack_iot" }
-      - { key: "firewall.redirect_dns_hijack_iot.proto",     value: "tcp udp" }
-      - { key: "firewall.redirect_dns_hijack_iot.src",       value: "iot" }
-      - { key: "firewall.redirect_dns_hijack_iot.dest",      value: "wan" }
-      - { key: "firewall.redirect_dns_hijack_iot.src_dport", value: "53" }
-      - { key: "firewall.redirect_dns_hijack_iot.dest_ip",   value: "$(uci get network.lan.ipaddr)" }
-      - { key: "firewall.redirect_dns_hijack_iot.dest_port", value: "53" }
-
-      ## All NTP Port 123 to router -> hijack NTP for iot zone
-      - { key: "firewall.redirect_ntp_hijack_iot",      value: "redirect" }
-      - { key: "firewall.redirect_ntp_hijack_iot.target",    value: "DNAT" }
-      - { key: "firewall.redirect_ntp_hijack_iot.name",      value: "ansible_ntp_hijack_iot" }
-      - { key: "firewall.redirect_ntp_hijack_iot.proto",     value: "tcp udp" }
-      - { key: "firewall.redirect_ntp_hijack_iot.src",       value: "iot" }
-      - { key: "firewall.redirect_ntp_hijack_iot.dest",      value: "wan" }
-      - { key: "firewall.redirect_ntp_hijack_iot.src_dport", value: "123" }
-      - { key: "firewall.redirect_ntp_hijack_iot.dest_ip",   value: "$(uci get network.lan.ipaddr)" }
-      - { key: "firewall.redirect_ntp_hijack_iot.dest_port", value: "123" }
-
 
   tasks:
 

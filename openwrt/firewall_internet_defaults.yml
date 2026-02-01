@@ -9,7 +9,7 @@
       ## WAN zone
       - { key: "firewall.zone_wan", value: "zone" }
       - { key: "firewall.zone_wan.name", value: "wan" }
-      - { key: "firewall.zone_wan.network", value: "ppp0" }
+      - { key: "firewall.zone_wan.network", value: "wan" }
       - { key: "firewall.zone_wan.input", value: "DROP" }
       - { key: "firewall.zone_wan.output", value: "ACCEPT" }
       - { key: "firewall.zone_wan.forward", value: "DROP" }

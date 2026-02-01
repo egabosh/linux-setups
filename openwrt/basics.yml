@@ -38,10 +38,15 @@
     uci_vars:
       ## Basics
       - { key: "system.@system[0].timezone", value: "{{ timezone }}" }
-      - { key: "system.@system[0].hostname", value: "{{ inventory_hostname }}" 
+      - { key: "system.@system[0].hostname", value: "{{ inventory_hostname }}" }
       - { key: "system.ntp.enable_server", value: "1" }
       - { key: "irqbalance.irqbalance.enabled", value: "1" }
+      - { key: "network.lan.proto", value: "static" }
+      - { key: "network.lan.ipaddr", value: "{{ ip }}" }
+      - { key: "network.lan.netmask", value: "{{ mask }}" }
       - { key: "network.lan.ula_prefix", value: "{{ ipv6_ula_prefix }}" }
+      - { key: "network.lan.ip6addr", value: "{{ ip6 }}" }
+      - { key: "network.lan.ip6assign", value: "64" }
       - { key: "network.globals.ula_prefix", value: "{{ ipv6_ula_prefix }}" }
       - { key: "system.ntp.server", value: "{{ ntp_server }}" }
 

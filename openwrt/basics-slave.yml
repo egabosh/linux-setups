@@ -1,0 +1,62 @@
+---
+- name: basic OpenWRT config for slave - no own internet - use master
+  hosts: all
+  gather_facts: no
+
+  vars:
+
+    uci_delete_vars:
+      - 'network.wan'
+      - 'network.wan6'
+      - 'dhcp.wan'
+
+    uci_vars:
+      ## Basics
+      - { key: "network.lan.gateway", value: "{{ gw }}" }
+      - { key: "network.lan.dns", value: "{{ dns }}" }
+
+  tasks:
+
+    - name: detele config defaults
+      raw: |
+        # detele default config indices
+        while uci show | grep -q "^{{ item }}="
+        do
+          echo "changed"
+          uci delete {{ item }}[0]
+          uci delete {{ item }}
+        done
+      loop: "{{ uci_delete_vars }}"
+      register: uci_delete_result
+      changed_when: "'changed' in uci_delete_result.stdout"
+
+
+    - name: set uci values if needed
+      raw: |
+        current=$(uci get {{ item.key }} 2>/dev/null || echo "NOT_SET")
+        desired="{{ item.value }}"
+        if [ "$current" != "$desired" ]
+        then
+          uci set {{ item.key }}="{{ item.value }}"
+          echo "changed"
+        else
+          echo "unchanged"
+        fi
+      loop: "{{ uci_vars }}"
+      register: uci_set_result
+      changed_when: "not 'unchanged' in uci_set_result.stdout"
+
+    - name: apply changes
+      block:
+        - name: commit enable and restart
+          raw: "{{ item }}"
+          loop:
+            - "uci commit"
+            - "/etc/init.d/network reload"
+            - "/etc/init.d/dnsmasq stop"
+            - "/etc/init.d/dnsmasq disable"
+            - "/etc/init.d/odhcpd stop"
+            - "/etc/init.d/odhcpd disable"
+          when: uci_set_result.changed or uci_delete_result.changed
+
+
