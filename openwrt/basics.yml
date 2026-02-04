@@ -34,6 +34,7 @@
       - coreutils-base64
       - nano-full
       - less
+      - blkid
 
     uci_vars:
       ## Basics
@@ -49,6 +50,17 @@
       - { key: "network.lan.ip6assign", value: "64" }
       - { key: "network.globals.ula_prefix", value: "{{ ipv6_ula_prefix }}" }
       - { key: "system.ntp.server", value: "{{ ntp_server }}" }
+      - { key: "fstab.@global[0].anon_mount",      value: "0" }
+      - { key: "fstab.@global[0].anon_swap",       value: "0" }
+      - { key: "fstab.@global[0].auto_swap",       value: "1" }
+      - { key: "fstab.@global[0].auto_mount",      value: "1" }
+      - { key: "fstab.@global[0].from_fstab",      value: "1" }
+      - { key: "fstab.openwrtstick",         value: "mount" }
+      - { key: "fstab.openwrtstick.target",         value: "/srv" }
+      - { key: "fstab.openwrtstick.label",          value: "OPENWRTSTICK" }
+      - { key: "fstab.openwrtstick.fstype",         value: "ext4" }
+      - { key: "fstab.openwrtstick.enabled",        value: "1" }
+      - { key: "fstab.openwrtstick.options",        value: "rw,sync" }
 
   tasks:
     - name: update opkg db
@@ -106,6 +118,8 @@
         - "uci commit"
         - "/etc/init.d/irqbalance start"
         - "/etc/init.d/irqbalance enable"
+        - "/etc/init.d/fstab enable"
+        - "/etc/init.d/fstab restart"
       when: uci_set_result.changed
 
 

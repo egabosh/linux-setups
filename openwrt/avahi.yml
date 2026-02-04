@@ -1,6 +1,6 @@
 ---
 - name: Avahi - discover serices like printers and chromecast over networks
-  hosts: openwrt-og
+  hosts: all
   gather_facts: no
 
   vars:

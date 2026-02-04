@@ -1,6 +1,6 @@
 ---
 - name: firewall-config - default basic rules for internet access (DHCP, ping,...) src=wan
-  hosts: openwrt-og,openwrt-test
+  hosts: all
   gather_facts: no
 
   vars:
@@ -20,7 +20,7 @@
       ## rules
       # DHCP-Renew
       - { key: "firewall.rule_dhcp_renew",      value: "rule" }
-      - { key: "firewall.rule_dhcp_renew.name",      value: "ansible_default_DHCP-Renew" }
+      - { key: "firewall.rule_dhcp_renew.name",      value: "ansible_default_dhcp_renew" }
       - { key: "firewall.rule_dhcp_renew.src",       value: "*" }
       - { key: "firewall.rule_dhcp_renew.proto",     value: "udp" }
       - { key: "firewall.rule_dhcp_renew.dest_port", value: "68" }
@@ -29,7 +29,7 @@
 
       # Ping
       - { key: "firewall.rule_ping",      value: "rule" }
-      - { key: "firewall.rule_ping.name",      value: "ansible_default_Ping" }
+      - { key: "firewall.rule_ping.name",      value: "ansible_default_ping" }
       - { key: "firewall.rule_ping.src",       value: "wan" }
       - { key: "firewall.rule_ping.proto",     value: "icmp" }
       - { key: "firewall.rule_ping.icmp_type", value: "echo-request" }
@@ -38,7 +38,7 @@
 
       # IGMP
       - { key: "firewall.rule_igmp",    value: "rule" }
-      - { key: "firewall.rule_igmp.name",    value: "ansible_default-IGMP" }
+      - { key: "firewall.rule_igmp.name",    value: "ansible_default_igmp" }
       - { key: "firewall.rule_igmp.src",     value: "*" }
       - { key: "firewall.rule_igmp.proto",   value: "igmp" }
       - { key: "firewall.rule_igmp.family",  value: "ipv4" }
@@ -46,7 +46,7 @@
 
       # DHCPv6
       - { key: "firewall.rule_dhcpv6",      value: "rule" }
-      - { key: "firewall.rule_dhcpv6.name",      value: "ansible_default-DHCPv6" }
+      - { key: "firewall.rule_dhcpv6.name",      value: "ansible_default_dhcpv6" }
       - { key: "firewall.rule_dhcpv6.src",       value: "*" }
       - { key: "firewall.rule_dhcpv6.proto",     value: "udp" }
       - { key: "firewall.rule_dhcpv6.dest_port", value: "546" }
@@ -55,7 +55,7 @@
 
       # MLD
       - { key: "firewall.rule_mld",      value: "rule" }
-      - { key: "firewall.rule_mld.name",      value: "ansible_default-MLD" }
+      - { key: "firewall.rule_mld.name",      value: "ansible_default_mld" }
       - { key: "firewall.rule_mld.src",       value: "*" }
       - { key: "firewall.rule_mld.proto",     value: "icmp" }
       - { key: "firewall.rule_mld.src_ip",    value: "fe80::/10" }
@@ -65,7 +65,7 @@
 
       # ICMPv6-Input
       - { key: "firewall.rule_icmpv6_input",      value: "rule" }
-      - { key: "firewall.rule_icmpv6_input.name",      value: "ansible_default-ICMPv6-Input" }
+      - { key: "firewall.rule_icmpv6_input.name",      value: "ansible_default_icmpv6_input" }
       - { key: "firewall.rule_icmpv6_input.src",       value: "wan" }
       - { key: "firewall.rule_icmpv6_input.proto",     value: "icmp" }
       - { key: "firewall.rule_icmpv6_input.icmp_type", value: "echo-request echo-reply destination-unreachable packet-too-big time-exceeded bad-header unknown-header-type router-solicitation neighbour-solicitation router-advertisement neighbour-advertisement" }
@@ -75,7 +75,7 @@
 
       # ICMPv6-Forward
       - { key: "firewall.rule_icmpv6_forward",      value: "rule" }
-      - { key: "firewall.rule_icmpv6_forward.name",      value: "ansible_default-ICMPv6-Forward" }
+      - { key: "firewall.rule_icmpv6_forward.name",      value: "ansible_default_icmpv6_forward" }
       - { key: "firewall.rule_icmpv6_forward.src",       value: "wan" }
       - { key: "firewall.rule_icmpv6_forward.dest",      value: "*" }
       - { key: "firewall.rule_icmpv6_forward.proto",     value: "icmp" }
@@ -86,7 +86,7 @@
 
       # IPSec-ESP
       - { key: "firewall.rule_ipsec_esp",   value: "rule" }
-      - { key: "firewall.rule_ipsec_esp.name",   value: "ansible_default-IPSec-ESP" }
+      - { key: "firewall.rule_ipsec_esp.name",   value: "ansible_default_ipsec_esp" }
       - { key: "firewall.rule_ipsec_esp.src",    value: "wan" }
       - { key: "firewall.rule_ipsec_esp.dest",   value: "lan" }
       - { key: "firewall.rule_ipsec_esp.proto",  value: "esp" }
@@ -94,7 +94,7 @@
 
       # ISAKMP
       - { key: "firewall.rule_isakmp",      value: "rule" }
-      - { key: "firewall.rule_isakmp.name",      value: "ansible_default-ISAKMP" }
+      - { key: "firewall.rule_isakmp.name",      value: "ansible_default_isakmp" }
       - { key: "firewall.rule_isakmp.src",       value: "wan" }
       - { key: "firewall.rule_isakmp.dest",      value: "lan" }
       - { key: "firewall.rule_isakmp.dest_port", value: "500" }
@@ -125,6 +125,6 @@
           raw: "{{ item }}"
           loop:
             - "uci commit"
-            - "/etc/init.d/firewall restart"
+            - "/etc/init.d/firewall reload"
           when: uci_set_result.changed
 
