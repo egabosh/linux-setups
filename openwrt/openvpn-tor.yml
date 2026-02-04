@@ -186,6 +186,8 @@
           ssh -o BatchMode=yes ${CLIENT_HOSTNAME} "uci set network.tor.proto='none'"
           ssh -o BatchMode=yes ${CLIENT_HOSTNAME} "uci set network.tor.defaultroute='0'"
           ssh -o BatchMode=yes ${CLIENT_HOSTNAME} "uci set network.tor.delegate='0'"
+          [[ -n "{{ bridge_port }}" ]] && \
+           ssh -o BatchMode=yes ${CLIENT_HOSTNAME} "uci set network.tor_dev.ports='{{ bridge_port }}'"
           ssh -o BatchMode=yes ${CLIENT_HOSTNAME} "uci commit"
           ssh -o BatchMode=yes ${CLIENT_HOSTNAME} "/etc/init.d/network reload"
           ssh -o BatchMode=yes ${CLIENT_HOSTNAME} "/etc/init.d/openvpn enable"

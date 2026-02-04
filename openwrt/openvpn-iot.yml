@@ -189,6 +189,8 @@
           ssh -o BatchMode=yes ${CLIENT_HOSTNAME} "uci set network.iot.proto='none'"
           ssh -o BatchMode=yes ${CLIENT_HOSTNAME} "uci set network.iot.defaultroute='0'"
           ssh -o BatchMode=yes ${CLIENT_HOSTNAME} "uci set network.iot.delegate='0'"
+          [[ -n "{{ bridge_port }}" ]] && \
+           ssh -o BatchMode=yes ${CLIENT_HOSTNAME} "uci set network.iot_dev.ports='{{ bridge_port }}'"
           ssh -o BatchMode=yes ${CLIENT_HOSTNAME} "uci commit"
           ssh -o BatchMode=yes ${CLIENT_HOSTNAME} "/etc/init.d/network reload"
           ssh -o BatchMode=yes ${CLIENT_HOSTNAME} "/etc/init.d/openvpn enable"

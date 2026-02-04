@@ -1,6 +1,6 @@
 ---
 - name: dhcp and dns server
-  hosts: openwrt-og
+  hosts: all
   gather_facts: no
  
   vars:
@@ -20,8 +20,10 @@
       - { key: "dhcp.lan.ra_management", value: '1' }
       - { key: "dhcp.lan.force",  value: "1" }
       - { key: "dhcp.lan_dnsmasq", value: "dnsmasq" }
+      - { key: "dhcp.lan_dnsmasq.domain", value: "lan" }
       - { key: "dhcp.lan_dnsmasq.resolvfile", value: "/etc/resolv.dnsmasq.lan" }
       - { key: "dhcp.lan_dnsmasq.listen_address", value: "127.0.0.1" }
+      - { key: "dhcp.lan_dnsmasq.listen_address", value: "$(uci get network.lan.ula_prefix | cut -d/ -f1)1" }
       - { key: "dhcp.lan_dnsmasq.listen_address", value: "$(uci get network.lan.ipaddr)" }
       - { key: "dhcp.lan_dnsmasq.listen_address", value: "$(uci get network.lan.ip6addr | cut -d/ -f1)" }
       - { key: "dhcp.lan_dnsmasq.logqueries", value: "1" }
