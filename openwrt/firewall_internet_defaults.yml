@@ -32,9 +32,16 @@
       - { key: "firewall.rule_ping.name",      value: "ansible_default_ping" }
       - { key: "firewall.rule_ping.src",       value: "wan" }
       - { key: "firewall.rule_ping.proto",     value: "icmp" }
-      - { key: "firewall.rule_ping.icmp_type", value: "echo-request" }
       - { key: "firewall.rule_ping.family",    value: "ipv4" }
       - { key: "firewall.rule_ping.target",    value: "DROP" }
+
+      - { key: "firewall.rule_ping_forward_out",     value: "rule" }
+      - { key: "firewall.rule_ping_forward_out.src",      value: "lan" }
+      - { key: "firewall.rule_ping_forward_out.dest",     value: "wan" }
+      - { key: "firewall.rule_ping_forward_out.target",   value: "ACCEPT" }
+      - { key: "firewall.rule_ping_forward_out.proto",    value: "icmp" }
+      - { key: "firewall.rule_ping_forward_out.icmp_type",    value: "echo-request" }
+      - { key: "firewall.rule_ping_forward_out.name",     value: "ansible_ping_forward_out" }
 
       # IGMP
       - { key: "firewall.rule_igmp",    value: "rule" }
@@ -101,6 +108,14 @@
       - { key: "firewall.rule_isakmp.proto",     value: "udp" }
       - { key: "firewall.rule_isakmp.target",    value: "ACCEPT" }
 
+      # allow_all_from_lan (emergency switch to allow all - disables by default)
+      - { key: "firewall.rule_allow_all_from_lan",      value: "rule" }
+      - { key: "firewall.rule_allow_all_from_lan.proto",     value: "all" }
+      - { key: "firewall.rule_allow_all_from_lan.src",       value: "lan" }
+      - { key: "firewall.rule_allow_all_from_lan.dest",      value: "wan" }
+      - { key: "firewall.rule_allow_all_from_lan.target",    value: "ACCEPT" }
+      - { key: "firewall.rule_allow_all_from_lan.name",      value: "ansible_allow_all_from_lan" }
+      - { key: "firewall.rule_allow_all_from_lan.enabled",   value: "0" }
 
   tasks:
     - name: set uci values if needed
