@@ -1,0 +1,121 @@
+---
+- name: wireguard server for br-tor
+  hosts: all
+  gather_facts: no
+
+  vars:
+    openwrt_packages:
+      - luci-proto-wireguard
+      - kmod-wireguard
+
+    uci_vars:
+      # Interface wg_tor
+      - { key: "network.wg_tor", value: "interface" }
+      - { key: "network.wg_tor.proto", value: "wireguard" }
+      - { key: "network.wg_tor.listen_port", value: "59667" }
+      - { key: "network.wg_tor.mtu", value: "1450" }
+      - { key: "network.wg_tor.addresses", value: "fdaa:a192:b168:cd45::1/64" }
+      - { key: "network.wg_tor.addresses", value: "192.168.45.1/24" }
+      - { key: "network.wg_tor.ip6assign", value: "64" }
+      - { key: "network.wg_tor.ipv6", value: "1" }
+
+      # IPv6 prefix delegation
+      - { key: "dhcp.wg_tor", value: "dhcp" }
+      - { key: "dhcp.wg_tor.interface", value: "wg_tor" }
+      - { key: "dhcp.wg_tor.start", value: "50" }
+      - { key: "dhcp.wg_tor.limit", value: "150" }
+      - { key: "dhcp.wg_tor.leasetime", value: "1h" }
+      - { key: "dhcp.wg_tor.rebind_protection", value: "0" }
+      - { key: "dhcp.wg_tor.dhcpv4", value: "server" }
+      - { key: "dhcp.wg_tor.dhcpv6", value: "server" }
+      - { key: "dhcp.wg_tor.ra", value: "server" }
+      - { key: "dhcp.wg_tor.ra_management", value: '1' }
+      - { key: "dhcp.wg_tor.force", value: "1" }
+      - { key: "dhcp.wg_tor_dnsmasq", value: "dnsmasq" }
+      - { key: "dhcp.wg_tor_dnsmasq.resolvfile", value: "/etc/resolv.dnsmasq.wg_tor" }
+      - { key: "dhcp.wg_tor_dnsmasq.listen_address", value: "192.168.45.1" }
+      - { key: "dhcp.wg_tor_dnsmasq.listen_address", value: "fdaa:a192:b168:cd45::1" }
+      - { key: "dhcp.wg_tor_dnsmasq.logqueries", value: "1" }
+      - { key: "dhcp.wg_tor_dnsmasq.authoritative", value: "1" }
+      - { key: "dhcp.wg_tor_dnsmasq.sequential_ip", value: "1" }
+
+      # allow connections from internet
+      - { key: "firewall.wireguard_allow_tor", value: "rule" }
+      - { key: "firewall.wireguard_allow_tor.name", value: "ansible_allow_wireguard_tor" }
+      - { key: "firewall.wireguard_allow_tor.src", value: "wan" }
+      - { key: "firewall.wireguard_allow_tor.proto", value: "udp" }
+      - { key: "firewall.wireguard_allow_tor.dest_port", value: "59667" }
+      - { key: "firewall.wireguard_allow_tor.target", value: "ACCEPT" }
+
+      # add to zone tor
+      - { key: "firewall.zone_tor.network", value: "wg_tor" }
+
+      # allow all betweewn tor and wg_tor
+      - { key: "firewall.wireguard_allow_tor_wg_tor", value: "rule" }
+      - { key: "firewall.wireguard_allow_tor_wg_tor.name", value: "ansible_allow_wireguard_tor_wg_tor" }
+      - { key: "firewall.wireguard_allow_tor_wg_tor.src", value: "tor" }
+      - { key: "firewall.wireguard_allow_tor_wg_tor.proto", value: "all" }
+      - { key: "firewall.wireguard_allow_tor_wg_tor.dest", value: "tor" }
+      - { key: "firewall.wireguard_allow_tor_wg_tor.target", value: "ACCEPT" }
+
+
+  tasks:
+    - name: update opkg db
+      raw: opkg update
+      changed_when: false
+  
+    - name: check installed packages
+      raw: opkg list-installed
+      register: installed_packages
+      changed_when: false
+
+    - name: install packages if needed
+      raw: opkg install {{ item }}
+      loop: "{{ openwrt_packages }}"
+      when: item not in installed_packages.stdout
+
+    - name: set uci values if needed
+      raw: |
+        current=$(uci get {{ item.key }} 2>/dev/null || echo "NOT_SET")
+        desired="{{ item.value }}"
+
+        # gen server keypair if not exist
+        if [[ {{ item.key }} = network.wg_tor.proto ]]
+        then
+          if ! uci get network.wg_tor.private_key >/dev/null
+          then
+            mkdir -p /etc/wg_tor
+            cd /etc/wg_tor
+            wg genkey | tee server_privatekey | wg pubkey > server_publickey
+            uci set network.wg_tor.private_key="$(cat server_privatekey)"
+          fi
+        fi
+
+        if ! echo "$current" | grep "$desired"
+        then
+          if echo "{{ item.key }}" | egrep -q "listen_address|\.addresses|\.allowed_ips|firewall\..+\.network"
+          then
+            uci add_list {{ item.key }}="{{ item.value }}"
+          else
+            uci set {{ item.key }}="{{ item.value }}"
+          fi
+          echo "changed"
+        else
+          echo "unchanged"
+        fi
+      loop: "{{ uci_vars }}"
+      register: uci_set_result
+      changed_when: "not 'unchanged' in uci_set_result.stdout"
+
+    - name: apply changes
+      block:
+        - name: commit enable and restart
+          raw: "{{ item }}"
+          loop:
+            - "uci commit"
+            - "/etc/init.d/network reload"
+            - "/etc/init.d/firewall reload"
+            - "/etc/init.d/dnsmasq restart"
+            - "/etc/init.d/odhcpd restart"
+          when: uci_set_result.changed
+

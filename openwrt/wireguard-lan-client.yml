@@ -1,0 +1,63 @@
+---
+- name: wireguard client for br-lan
+  hosts: all
+  gather_facts: no
+
+  vars:
+
+    uci_vars:
+      - { key: "network.wg_lan_{{ client_name }}", value: "wireguard_wg_lan" }
+      - { key: "network.wg_lan_{{ client_name }}.allowed_ips", value: "fdaa:a192:b168:cd44::{{ client_num }}/128" }
+      - { key: "network.wg_lan_{{ client_name }}.allowed_ips", value: "192.168.44.{{ client_num }}/32" }
+      - { key: "network.wg_lan_{{ client_name }}.persistent_keepalive", value: "15" }
+      - { key: "network.wg_lan_{{ client_name }}.description", value: "wg_lan_{{ client_name }}" }
+      - { key: "network.wg_lan_{{ client_name }}.route_allowed_ips", value: "1" }
+      - { key: "network.wg_lan_{{ client_name }}.endpoint_host", value: "$(uci get ddns.dedyn_ipv6_openwrt.domain)" }
+      - { key: "network.wg_lan_{{ client_name }}.endpoint_port", value: "59666" }
+
+  tasks:
+    - name: set uci values if needed
+      raw: |
+        current=$(uci get {{ item.key }} 2>/dev/null || echo "NOT_SET")
+        desired="{{ item.value }}"
+
+        # gen client keypair+psk if not exist
+        if [[ {{ item.value }} = wireguard_wg_lan ]]
+        then
+          if ! uci get {{ item.key }}.preshared_key
+          then
+            mkdir -p /etc/wg_lan
+            cd /etc/wg_lan
+            wg genkey | tee {{ client_name }}_privatekey | wg pubkey > {{ client_name }}_publickey
+            wg genpsk > {{ client_name }}_presharedkey
+            uci set {{ item.key }}.private_key=$(cat server_privatekey)
+            uci set {{ item.key }}.public_key=$(cat {{ client_name }}_publickey)
+            uci set {{ item.key }}.preshared_key=$(cat {{ client_name }}_presharedkey)
+          fi
+        fi
+
+        if ! echo "$current" | grep "$desired"
+        then
+          if echo "{{ item.key }}" | egrep -q "\.addresses|\.allowed_ips|firewall\..+\.network"
+          then
+            uci add_list {{ item.key }}="{{ item.value }}"
+          else
+            uci set {{ item.key }}="{{ item.value }}"
+          fi
+          echo "changed"
+        else
+          echo "unchanged"
+        fi
+      loop: "{{ uci_vars }}"
+      register: uci_set_result
+      changed_when: "not 'unchanged' in uci_set_result.stdout"
+
+    - name: apply changes
+      block:
+        - name: commit enable and restart
+          raw: "{{ item }}"
+          loop:
+            - "uci commit"
+            - "/etc/init.d/network reload"
+          when: uci_set_result.changed
+
