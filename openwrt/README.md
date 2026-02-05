@@ -4,6 +4,7 @@
 wget http://downloads.openwrt.org/releases/22.03.7/targets/ipq40xx/generic/openwrt-22.03.7-ipq40xx-generic-linksys_mr8300-squashfs-factory.bin
 ```
 firefox http://192.168.1.1/fwupdate.html
+(alternative maybe http://192.168.1.1:52000/fwupdate.html)
 User: admin; PW: admin
 
 
@@ -20,16 +21,16 @@ ssh 192.168.1.1 "reboot"
 ```
 
 ## Flash current version
-Download from 
+Download current Sysupgrade-Image from 
 https://openwrt.org/toh/hwdata/linksys/linksys_mr8300
 "Firmware OpenWrt Install URL"
 
-and istall via
+and install via
 firefox http://192.168.1.1/cgi-bin/luci/admin/system/flash
 "Flash new firmware image"
 
 # Upgrade
-Download from
+Download Sysupgrade-Image from
 https://openwrt.org/toh/hwdata/linksys/linksys_mr8300
 "Firmware OpenWrt Upgrade URL"
 
