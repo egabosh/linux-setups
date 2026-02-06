@@ -4,6 +4,11 @@
   gather_facts: no
 
   vars:
+    openwrt_packages:
+      - openvpn
+      - luci-app-openvpn
+      - luci-i18n-openvpn-de
+
     uci_vars:
 
       # Wireless AP  (joins br-tor via network=tor)
@@ -17,6 +22,21 @@
       - { key: "wireless.wifinet0.encryption", value: "sae-mixed" }
 
   tasks:
+
+    - name: update opkg db
+      raw: opkg update
+      changed_when: false
+
+    - name: check installed packages
+      raw: opkg list-installed
+      register: installed_packages
+      changed_when: false
+
+    - name: install packages if needed
+      raw: opkg install {{ item }}
+      loop: "{{ openwrt_packages }}"
+      when: item not in installed_packages.stdout
+
     - name: set uci values if needed
       raw: |
         current=$(uci get {{ item.key }} 2>/dev/null || echo "NOT_SET")
