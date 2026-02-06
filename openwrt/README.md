@@ -119,9 +119,52 @@ Needed variables:
 ansible-playbook -i ROUTER_IP_OR_NAME, -u root -e "logserver=172.23.0.42 logserver.yml
 ```
 
-## firewall
+## basic firewall
 
-basic firewall policies
+basic firewall policies. defaults to forbit all incoming and routed (forwarded) internet traffic
 ```
 ansible-playbook -i openwrt-og,$slaves -u root firewall.yml
 ```
+
+## Allow specified internet access
+
+Allow internet access based on specific protocol/ports/ips for computers behind the router
+Can be used multiple times.
+
+Needed variables:
+- rule_name: free name of rule
+- proto: tcp or udp or both
+- src: source zone - usually lan
+- src_ip: source IP - can be empty for all
+- dest_ip: destination IP - can be empty for all
+- dest_port: destinaltiopn port
+
+```
+echo "
+proto=tcp rule_name=http dest_port=80
+proto=tcp rule_name=https dest_port=443
+proto=tcp rule_name=ssh dest_port=22
+proto=tcp rule_name=ssh_share dest_port=28
+proto=tcp rule_name=ssh_alt dest_port=33
+proto=tcp rule_name=smtps dest_port=465
+proto=tcp rule_name=smtp_submission dest_port=587
+proto=tcp rule_name=imaps dest_port=993
+proto=tcp rule_name=pop3s dest_port=995
+proto=tcp rule_name=sieve dest_port=2000
+proto=tcp rule_name=hbci dest_port=3000
+proto=tcp rule_name=whois dest_port=43
+proto=tcp rule_name=jisti dest_port=4349
+proto=udp rule_name=signal_group_call dest_port=10000
+proto=udp rule_name=wlan_mobile_call_ipsec dest_port=\"500 4500\"
+" | while read forward
+do
+  [ -z "$forward" ] && continue
+  ansible-playbook -i openwrt-og, -u root -e "$forward src_ip= dest_ip= src=lan" firewall_allow_internet.yml
+done
+# android aurora store
+ansible-playbook -i openwrt-og, -u root -e "proto=tcp rule_name=android_aurora_store dest_port=1337 src_ip= dest_ip=146.59.157.181 src=lan" firewall_allow_internet.yml
+# matrix federation
+ansible-playbook -i openwrt-og, -u root -e "proto=tcp rule_name=matrix_federation dest_port=8448 src_ip=172.23.0.42 dest_ip= src=lan" firewall_allow_internet.yml
+```
+
+
