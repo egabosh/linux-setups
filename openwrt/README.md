@@ -159,12 +159,12 @@ proto=udp rule_name=wlan_mobile_call_ipsec dest_port=\"500 4500\"
 " | while read forward
 do
   [ -z "$forward" ] && continue
-  ansible-playbook -i openwrt-og, -u root -e "$forward src_ip= dest_ip= src=lan" firewall_allow_internet.yml
+  ansible-playbook -i ROUTER_IP_OR_NAME, -u root -e "$forward src_ip= dest_ip= src=lan" firewall_allow_internet.yml
 done
 # android aurora store
-ansible-playbook -i openwrt-og, -u root -e "proto=tcp rule_name=android_aurora_store dest_port=1337 src_ip= dest_ip=146.59.157.181 src=lan" firewall_allow_internet.yml
+ansible-playbook -i ROUTER_IP_OR_NAME, -u root -e "proto=tcp rule_name=android_aurora_store dest_port=1337 src_ip= dest_ip=146.59.157.181 src=lan" firewall_allow_internet.yml
 # matrix federation
-ansible-playbook -i openwrt-og, -u root -e "proto=tcp rule_name=matrix_federation dest_port=8448 src_ip=172.23.0.42 dest_ip= src=lan" firewall_allow_internet.yml
+ansible-playbook -i ROUTER_IP_OR_NAME, -u root -e "proto=tcp rule_name=matrix_federation dest_port=8448 src_ip=172.23.0.42 dest_ip= src=lan" firewall_allow_internet.yml
 ```
 
 
