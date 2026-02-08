@@ -10,7 +10,7 @@
       - { key: "firewall.rule_forward_internet_{{ rule_name }}.src",       value: "{{ src }}" }
       - { key: "firewall.rule_forward_internet_{{ rule_name }}.dest",      value: "wan" }
       - { key: "firewall.rule_forward_internet_{{ rule_name }}.target",    value: "ACCEPT" }
-      - { key: "firewall.rule_forward_internet_{{ rule_name }}.proto",     value: "tcp" }
+      - { key: "firewall.rule_forward_internet_{{ rule_name }}.proto",     value: "{{ proto }}" }
       - { key: "firewall.rule_forward_internet_{{ rule_name }}.name",      value: "ansible_forward_internet_{{ rule_name }}" }
       - { key: "firewall.rule_forward_internet_{{ rule_name }}.dest_port", value: "{{ dest_port }}" }
       - { key: "firewall.rule_forward_internet_{{ rule_name }}.src_ip",      value: "{{ src_ip }}" }
