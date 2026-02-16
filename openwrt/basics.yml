@@ -17,7 +17,7 @@
       - whois
       - coreutils-date
       - openssh-client
-      - vim-full
+      - vim
       - procps-ng-watch
       - coreutils-nice
       - curl
@@ -93,7 +93,7 @@
         cat << 'EOF' > /root/.vimrc
         set mouse=
         set paste
-        syntax on
+        #syntax on
         EOF
       changed_when: false
 
