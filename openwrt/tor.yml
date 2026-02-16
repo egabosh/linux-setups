@@ -6,6 +6,7 @@
   vars:
     openwrt_packages:
       - tor
+      - tor-geoip
       - luci-app-tor
       - privoxy
       - luci-app-privoxy
@@ -53,6 +54,7 @@
       - { key: "dhcp.tor_dnsmasq.logqueries", value: "1" }
       - { key: "dhcp.tor_dnsmasq.authoritative", value: "1" }
       - { key: "dhcp.tor_dnsmasq.sequential_ip", value: "1" }
+      - { key: "dhcp.tor_dnsmasq.server", value: "/.onion/127.0.0.1#9053" }
 
       # Tor zone
       - { key: "firewall.zone_tor", value: "zone" }
@@ -73,6 +75,17 @@
       - { key: "firewall.forwarding_lan_tor", value: "forwarding" }
       - { key: "firewall.forwarding_lan_tor.src", value: "lan" }
       - { key: "firewall.forwarding_lan_tor.dest", value: "tor" }
+
+      # allow forwarding for exceptions
+      - { key: "firewall.rule_forwarding_exceptions_tor",      value: "rule" }
+      - { key: "firewall.rule_forwarding_exceptions_tor.name",      value: "ansible_forwarding_exceptions_tor" }
+      - { key: "firewall.rule_forwarding_exceptions_tor.src",       value: "tor" }
+      - { key: "firewall.rule_forwarding_exceptions_tor.dest",       value: "wan" }
+      - { key: "firewall.rule_forwarding_exceptions_tor.proto",     value: "tcp" }
+      - { key: "firewall.rule_forwarding_exceptions_tor.dest_port", value: "80 443 993 587 465" }
+      - { key: "firewall.rule_forwarding_exceptions_tor.family", value: "ipv4" }
+      - { key: "firewall.rule_forwarding_exceptions_tor.ipset", value: "tor_whitelist" }
+      - { key: "firewall.rule_forwarding_exceptions_tor.target",    value: "ACCEPT" }
 
       # Allow-DHCP-TORLAN
       - { key: "firewall.rule_allow_dhcp_tor",      value: "rule" }
@@ -228,8 +241,10 @@
         TransPort [::]:9040
         SafeLogging 0
         ClientUseIPv6 1
-        #DNSPort 9053
-        #DNSListenAddress 127.0.0.1
+        DNSPort 9053
+        DNSListenAddress 127.0.0.1
+        ExitNodes {de}
+        StrictNodes 1
         EOF
         chmod 600 /etc/tor/torrc
         /etc/init.d/tor restart
@@ -245,7 +260,7 @@
         #if [ "$current" != "$desired" ]
         if ! echo "$current" | grep "$desired"
         then
-          if echo "{{ item.key }}" | grep -q "dhcp.tor_dnsmasq.listen_address"
+          if echo "{{ item.key }}" | egrep -q "dhcp.tor_dnsmasq.listen_address|dhcp.tor_dnsmasq.server"
           then
             uci add_list {{ item.key }}="{{ item.value }}"
           else
@@ -318,6 +333,35 @@
 
       changed_when: false
 
+    - name: write, run and create cronjob /etc/scripts/tor_whitelist.sh
+      raw: |
+        mkdir -p /etc/scripts
+        cat << 'EOF' > /etc/scripts/tor_whitelist.sh
+        #!/bin/bash
+        [[ -s /etc/tor_whitelist ]] || exit 0
+        cat /etc/tor_whitelist | while read notor
+        do
+          host "$notor" | egrep "has address " | cut -d" " -f4 >>/etc/tor_whitelist_ips
+        done
+        uci -q delete firewall.tor_whitelist
+        uci set firewall.tor_whitelist=ipset
+        uci set firewall.tor_whitelist.name="tor_whitelist"
+        uci set firewall.tor_whitelist.match="dst_ip"
+        uci set firewall.tor_whitelist.family="ipv4"
+        awk '{printf "add_list firewall.'tor_whitelist'.entry=\047%s\047\n", $0}' "/etc/tor_whitelist_ips" >"/etc/tor_whitelist_ips_uci_batch"
+        uci batch < "/etc/tor_whitelist_ips_uci_batch"
+        uci commit
+        /etc/init.d/firewall reload
+        EOF
+
+        chmod 700 /etc/scripts/tor_whitelist.sh
+        [ -s /etc/tor_whitelist_ips ] && /etc/scripts/tor_whitelist.sh
+
+        cronjob="*/15 * * * *   /etc/scripts/tor_whitelist.sh"
+        grep -Fq "$cronjob" /etc/crontabs/root || echo "$cronjob" >>/etc/crontabs/root
+      changed_when: false
+
+
     - name: write /etc/nftables.d/10-tor_routing.sh
       raw: |
         cat << 'EOF' > /etc/nftables.d/10-tor_routing.sh
@@ -363,10 +407,12 @@
         nft add rule inet fw4 dstnat_tor iifname "br-tor" ip protocol icmp icmp type echo-request dnat to 192.168.142.1
         nft add rule inet fw4 dstnat_tor iifname "br-tor" ip6 nexthdr icmpv6 icmpv6 type echo-request dnat to [::1]
 
-
         # do not allow tor in tor
         nft add rule inet fw4 dstnat_tor iifname "br-tor" ip protocol tcp ip daddr @tor_ipv4 log prefix \"TOR_ROUTING_IPV4_DROP: \" drop
         nft add rule inet fw4 dstnat_tor iifname "br-tor" ip6 nexthdr tcp ip6 daddr @tor_ipv6 log prefix \"TOR_ROUTING_IPV4_DROP: \" drop
+
+        # exceptions
+        nft list set inet fw4 tor_whitelist >/dev/null 2>&1 && nft add rule inet fw4 dstnat_tor iifname "br-tor" ip protocol tcp ip daddr @tor_whitelist tcp dport 443 accept
 
         # send all tcp traffic but local IPs through tor
         nft add rule inet fw4 dstnat_tor iifname "br-tor" ip protocol tcp ip daddr != {127.0.0.0/8, 100.64.0.0/10, 169.254.0.0/16, 192.0.0.0/24, 192.0.2.0/24, 192.88.99.0/24, 198.18.0.0/15, 198.51.100.0/24, 203.0.113.0/24, 224.0.0.0/4, 0.0.0.0/8, 240.0.0.0/4} dnat to 192.168.142.1:9040
