@@ -93,7 +93,6 @@
         cat << 'EOF' > /root/.vimrc
         set mouse=
         set paste
-        #syntax on
         EOF
       changed_when: false
 
