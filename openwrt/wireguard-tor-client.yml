@@ -30,7 +30,7 @@
             cd /etc/wg_tor
             wg genkey | tee {{ client_name }}_privatekey | wg pubkey > {{ client_name }}_publickey
             wg genpsk > {{ client_name }}_presharedkey
-            uci set {{ item.key }}.private_key=$(cat server_privatekey)
+            uci set {{ item.key }}.private_key=$(cat {{ client_name }}_privatekey)
             uci set {{ item.key }}.public_key=$(cat {{ client_name }}_publickey)
             uci set {{ item.key }}.preshared_key=$(cat {{ client_name }}_presharedkey)
           fi
@@ -52,6 +52,22 @@
       register: uci_set_result
       changed_when: "not 'unchanged' in uci_set_result.stdout"
 
+    - name: set uci values if needed
+      raw: |
+        echo "[Interface]
+        PrivateKey = $(uci get network.wg_tor_{{ client_name }}.private_key)
+        Address = fdaa:a192:b168:cd45::{{ client_num }}/128, 192.168.45.{{ client_num }}/32
+        MTU = 1450
+
+        [Peer]
+        PublicKey = $(echo $(uci get network.wg_tor.private_key) | wg pubkey)
+        PresharedKey = $(uci get network.wg_tor_{{ client_name }}.preshared_key)
+        AllowedIPs = 192.168.45.0/24,172.23.0.0/16
+        Endpoint = openwrt.dedyn.io:59667
+        PersistentKeepAlive = 15
+        " >/etc/wg_tor/{{ client_name }}.conf
+      changed_when: false
+
     - name: apply changes
       block:
         - name: commit enable and restart
@@ -59,5 +75,6 @@
           loop:
             - "uci commit"
             - "/etc/init.d/network reload"
+            - "ifdown wg_tor"
+            - "ifup wg_tor"
           when: uci_set_result.changed
-
