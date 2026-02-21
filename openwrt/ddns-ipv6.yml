@@ -48,7 +48,6 @@
         # detele default config indices
         while uci show | grep -q "^{{ item }}="
         do
-          echo "{{ item }}" >/tmp/x
           echo "changed"
           uci delete {{ item }}[0]
           uci delete {{ item }}
