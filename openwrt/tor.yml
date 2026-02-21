@@ -339,6 +339,7 @@
         cat << 'EOF' > /etc/scripts/tor_whitelist.sh
         #!/bin/bash
         [[ -s /etc/tor_whitelist ]] || exit 0
+        >/etc/tor_whitelist_ips
         cat /etc/tor_whitelist | while read notor
         do
           host "$notor" | egrep "has address " | cut -d" " -f4 >>/etc/tor_whitelist_ips
