@@ -13,21 +13,21 @@
       - ddns.myddns_ipv6 
 
     uci_vars:
-      - { key: "ddns.dedyn_ipv4", value: "service" }
-      - { key: "ddns.dedyn_ipv4.service_name", value: "desec.io" }
-      - { key: "ddns.dedyn_ipv4.use_ipv6", value: "0" }
-      - { key: "ddns.dedyn_ipv4.enabled", value: "1" }
-      - { key: "ddns.dedyn_ipv4.lookup_host", value: "{{ domainname }}" }
-      - { key: "ddns.dedyn_ipv4.domain", value: "{{ domainname }}" }
-      - { key: "ddns.dedyn_ipv4.username", value: "{{ domainname }}" }
-      - { key: "ddns.dedyn_ipv4.password", value: "{{ apikey }}" }
-      - { key: "ddns.dedyn_ipv4.use_https", value: "1" }
-      - { key: "ddns.dedyn_ipv4.cacert", value: "/etc/ssl/certs" }
-      - { key: "ddns.dedyn_ipv4.ip_source", value: "web" }
-      - { key: "ddns.dedyn_ipv4.interface", value: "wan" }
-      - { key: "ddns.dedyn_ipv4.use_syslog", value: "1" }
-      - { key: "ddns.dedyn_ipv4.dns_server", value: "45.54.76.1" }
-      - { key: "ddns.dedyn_ipv4.ip_url", value: "https://checkipv4.dedyn.io" }
+      - { key: "ddns.dedyn_ipv4_{{ localhostname }}", value: "service" }
+      - { key: "ddns.dedyn_ipv4_{{ localhostname }}.service_name", value: "desec.io" }
+      - { key: "ddns.dedyn_ipv4_{{ localhostname }}.use_ipv6", value: "0" }
+      - { key: "ddns.dedyn_ipv4_{{ localhostname }}.enabled", value: "1" }
+      - { key: "ddns.dedyn_ipv4_{{ localhostname }}.lookup_host", value: "{{ domainname }}" }
+      - { key: "ddns.dedyn_ipv4_{{ localhostname }}.domain", value: "{{ domainname }}" }
+      - { key: "ddns.dedyn_ipv4_{{ localhostname }}.username", value: "{{ domainname }}" }
+      - { key: "ddns.dedyn_ipv4_{{ localhostname }}.password", value: "{{ apikey }}" }
+      - { key: "ddns.dedyn_ipv4_{{ localhostname }}.use_https", value: "1" }
+      - { key: "ddns.dedyn_ipv4_{{ localhostname }}.cacert", value: "/etc/ssl/certs" }
+      - { key: "ddns.dedyn_ipv4_{{ localhostname }}.ip_source", value: "web" }
+      - { key: "ddns.dedyn_ipv4_{{ localhostname }}.interface", value: "wan" }
+      - { key: "ddns.dedyn_ipv4_{{ localhostname }}.use_syslog", value: "1" }
+      - { key: "ddns.dedyn_ipv4_{{ localhostname }}.dns_server", value: "45.54.76.1" }
+      - { key: "ddns.dedyn_ipv4_{{ localhostname }}.ip_url", value: "https://checkipv4.dedyn.io" }
 
   tasks:
 
