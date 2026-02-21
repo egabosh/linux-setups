@@ -222,9 +222,7 @@
           numhosts=$(cat ${g_tmp}/blocked-names.txt | wc -l)
           if [ "$numhosts" -gt 50000 ]
           then
-            cat ${g_tmp}/blocked-names.txt >"blocked-names-${target}.txt"
-            #cat ${g_tmp}/blocked-names.txt >blocked-names.txt
-            #cp -p blocked-names.txt "blocked-names-${target}.txt"
+            sed 's/^/=/' ${g_tmp}/blocked-names.txt >"blocked-names-${target}.txt"
           else
             echo "Not enough lines in hosts blocklist from https://github.com/StevenBlack/hosts -> ${g_tmp}/blocked-names.txt"
           fi
