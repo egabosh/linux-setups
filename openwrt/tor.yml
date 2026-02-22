@@ -49,6 +49,7 @@
       - { key: "dhcp.tor_dnsmasq", value: "dnsmasq" }
       - { key: "dhcp.tor_dnsmasq.domain", value: "tor" }
       - { key: "dhcp.tor_dnsmasq.resolvfile", value: "/etc/resolv.dnsmasq.tor" }
+      - { key: "dhcp.tor_dnsmasq.leasefile", value: "/tmp/dhcp.tor.leases" }
       - { key: "dhcp.tor_dnsmasq.listen_address", value: "192.168.142.1" }
       - { key: "dhcp.tor_dnsmasq.listen_address", value: "fd12:3456:142::1" }
       - { key: "dhcp.tor_dnsmasq.logqueries", value: "1" }
