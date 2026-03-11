@@ -9,8 +9,6 @@ raspi-config nonint do_boot_behaviour B4
 raspi-config nonint do_blanking 1
 raspi-config nonint do_serial_hw 1
 raspi-config nonint do_onewire 0
-raspi-config nonint do_rgpio 1
-raspi-config nonint do_audioconf 2
 raspi-config nonint do_wayland W1
 
 #apt -y install flatpak
@@ -144,17 +142,11 @@ then
 fi
 
 [ -x ~/.xsessionrc.followup ] && ~/.xsessionrc.followup
-
-#gnome-terminal --hide-menubar --title=share.sh --maximize  -- ~/share.sh
-
 EOF
 
-# autostart kodi in desktop
-if ! [ -s /home/${user}/.config/autostart/kodi.desktop ]
-then
-  mkdir -p /home/${user}/.config/autostart
-  cp /usr/share/applications/kodi.desktop /home/${user}/.config/autostart/kodi.desktop
-fi
+systemctl disable switch-kodi-desk
+systemctl disable kodi-standalone
+systemctl enable switch-kodi-desk
 
 # rights
 chmod 700 /home/${user} /home/${user}/.xsessionrc /home/${user}/.config /home/${user}/.config/autostart /home/${user}/.config/autostart/kodi.desktop
@@ -203,6 +195,4 @@ chown -R ${user}: /home/${user}/.kodi
 
 # ssh keys
 [ -e /home/${user}/.ssh/id_ed25519.pub ] || su - ${user} -c 'ssh-keygen -t ed25519 -f ~/.ssh/id_ed25519 -N "" -q'
-
-
 
