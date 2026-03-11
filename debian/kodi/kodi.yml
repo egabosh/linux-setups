@@ -6,7 +6,7 @@
     - name: Install Basic Packages
       apt:
         name:
-#          # share desk
+          # share desk
           - x11vnc
           # tools for android-smartphones/LineageOS
           - heimdall-flash
@@ -77,9 +77,11 @@
           - kodi-vfs-sftp
           - kodi-game-libretro
           - kodi-peripheral-joystick
+          - lirc
+          - ir-keytable
       when: ansible_distribution_release == "trixie"
 
-    - name: Install kodi for trixie
+    - name: Remove kodi21 for trixie
       apt:
         name:
           - kodi21
@@ -107,92 +109,87 @@
         line: 'CONF_SWAPSIZE=1024'
         backup: yes
 
-#    - name: Install Flatpaks
-#      community.general.flatpak:
-#        name:
-#          - tv.kodi.Kodi
-#        state: present
-#        method: system
+    - name: Replace /boot/firmware/config.txt with optimal Kodi KMS configuration
+      copy:
+        dest: /boot/firmware/config.txt
+        content: |
+          # /boot/firmware/config.txt - Optimal Kodi KMS Configuration
+          
+          # ARM Configuration
+          arm_64bit=1
+          arm_boost=1
+          
+          # Display Configuration
+          disable_overscan=1
+          
+          # KMS with sufficient GPU memory for HEVC
+          dtoverlay=vc4-kms-v3d,cma-256
+          max_framebuffers=2
+          
+          # Fixed 720p@60Hz (comment out if display issues occur)
+          hdmi_group=1
+          hdmi_mode=16
+          hdmi_force_hotplug=1
+          
+          # Audio
+          dtparam=audio=on
+          
+          # Kodi Optimizations (reduces latency)
+          gpu_mem=256
+          disable_fw_kms_setup=1
 
-#    - name: Raspi /boot/firmware/config.txt comment dtoverlay=vc4-kms-v3d
-#      replace:
-#        path: /boot/firmware/config.txt
-#        regexp: '(^dtoverlay=vc4-kms-v3d$)'
-#        replace: '#\1'
-
-#    - name: Raspi /boot/firmware/config.txt
-#      blockinfile:
-#        path: /boot/firmware/config.txt
-#        insertafter: EOF
-#        marker: "# {mark} ANSIBLE MANAGED BLOCK"
-#        block: |
-#          gpu_mem=256
-#          hdmi_force_hotplug=1
-#          hdmi_mode=4
-#          dtparam=audio=on
-#          hdmi_drive=2
-#          hdmi_ignore_edid=0xa5000080
-#          config_hdmi_boost=4
-#          hdmi_group=1
-#          disable_overscan=1
-# 
-#          [pi2]
-#          dtoverlay=vc4-fkms-v3d,cma-256
-#          arm_freq=1000
-#          sdram_freq=500
-#          core_freq=500
-#          over_voltage=4
-#
-#          [pi3]
-#          dtoverlay=vc4-fkms-v3d,cma-256
-#          arm_freq=1100
-#          core_freq=500
-#          sdram_freq=500
-#          over_voltage=4
-#          
-#          [pi4]
-#          dtoverlay=vc4-kms-v3d,cma-256
-
-
-    - name: lightdm.conf
-      blockinfile:
-        path: /etc/lightdm/lightdm.conf
-        create: yes
-        mode: "0444"
+    - name: lightdm config dir
+      file:
+        path: /etc/lightdm
+        state: directory
         owner: root
         group: root
-        insertafter: "#exit-on-failure=false"
-        marker: "# {mark} ANSIBLE MANAGED BLOCK"
-        block: |
-          session-wrapper=/etc/X11/Xsession
+        mode: '0755'
+
+    - name: lightdm config
+      copy:
+        dest: /etc/lightdm/lightdm.conf
+        content: |
+          [Seat:*]
+          autologin-user=user
+          autologin-user-timeout=0
           user-session=cinnamon
-          autologin-session=cinnamon
-          greeter-session=lightdm-autologin-greeter
+          greeter-session=lightdm-gtk-greeter
           greeter-hide-users=false
           greeter-show-manual-login=true
           allow-guest=false
-          xserver-command=X -core -dpi 96
-          autologin-user=user
         backup: yes
 
-    - name: 'add lightdm to startup'
-      command: systemctl enable lightdm
-      args:
-        creates: /etc/systemd/system/display-manager.service
+    - name: Disable lightdm
+      ansible.builtin.systemd:
+        name: lightdm.service
+        enabled: false
 
-    - name: 'remove smartmontools from startup'
-      command: systemctl disable smartmontools
-      args:
-        removes: /etc/systemd/system/smartd.service
+    # 2. Kodi Standalone Service
+    - name: Kodi Standalone Service
+      copy:
+        dest: /etc/systemd/system/kodi-standalone.service
+        content: |
+          [Unit]
+          Description=Kodi Media Center Standalone
+          After=graphical.target network-online.target
+          Wants=network-online.target
+          Conflicts=lightdm.service
+          
+          [Service]
+          User=user
+          Group=user
+          Type=simple
+          ExecStart=/usr/bin/kodi --standalone -fs
+          Restart=no
+          
+          [Install]
+          WantedBy=multi-user.target
 
-    - name: "Get current systemd default"
-      command: "systemctl get-default"
-      changed_when: false
-      register: systemdefault
-    
-    - name: "Set default to graphical target"
-      command: "systemctl set-default graphical.target"
-      when: "'graphical' not in systemdefault.stdout"
+    - name: Disable kodi
+      ansible.builtin.systemd:
+        name: kodi-standalone.service
+        enabled: false
 
     - name: Allow port 8080 for remote control
       community.general.ufw:
@@ -200,16 +197,74 @@
         port: '8080'
         proto: tcp
 
-    - name: Restart kodi/lightdm if remote database connection fails
-      ansible.builtin.cron:
-        name: "Restart kodi/lightdm if remote database connection fails"
-        user: root
-        minute: "*"
-        hour: "*"
-        day: "*"
-        month: "*"
-        weekday: "*"
-        job: 'cat /home/user/.kodi/temp/kodi.log | egrep -iq " Unable to open database: .*t connect to server" && systemctl restart lightdm.service'
-        state: present
+    - name: Install switch-kodi-desk.sh
+      copy:
+        dest: /usr/local/sbin/switch-kodi-desk.sh
+        mode: '0755'
+        owner: root
+        group: root
+        content: |
+          #!/bin/bash
+          deskorkodi="kodi"
+          while true
+          do
+            ps axu | grep ^user >/tmp/deskorkodi-$$
+            if grep "/usr/bin/kodi " /tmp/deskorkodi-$$
+            then
+              deskorkodi="desk"
+              # Kodi shutdown hang detection
+              egrep -iq "info <general>: Stopping the application..." /home/user/.kodi/temp/kodi.log && grep -q "info <general>: Stopping all" /home/user/.kodi/temp/kodi.log && killall -9 kodi kodi.bin
+              # Restart kodi/lightdm if remote database connection fails
+              egrep -iq " Unable to open database: .*t connect to server" /home/user/.kodi/temp/kodi.log && systemctl restart kodi-standalone.service
+            elif grep "cinnamon" /tmp/deskorkodi-$$
+            then
+              deskorkodi="kodi"
+            else
+              if [[ $deskorkodi = kodi ]]
+              then
+                systemctl stop lightdm
+                systemctl start kodi-standalone
+                deskorkodi="desk"
+              elif [[ $deskorkodi = desk ]]
+              then
+                systemctl stop kodi-standalone
+                systemctl start lightdm
+                deskorkodi="kodi"
+                sleep 10
+              else
+                systemctl stop lightdm
+                systemctl start kodi-standalone
+                deskorkodi="desk"
+              fi
+            fi
+            echo VAR=$deskorkodi
+            sleep 10
+          done
 
+    - name: Install switch-kodi-desk systemd service
+      copy:
+        dest: /etc/systemd/system/switch-kodi-desk.service
+        mode: '0644'
+        owner: root
+        group: root
+        content: |
+          [Unit]
+          Description=Switch between Kodi and Desktop
+          After=network.target
+          Wants=network.target
+
+          [Service]
+          Type=simple
+          ExecStart=/usr/local/sbin/switch-kodi-desk.sh
+          Restart=always
+          RestartSec=5
+          User=root
+          Group=root
+
+          [Install]
+          WantedBy=multi-user.target
+
+    - name: daemon-reload
+      systemd:
+        daemon_reload: yes
 
