@@ -1,22 +1,22 @@
 ---
 - name: Install and configure Ollama with AMD ROCm
-  hosts: mint-ollama
+  hosts: all
   become: true
 
   vars:
-    ollama_rocm_url: "https://ollama.com/download/ollama-linux-amd64-rocm.tar.zst"
+    amdgpu_url: "https://repo.radeon.com/amdgpu-install/latest/ubuntu/noble/amdgpu-install_7.2.70200-1_all.deb"
     ollama_install_prefix: "/usr"
     ollama_user: "ollama"
     ollama_group: "ollama"
     ollama_env_file: "/etc/default/ollama"
-    # user that should be added to render/video groups (e.g. your login user)
-    gpu_runtime_user: "{{ lookup('env', 'LOGNAME') | default('YOUR_USERNAME_HERE', true) }}"
+    ollama_models_path: "/data/ollama-models"
 
   pre_tasks:
     - name: Update APT cache
       ansible.builtin.apt:
         update_cache: yes
       tags: always
+      changed_when: false
 
     - name: Install base packages (curl, tar, zstd, ca-certificates, wget)
       ansible.builtin.apt:
@@ -34,26 +34,26 @@
     #################################################################
     - name: Download amdgpu-install .deb
       ansible.builtin.get_url:
-        url: "https://repo.radeon.com/amdgpu-install/latest/ubuntu/noble/amdgpu-install_7.2.70200-1_all.deb"
-        dest: "/tmp/amdgpu-install_7.2.70200-1_all.deb"
+        url: "{{ amdgpu_url }}"
+        dest: "/tmp/amdgpu-install.deb"
         mode: "0644"
 
     - name: Install amdgpu-install package
       ansible.builtin.apt:
-        deb: "/tmp/amdgpu-install_7.2.70200-1_all.deb"
+        deb: "/tmp/amdgpu-install.deb"
+
+    - name: Remove amdgpu-install deb package
+      ansible.builtin.file:
+        path: "/tmp/amdgpu-install.deb"
+        state: absent
 
     - name: Run amdgpu-install with graphics and ROCm usecases
       ansible.builtin.command:
-        cmd: "amdgpu-install -y --usecase=graphics,rocm"
-      args:
-        creates: "/opt/amdgpu"
-      register: amdgpu_install_cmd
+        cmd: "amdgpu-install -y --usecase=graphics,rocm --vulkan=radv --opencl=rocr --accept-eula"
 
-    - name: Add runtime user to render and video groups
-      ansible.builtin.user:
-        name: "{{ gpu_runtime_user }}"
-        groups: "render,video"
-        append: yes
+    - name: Set ROCm permissions
+      ansible.builtin.shell: "chmod -R 755 /opt/rocm*"
+      changed_when: false
 
     #################################################################
     # Generic GPU / ROCm helper tools
@@ -64,6 +64,7 @@
           - pciutils
           - mesa-opencl-icd
           - clinfo
+          - radeontop
         state: present
 
     #################################################################
@@ -80,13 +81,36 @@
         name: "{{ ollama_user }}"
         group: "{{ ollama_group }}"
         system: yes
-        shell: /usr/sbin/nologin
+        shell: /bin/bash
         create_home: no
         state: present
 
+    - name: Add ollama user to render and video groups
+      ansible.builtin.user:
+        name: "{{ ollama_user }}"
+        groups: "render,video"
+        append: yes
+
+    - name: Create Ollama directories
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        owner: "{{ ollama_user }}"
+        group: "{{ ollama_group }}"
+        mode: "0755"
+      loop:
+        - "/home/ollama"
+        - "{{ ollama_models_path }}"
+
+    - name: Download base Ollama archive (for binary)
+      ansible.builtin.get_url:
+        url: "https://ollama.com/download/ollama-linux-amd64.tar.zst"
+        dest: "/tmp/ollama-linux-amd64.tar.zst"
+        mode: "0644"
+
     - name: Download Ollama ROCm archive
       ansible.builtin.get_url:
-        url: "{{ ollama_rocm_url }}"
+        url: "https://ollama.com/download/ollama-linux-amd64-rocm.tar.zst"
         dest: "/tmp/ollama-linux-amd64-rocm.tar.zst"
         mode: "0644"
       register: ollama_download
@@ -97,12 +121,29 @@
         state: directory
         mode: "0755"
 
-    - name: Extract Ollama ROCm archive to install prefix
+    - name: Extract base Ollama binary to prefix
+      ansible.builtin.command:
+        cmd: "tar --zstd -xvf /tmp/ollama-linux-amd64.tar.zst -C {{ ollama_install_prefix }}"
+      args:
+        creates: "{{ ollama_install_prefix }}/bin/ollama"
+
+    - name: Extract Ollama ROCm libs to prefix (update existing task)
       ansible.builtin.command:
         cmd: "tar --zstd -xvf /tmp/ollama-linux-amd64-rocm.tar.zst -C {{ ollama_install_prefix }}"
       args:
-        creates: "{{ ollama_install_prefix }}/bin/ollama"
-      when: ollama_download is changed
+        creates: "{{ ollama_install_prefix }}/lib/ollama/rocm"
+
+    - name: Remove Ollama base archive
+      ansible.builtin.file:
+        path: "/tmp/ollama-linux-amd64.tar.zst"
+        state: absent
+      when: base_extract is defined and base_extract.changed
+
+    - name: Remove Ollama ROCm archive  
+      ansible.builtin.file:
+        path: "/tmp/ollama-linux-amd64-rocm.tar.zst"
+        state: absent
+      when: ollama_download is defined and ollama_download.changed
 
     - name: Set permissions for Ollama binary
       ansible.builtin.file:
@@ -128,6 +169,7 @@
           OLLAMA_GPU_FORCE=1
           # Enable for troubleshooting
           # OLLAMA_DEBUG=1
+          OLLAMA_MODELS={{ ollama_models_path }}
 
           # Workaround for Radeon RX 7900 XTX / RDNA3 detection issues
           # GFX1100 corresponds to RDNA3
@@ -135,6 +177,10 @@
 
           # Adjust ROCm path if different on your system
           ROCM_PATH=/opt/rocm
+
+          # make available from network
+          OLLAMA_HOST=0.0.0.0:11434
+          OLLAMA_ORIGINS=*
 
     - name: Create systemd unit for Ollama
       ansible.builtin.copy:
@@ -176,24 +222,20 @@
         name: ollama.service
         state: started
 
-    #################################################################
-    # Basic validation
-    #################################################################
-    - name: Check Ollama version
-      ansible.builtin.command:
-        cmd: "{{ ollama_install_prefix }}/bin/ollama --version"
-      register: ollama_version
-      changed_when: false
+    - name: Install UFW if not present
+      ansible.builtin.apt:
+        name: ufw
+        state: present
 
-    - name: Show Ollama version
-      ansible.builtin.debug:
-        var: ollama_version.stdout
+    - name: Allow Ollama port through UFW
+      community.general.ufw:
+        rule: allow
+        port: "11434"
+        proto: tcp
+      notify: reload ufw
 
-    - name: Optional GPU test run with a small model (e.g. llama3.2)
-      ansible.builtin.command:
-        cmd: "{{ ollama_install_prefix }}/bin/ollama run llama3.2 --prompt 'test'"
-      register: ollama_test_run
-      changed_when: false
-      failed_when: false
-      tags: ["test"]
+
+  handlers:
+    - name: reload ufw
+      ansible.builtin.command: ufw reload
 
