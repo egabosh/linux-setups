@@ -149,8 +149,8 @@ systemctl disable kodi-standalone
 systemctl enable switch-kodi-desk
 
 # rights
-chmod 700 /home/${user} /home/${user}/.xsessionrc /home/${user}/.config /home/${user}/.config/autostart /home/${user}/.config/autostart/kodi.desktop
-chown ${user}: /home/${user} /home/${user}/.xsessionrc /home/${user}/.config /home/${user}/.config/autostart /home/${user}/.config/autostart/kodi.desktop
+chmod 700 /home/${user} /home/${user}/.xsessionrc
+chown ${user}: /home/${user} /home/${user}/.xsessionrc
 
 
 # install (new) addons

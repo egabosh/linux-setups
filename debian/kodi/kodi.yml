@@ -268,3 +268,9 @@
       systemd:
         daemon_reload: yes
 
+    - name: Enable switch-kodi-desk
+      ansible.builtin.systemd:
+        name: switch-kodi-desk.service
+        enabled: true
+
+
