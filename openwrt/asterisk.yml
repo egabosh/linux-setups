@@ -24,6 +24,7 @@
       - asterisk-codec-g722
       - asterisk-app-mixmonitor
       - asterisk-app-stack
+      - asterisk-sounds
 
     uci_vars:
       - { key: "asterisk.general.enabled", value: "1" }
@@ -163,6 +164,16 @@
         exten => _X.,n,Dial(PJSIP/\${EXTEN}@${account_name},120)
         exten => _X.,n,Hangup()
         
+        ; Ausgehend, Nummern MIT + (z. B. +49175...)
+        exten => _+X.,1,NoOp(${CALLERID})
+        same => n,Set(DIALED_NUMBER=${EXTEN})
+        same => n,Gosub(gosub-log,s,1)
+        same => n,Gosub(gosub-record,s,1)
+        same => n,Gosub(gosub-setcaller,s,1,${account_name})
+        same => n,Dial(PJSIP/\${EXTEN}@${account_name},120)
+        same => n,Hangup()
+
+
         [num${account_name}]
         include => local
         include => ${account_name}
@@ -183,7 +194,7 @@
         exten => ${account_name},n,System(logger \"\${CALLERID(all)} calls.\")
         exten => ${account_name},n,System(echo -e \"Subject: Call from \${CALLERID(all)}\\n\\nHi, \${CALLERID(all)} is calling\" | sendmail ${account_mail})
         exten => ${account_name},n,GotoIf(\${BLACKLIST()}?blacklisted)
-        exten => ${account_name},n,Dial(PJSIP/40&SIP/${account_id}1&PJSIP/${account_id}2&PJSIP/${account_id}3&PJSIP/${account_id}4&PJSIP/${account_id}5&PJSIP/${account_id}6&PJSIP/${account_id}7&PJSIP/${account_id}8&PJSIP/${account_id}9,60)
+        exten => ${account_name},n,Dial(PJSIP/40&PJSIP/${account_id}1&PJSIP/${account_id}2&PJSIP/${account_id}3&PJSIP/${account_id}4&PJSIP/${account_id}5&PJSIP/${account_id}6&PJSIP/${account_id}7&PJSIP/${account_id}8&PJSIP/${account_id}9,60)
         exten => ${account_name},n,Set(CHANNEL(language)=de)
         exten => ${account_name},n,Voicemail(${account_id}0@default,u)
         exten => ${account_name},n,Playback(vm-goodbye)
