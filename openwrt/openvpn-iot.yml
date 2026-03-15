@@ -198,6 +198,7 @@
 
           ssh -o StrictHostKeyChecking=accept-new -o BatchMode=yes ${CLIENT_HOSTNAME} "mkdir -p /etc/scripts"
           scp -B -O -p -q /etc/scripts/openvpn-iot-tap-in-bridge.sh ${CLIENT_HOSTNAME}:/etc/scripts/
+          cronjob="*/5 * * * *   /etc/scripts/openvpn-iot-tap-in-bridge.sh"
           ssh -o BatchMode=yes ${CLIENT_HOSTNAME} "grep -Fq \"$cronjob\" /etc/crontabs/root || echo \"$cronjob\" >>/etc/crontabs/root"
 
         done
