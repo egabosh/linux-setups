@@ -1,5 +1,5 @@
 ---
-- name: openwebui
+- name: open-webui
   hosts: all
   tasks:
 
@@ -10,41 +10,6 @@
         group: docker
         state: directory
         mode: '0550'
-
-#    - name: /usr/local/sbin/autoupdate.d/openwebui-ssl.update
-#      blockinfile:
-#        path: /usr/local/sbin/autoupdate.d/openwebui-ssl.update
-#        create: yes
-#        mode: 0550
-#        owner: root
-#        group: root
-#        marker: "# {mark} ANSIBLE MANAGED BLOCK"
-#        block: |
-#          cd /home/docker/openwebui.{{inventory_hostname}}
-#
-#        backup: yes
-#        validate: /bin/bash -n %s
-#
-#    - name: /usr/local/sbin/autoupdate.d/openwebui-ssl.update shebang
-#      lineinfile:
-#        path: /usr/local/sbin/autoupdate.d/openwebui-ssl.update
-#        insertbefore: BOF
-#        line: "#!/bin/bash -e"
-#
-#    - name: /home/docker/openwebui.{{inventory_hostname}}/ssl.cnf (use ssl in mariadb)
-#      blockinfile:
-#        path: /home/docker/openwebui.{{inventory_hostname}}/ssl.cnf
-#        create: yes
-#        mode: 0444
-#        owner: root
-#        group: docker
-#        marker: "# {mark} ANSIBLE MANAGED BLOCK"
-#        block: |
-#          [mariadbd]
-#          ssl=1
-#          ssl-cert=/etc/mysql/certificate.pem
-#          ssl-key=/etc/mysql/key.pem
-#        backup: yes
 
     - name: /home/docker/openwebui.{{inventory_hostname}}/docker-compose.yml Container Configuration
       blockinfile:
@@ -64,7 +29,7 @@
                 - SYS_NICE
               restart: unless-stopped
               networks:
-                - openwebui.{{inventory_hostname}}--networka
+                - openwebui.{{inventory_hostname}}--network
               volumes:
                 - ./ollama-data:/root/.ollama
                 - /etc/localtime:/etc/localtime:ro
@@ -74,7 +39,30 @@
               restart: unless-stopped
               environment:
                 - OLLAMA_BASE_URL=http://openwebui.{{inventory_hostname}}--ollama:11434
-                - WEBUI_AUTH=False
+                - CORS_ALLOW_ORIGIN=https://ai.{{inventory_hostname}}
+                - USER_AGENT=OpenWebUI
+                - ENABLE_OAUTH_SIGNUP=true
+                - ENABLE_LOGIN_FORM=false
+                - ENABLE_FOLLOW_UP_GENERATION=false
+                - ENABLE_OPENAI_API=false
+                - ENABLE_AUTOCOMPLETE_GENERATION=false
+                - ENABLE_EVALUATION_ARENA_MODELS=false
+                - ENABLE_MESSAGE_RATING=false
+                - ENABLE_TAGS_GENERATION=false
+                - ENABLE_API_KEYS=false
+                - OAUTH_MERGE_ACCOUNTS_BY_EMAIL=false
+                - OAUTH_SCOPES=openid profile email groups
+                - OAUTH_CLIENT_ID=ai
+                - OAUTH_CLIENT_SECRET={{ lookup('file', '/home/docker/openwebui.' + inventory_hostname + '/oidc_password') }}
+                - OPENID_PROVIDER_URL=https://auth.{{inventory_hostname}}/.well-known/openid-configuration
+                - OAUTH_ALLOWED_ROLES=ai,ai-admin
+                - OAUTH_ADMIN_ROLES=ai-admin
+                - OAUTH_ROLES_CLAIM=groups
+                - OAUTH_EMAIL_REQUIRED=false
+                - OAUTH_MAP_EMAIL_TO_USERNAME=true
+                - AUTO_APPROVE_OAUTH_ACCOUNTS=true
+                - DEFAULT_USER_ROLE=user
+                - CORS_ALLOW_ORIGIN=https://ai.{{inventory_hostname}}
               volumes:
                 - /etc/localtime:/etc/localtime:ro
                 - ./openwebui-data:/app/backend/data
@@ -84,20 +72,18 @@
               labels:
                 - traefik.enable=true
                 # HTTPS
-                - traefik.http.routers.openwebui-{{ ansible_facts['hostname'] }}.rule=Host(`openwebui.{{ ansible_facts['nodename'] }}`)
+                - traefik.http.routers.openwebui-{{ ansible_facts['hostname'] }}.rule=Host(`ai.{{ ansible_facts['nodename'] }}`)
                 - traefik.http.routers.openwebui-{{ ansible_facts['hostname'] }}.entrypoints=https
                 - traefik.http.routers.openwebui-{{ ansible_facts['hostname'] }}.tls=true
                 # Proxy to service-port
-                - traefik.http.services.openwebui-{{ ansible_facts['hostname'] }}.loadbalancer.server.port=80
+                - traefik.http.services.openwebui-{{ ansible_facts['hostname'] }}.loadbalancer.server.port=8080
                 - traefik.http.routers.openwebui-{{ ansible_facts['hostname'] }}.service=openwebui-{{ ansible_facts['hostname'] }}
                 # cert via letsencrypt
                 - traefik.http.routers.openwebui-{{ ansible_facts['hostname'] }}.tls.certresolver=letsencrypt
                 # Traefik network
                 - traefik.docker.network=traefik
-                # auth
-                - traefik.http.routers.openwebui-{{ ansible_facts['hostname'] }}.middlewares=secHeaders@file,default-basic-auth@file
-              depends_on:
-                - openwebui.{{inventory_hostname}}--ollama
+                # sec
+                - traefik.http.routers.openwebui-{{ ansible_facts['hostname'] }}.middlewares=secHeaders@file
 
           networks:
             openwebui.{{inventory_hostname}}--network:
@@ -110,10 +96,65 @@
         backup: yes        
       notify: Restart openwebui
 
+
+#######################
+#### OIDC Authelia ####
+#######################
+
+    - name: Create oidc client secret
+      ansible.builtin.shell: |
+        /home/docker/authelia.{{inventory_hostname}}/gen-oidc-client-secret.sh /home/docker/openwebui.{{inventory_hostname}}
+      changed_when: false
+      failed_when: false
+
+    - name: Create group and add user if not exists
+      ansible.builtin.shell: |
+        ldapaddgroup ai
+        ldapaddgroup ai-admin
+        ldapaddusertogroup admin ai-admin
+      changed_when: false
+      failed_when: false
+
+    - name: write OIDC config in authelias configuration.yml
+      ansible.builtin.blockinfile:
+        path: /home/docker/authelia.{{inventory_hostname}}/authelia-data/configuration.yml
+        marker: "# {mark} ANSIBLE MANAGED BLOCK OIDC ai.{{inventory_hostname}}"
+        block: |2
+                # OpenWebUI
+                - client_id: 'ai'
+                  client_name: 'OpenWebUI'
+                  client_secret: '{{ lookup('file', '/home/docker/openwebui.' + inventory_hostname + '/oidc_digest') }}'
+                  public: false
+                  #authorization_policy: '{{ lookup('file', '/home/docker/authelia.' + inventory_hostname + '/authorization_policy') }}'
+                  authorization_policy: one_factor
+                  redirect_uris:
+                    - 'https://ai.{{inventory_hostname}}/oauth/oidc/callback'
+                  scopes:
+                    - 'openid'
+                    - 'profile'
+                    - 'groups'
+                    - 'email'
+                  response_types:
+                    - 'code'
+                  grant_types:
+                    - 'authorization_code'
+                  access_token_signed_response_alg: 'none'
+                  userinfo_signed_response_alg: 'none'
+                  token_endpoint_auth_method: 'client_secret_basic'
+        insertafter: "^# END ANSIBLE MANAGED BLOCK OIDC"
+        backup: yes
+        validate: docker run --rm -v "{{ ansible_env.HOME }}/.ansible:{{ ansible_env.HOME }}/.ansible" authelia/authelia:latest authelia validate-config --config %s
+      notify: Restart authelia
+
   handlers:
 
     - name: Restart openwebui
       ansible.builtin.shell: docker-compose up -d --force-recreate
       args:
         chdir: /home/docker/openwebui.{{inventory_hostname}}
+
+    - name: Restart authelia
+      ansible.builtin.shell: docker-compose down && docker-compose up -d
+      args:
+        chdir: /home/docker/authelia.{{inventory_hostname}}
 
