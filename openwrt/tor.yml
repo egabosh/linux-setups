@@ -5,11 +5,11 @@
 
   vars:
     openwrt_packages:
+      - luci-app-tor
+      - luci-app-privoxy
       - tor
       - tor-geoip
-      - luci-app-tor
       - privoxy
-      - luci-app-privoxy
 
     uci_vars:
       ## privoxy
