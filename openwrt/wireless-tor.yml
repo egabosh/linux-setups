@@ -5,15 +5,15 @@
 
   vars:
     openwrt_packages:
-      - openvpn
       - luci-app-openvpn
       - luci-i18n-openvpn-de
+      - openvpn
 
     uci_vars:
 
       # Wireless AP  (joins br-tor via network=tor)
       - { key: "wireless.wifinet0", value: "wifi-iface" }
-      - { key: "wireless.wifinet0.device", value: "radio1" }
+      - { key: "wireless.wifinet0.device", value: "{{ wlandev }}" }
       - { key: "wireless.wifinet0.mode", value: "ap" }
       - { key: "wireless.wifinet0.key", value: "{{ wlan_key }}" }
       - { key: "wireless.wifinet0.isolate", value: "1" }
