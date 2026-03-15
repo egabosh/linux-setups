@@ -42,7 +42,7 @@
 
         account default : mail
         EOF
-        chmod 640 /etc/msmtprc
-        chown root:asterisk /etc/msmtprc
+        chmod 644 /etc/msmtprc
+        chown root:root /etc/msmtprc
       changed_when: false
 
