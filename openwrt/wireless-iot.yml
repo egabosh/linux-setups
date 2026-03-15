@@ -5,13 +5,13 @@
 
   vars:
     openwrt_packages:
-      - openvpn
       - luci-app-openvpn
       - luci-i18n-openvpn-de
+      - openvpn
 
     uci_vars:
       - { key: "wireless.wifinet1", value: "wifi-iface" }
-      - { key: "wireless.wifinet1.device", value: "radio1" }
+      - { key: "wireless.wifinet1.device", value: "{{ wlandev }}" }
       - { key: "wireless.wifinet1.mode", value: "ap" }
       - { key: "wireless.wifinet1.key", value: "{{ wlan_key }}" }
       - { key: "wireless.wifinet1.isolate", value: "1" }
