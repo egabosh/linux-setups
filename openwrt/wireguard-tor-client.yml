@@ -33,6 +33,7 @@
             uci set {{ item.key }}.private_key=$(cat {{ client_name }}_privatekey)
             uci set {{ item.key }}.public_key=$(cat {{ client_name }}_publickey)
             uci set {{ item.key }}.preshared_key=$(cat {{ client_name }}_presharedkey)
+            uci commit
           fi
         fi
 
@@ -54,6 +55,18 @@
 
     - name: set uci values if needed
       raw: |
+        if ! uci get network.wg_tor_{{ client_name }}.private_key
+        then
+          mkdir -p /etc/wg_tor
+          cd /etc/wg_tor
+          wg genkey | tee {{ client_name }}_privatekey | wg pubkey > {{ client_name }}_publickey
+          wg genpsk > {{ client_name }}_presharedkey
+          uci set network.wg_tor_{{ client_name }}.private_key=$(cat {{ client_name }}_privatekey)
+          uci set network.wg_tor_{{ client_name }}.public_key=$(cat {{ client_name }}_publickey)
+          uci set network.wg_tor_{{ client_name }}.preshared_key=$(cat {{ client_name }}_presharedkey)
+          uci commit
+        fi
+
         echo "[Interface]
         PrivateKey = $(uci get network.wg_tor_{{ client_name }}.private_key)
         Address = fdaa:a192:b168:cd45::{{ client_num }}/128, 192.168.45.{{ client_num }}/32
