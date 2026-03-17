@@ -92,6 +92,38 @@
         chdir: /home/docker/nextcloud.{{inventory_hostname}}
         creates: /home/docker/nextcloud.{{inventory_hostname}}/Dockerfile
 
+
+    - name: /home/docker/nextcloud.{{inventory_hostname}}/collabora.genpw.sh (generate Collabora PW)
+      blockinfile:
+        path: /home/docker/nextcloud.{{inventory_hostname}}/collabora.genpw.sh
+        create: yes
+        mode: 0550
+        owner: root
+        group: docker
+        marker: "# {mark} ANSIBLE MANAGED BLOCK"
+        block: |
+          cd /home/docker/nextcloud.{{inventory_hostname}}
+          collabora_password=$(pwgen -s 32 1)
+          [ -f env.collabora ] || echo "password=!COLLABORA_PASSWORD!" > env.collabora
+          chmod 440 env.collabora
+          chown root:docker env.collabora
+          sed -i "s/!COLLABORA_PASSWORD!/$collabora_password/g" env.collabora
+        backup: yes
+        validate: /bin/bash -n %s
+      notify: run collabora.genpw.sh
+
+    - name: /home/docker/nextcloud.{{inventory_hostname}}/collabora.genpw.sh shebang
+      lineinfile:
+        path: /home/docker/nextcloud.{{inventory_hostname}}/collabora.genpw.sh
+        insertbefore: BOF
+        line: "#!/bin/bash -e"
+
+    - name: Generate Collabora password
+      ansible.builtin.shell: ./collabora.genpw.sh
+      args:
+        chdir: /home/docker/nextcloud.{{inventory_hostname}}
+        creates: /home/docker/nextcloud.{{inventory_hostname}}/env.collabora
+
     - name: /home/docker/nextcloud.{{inventory_hostname}}/remoteip.conf (real IP logging and no Proxy IP)
       blockinfile:
         path: /home/docker/nextcloud.{{inventory_hostname}}/remoteip.conf
@@ -142,9 +174,6 @@
           services:
             nextcloud.{{inventory_hostname}}:
               image: nextcloud:stable-apache
-              #build: 
-              #  context: .
-              #  dockerfile: Dockerfile
               security_opt:
                 - no-new-privileges:true
               restart: unless-stopped
@@ -260,6 +289,42 @@
                 # Traefik network
                 - traefik.docker.network=traefik
 
+            nextcloud.{{inventory_hostname}}--collabora:
+              image: collabora/code:latest
+              cap_add:
+                - FOWNER
+                - CHOWN
+                - SYS_ADMIN
+                - SYS_CHROOT
+              restart: unless-stopped
+              volumes:
+                - /etc/localtime:/etc/localtime:ro
+                - /etc/hosts:/etc/hosts:ro
+              environment:
+                - username=admin
+                - aliasgroup1=https://nextcloud.{{inventory_hostname}}
+                - extra_params=--o:ssl.enable=false --o:ssl.termination=true --o:storage.wopi{wopi://}@enable=true --o:auth.allow_known=true --o:net.proto=websocket
+                - DONT_GEN_SSL_CERTS=true
+              networks:
+                - nextcloud.{{inventory_hostname}}--network 
+                - traefik
+              labels:
+                - traefik.enable=true
+                # HTTPS
+                - traefik.http.routers.nextcloud-{{ ansible_facts['hostname'] }}--collabora.rule=Host(`office.{{ ansible_facts['nodename'] }}`)
+                - traefik.http.routers.nextcloud-{{ ansible_facts['hostname'] }}--collabora.entrypoints=https
+                - traefik.http.routers.nextcloud-{{ ansible_facts['hostname'] }}--collabora.tls=true
+                # Proxy to service-port
+                - traefik.http.services.nextcloud-{{ ansible_facts['hostname'] }}--collabora.loadbalancer.server.port=9980
+                - traefik.http.routers.nextcloud-{{ ansible_facts['hostname'] }}--collabora.service=nextcloud-{{ ansible_facts['hostname'] }}--collabora
+                # cert via letsencrypt
+                - traefik.http.routers.nextcloud-{{ ansible_facts['hostname'] }}--collabora.tls.certresolver=letsencrypt
+                # Auth
+                - traefik.http.routers.nextcloud-{{ ansible_facts['hostname'] }}--collabora.middlewares=secHeaders@file
+                # Traefik network
+                - traefik.docker.network=traefik
+
+
           networks:
             nextcloud.{{inventory_hostname}}--network:
               driver: bridge
@@ -356,6 +421,24 @@
             docker-compose exec -T -u www-data nextcloud.{{inventory_hostname}} ./occ talk:stun:delete stun.nextcloud.com:443
           fi
 
+          # Collabora Office (Nextcloud Office App)
+          if ! [ -f app.richdocuments.installed ] 
+          then
+            docker-compose exec -T -u www-data nextcloud.{{inventory_hostname}} ./occ app:install richdocuments | tee -a nextcloud.init.log >app.richdocuments.installed 2>&1
+            docker-compose exec -T -u www-data nextcloud.{{inventory_hostname}} ./occ app:enable richdocuments | tee -a nextcloud.init.log >app.richdocuments.installed 2>&1
+          fi
+          if ! [ -s app.richdocuments.configured ]
+          then
+            docker-compose exec -T -u www-data nextcloud.{{inventory_hostname}} ./occ config:app:set richdocuments wopi_allowlist --value="0.0.0.0/0,::0" >>app.richdocuments.configured
+            docker-compose exec -T -u www-data nextcloud.{{inventory_hostname}} ./occ richdocuments:activate-config >>app.richdocuments.configured
+            docker-compose exec -T -u www-data nextcloud.{{inventory_hostname}} ./occ config:app:set richdocuments wopi_callback_url   --value="https://nextcloud.{{inventory_hostname}}" >>app.richdocuments.configured
+            docker-compose exec -T -u www-data nextcloud.{{inventory_hostname}} ./occ config:app:set richdocuments wopi_url            --value="https://office.{{inventory_hostname}}" >>app.richdocuments.configured
+            docker-compose exec -T -u www-data nextcloud.{{inventory_hostname}} ./occ config:app:set richdocuments public_wopi_url     --value="https://office.{{inventory_hostname}}" >>app.richdocuments.configured
+            docker-compose exec -T -u www-data nextcloud.{{inventory_hostname}} ./occ config:system:set overwrite.cli.url --value="https://nextcloud.{{inventory_hostname}}"
+            docker-compose exec -T -u www-data nextcloud.{{inventory_hostname}} ./occ config:system:set trusted_proxies 1 --value="192.168.41.0/24"
+            docker-compose exec -T -u www-data nextcloud.{{inventory_hostname}} ./occ config:system:set trusted_proxies 2 --value="fdaa:a192:b168:cd41::/64"
+          fi
+
           exit 0
         backup: yes
         validate: /bin/bash -n %s
@@ -438,4 +521,10 @@
       ansible.builtin.shell: docker-compose up -d --force-recreate
       args:
         chdir: /home/docker/nextcloud.{{inventory_hostname}}
+
+    - name: run collabora.genpw.sh
+      ansible.builtin.shell: ./collabora.genpw.sh
+      args:
+        chdir: /home/docker/nextcloud.{{inventory_hostname}}
+      notify: Restart nextcloud
 
