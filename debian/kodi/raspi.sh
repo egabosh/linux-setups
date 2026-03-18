@@ -51,7 +51,9 @@ https://raw.githubusercontent.com/egabosh/gtc-rename/refs/heads/main/gtc-rename.
 https://raw.githubusercontent.com/egabosh/gtc-crypt/refs/heads/main/gtc-crypt.yml
 debian/firewall/firewall.yml
 debian/kodi/kodi.yml
+debian/kodi/kodi-local-mysql.yml
 debian/autoupdate/autoupdate.yml
+debian/backup/backup.yml
 debian/docker/docker.yml
 debian/traefik.server/traefik.yml
 debian/whoogle/whoogle.yml
@@ -59,7 +61,8 @@ debian/flatpak/flatpak.yml
 debian/firefox/firefox.yml
 debian/chromium/chromium.yml
 debian/tornet.network/tornet.yml
-debian/wireguard.client/wireguard-client.yml"
+debian/wireguard.client/wireguard-client.yml
+"
 
 echo $PLAYBOOKS >/usr/local/etc/playbooks
 /usr/local/sbin/linux_setups_debian_install.sh
