@@ -208,6 +208,19 @@
           deskorkodi="kodi"
           while true
           do
+
+            # wait for kodi database (mysql) if used
+            if grep -q mysql /home/user/.kodi/userdata/advancedsettings.xml
+            then
+              while true 
+              do
+                dbhost=$(grep "<host>" /home/user/.kodi/userdata/advancedsettings.xml | head -n1 | cut -d"<" -f2 | cut -d">" -f2)
+                dbport=$(grep "<port>" /home/user/.kodi/userdata/advancedsettings.xml | head -n1 | cut -d"<" -f2 | cut -d">" -f2)
+                echo quit | telnet $dbhost $dbport 2>&1 | grep -q MariaDB && break
+                sleep 1
+              done
+            fi
+   
             ps axu | grep ^user >/tmp/deskorkodi-$$
             if grep "/usr/bin/kodi " /tmp/deskorkodi-$$
             then
