@@ -63,69 +63,69 @@
         group: root
         state: link
 
-    - name: Change ansible_distribution to Ubuntu if it's Linux Mint
-      set_fact:
-        ansible_distribution: "ubuntu"
+
+    - name: Set Docker distro to Ubuntu for Linux Mint
+      ansible.builtin.set_fact:
+        docker_distribution: "ubuntu"
+        docker_release: "noble"
       when: ansible_distribution == "Linux Mint"
 
-    - name: Ensure /etc/apt/keyrings exists
+    - name: Set Docker distro facts for non-Mint systems
+      ansible.builtin.set_fact:
+        docker_distribution: "{{ ansible_distribution | lower }}"
+        docker_release: "{{ ansible_distribution_release }}"
+      when: ansible_distribution != "Linux Mint"
+
+    - name: Ensure keyrings directory exists
       ansible.builtin.file:
-        path: /etc/apt/trusted.gpg.d
+        path: /etc/apt/keyrings
         state: directory
         owner: root
         group: root
-        mode: '0755'
+        mode: "0755"
 
-    - name: Download Docker GPG key
-      ansible.builtin.get_url:
-        url: "https://download.docker.com/linux/{{ ansible_distribution | lower }}/gpg"
-        dest: /etc/apt/trusted.gpg.d/docker.gpg
-        mode: '0644'
-
-    - name: Remove old repository from sources if exists
-      ansible.builtin.apt_repository:
-        repo: "deb https://download.docker.com/linux/{{ ansible_distribution | lower }} {{ ansible_distribution_release }} stable"
-        state: absent
-        filename: docker       
-
-    - name: remove old repo with old key
-      lineinfile:
-        path: /etc/apt/sources.list.d/docker.list
-        regexp: '.*signed-by=/usr/share/keyrings/gpg-pub-docker.gpg.*'
-        state: absent
-
-    - name: Get DEB architecture
-      shell: dpkg --print-architecture
-      register: deb_architecture
-      changed_when: false
-
-    - name: Change ansible_distribution_release to noble (Ubuntu) if its zara (Mint)
-      set_fact:
-        ansible_distribution_release: "noble"
-      when: ansible_distribution_release == "zara"
-
-    - name: Change ansible_distribution_release to noble (Ubuntu) if its wilma (Mint)
-      set_fact:
-        ansible_distribution_release: "noble"
-      when: ansible_distribution_release == "wilma"
-
-    - name: Change ansible_distribution_release to noble (Ubuntu) if its xia (Mint)
-      set_fact:
-        ansible_distribution_release: "noble"
-      when: ansible_distribution_release == "xia"
-
-    - name: Lösche Datei /etc/apt/sources.list.d/docker.list
+    - name: Remove old Docker repository file
       ansible.builtin.file:
         path: /etc/apt/sources.list.d/docker.list
         state: absent
+
+    - name: Remove old Docker key from trusted.gpg.d
+      ansible.builtin.file:
+        path: /etc/apt/trusted.gpg.d/docker.gpg
+        state: absent
+
+    - name: Download Docker GPG key
+      ansible.builtin.get_url:
+        url: "https://download.docker.com/linux/ubuntu/gpg"
+        dest: /tmp/docker.asc
+        mode: "0644"
+
+    - name: Dearmor Docker GPG key
+      ansible.builtin.command:
+        cmd: "gpg --dearmor -o /etc/apt/keyrings/docker.gpg /tmp/docker.asc"
+        creates: /etc/apt/keyrings/docker.gpg
+
+    - name: Remove temporary Docker key file
+      ansible.builtin.file:
+        path: /tmp/docker.asc
+        state: absent
+
+    - name: Get DEB architecture
+      ansible.builtin.command:
+        cmd: dpkg --print-architecture
+      register: deb_architecture
       changed_when: false
 
-    - name: Add repository into list
+    - name: Add Docker repository
       ansible.builtin.apt_repository:
-        repo: "deb [arch={{ deb_architecture.stdout }} signed-by=/etc/apt/trusted.gpg.d/docker.gpg] https://download.docker.com/linux/{{ ansible_distribution | lower }} {{ ansible_distribution_release }} stable"
+        repo: "deb [arch={{ deb_architecture.stdout }} signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/{{ docker_distribution }} {{ docker_release }} stable"
         state: present
         filename: docker
-      changed_when: false
+
+    - name: Update apt cache
+      ansible.builtin.apt:
+        update_cache: true
+
 
     - name: Remove packages for docker from default repo
       apt:
