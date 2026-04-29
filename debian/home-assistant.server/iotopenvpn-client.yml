@@ -1,10 +1,11 @@
 ---
-- name: Deploy OpenVPN Bridge Mode Server with easy-rsa and ACME auto-renewal
+- name: Deploy OpenVPN Bridge Mode Client
   hosts: all
 
   vars:
     bridge_name: iot0
     bridge_ip: 192.168.143.2
+    bridge_ip6: fd12:3456:143::2
 
   tasks:
     # Install required packages
@@ -29,6 +30,10 @@
               netmask 255.255.255.0
               bridge_fd 0
               bridge_maxwait 0
+
+          iface iot0 inet6 static
+              address {{ bridge_ip6 }}
+              netmask 64
         marker: "# {mark} ANSIBLE MANAGED BLOCK"
         create: yes
       notify: restart networking to apply bridge
@@ -77,8 +82,6 @@
         create: yes
         marker: "# {mark} ANSIBLE MANAGED BLOCK"
         block: |
-          #!/bin/bash
-
           . /etc/bash/gaboshlib.include
           g_lockfile
 
