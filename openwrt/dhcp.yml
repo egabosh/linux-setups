@@ -30,6 +30,7 @@
       - { key: "dhcp.lan_dnsmasq.logqueries", value: "1" }
       - { key: "dhcp.lan_dnsmasq.authoritative", value: "1" }
       - { key: "dhcp.lan_dnsmasq.sequential_ip", value: "1" }
+      - { key: "dhcp.lan_dnsmasq.readethers", value: "1" }
 
   tasks:
     - name: use local upstream dns
