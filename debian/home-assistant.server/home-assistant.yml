@@ -155,6 +155,20 @@
               network_mode: host
               privileged: true
 
+            matter.{{inventory_hostname}}:
+              image: ghcr.io/home-assistant-libs/python-matter-server:stable
+              restart: unless-stopped
+              network_mode: host
+              volumes:
+                - ./matter-server:/data
+                - /run/dbus:/run/dbus:ro
+              command: >
+                  --storage-path /data
+                  --primary-interface iot0
+                  --log-level info
+                  --log-level-sdk none
+                  --bluetooth-adapter 0
+              #privileged: true
         backup: yes
       notify: Restart home-assistant
 
@@ -178,12 +192,27 @@
                   certresolver: letsencrypt
                 middlewares: 
                   - "secHeaders@file"
+
+              matter:
+                rule: "Host(`matter.{{inventory_hostname}}`)"
+                service: matter
+                entryPoints:
+                  - "https"
+                tls:
+                  certresolver: letsencrypt
+                middlewares: 
+                  - "secHeaders@file"
+                  - "allowlocalipsonly"
+
             services:
               home-assistant:
                 loadBalancer:
                   servers:
                     - url: "http://192.168.41.1:8123"
-
+              matter:
+                loadBalancer:
+                  servers:
+                    - url: "http://192.168.41.1:5580"
 
     - name: Create group and add user if not exists
       ansible.builtin.shell: |
@@ -290,6 +319,29 @@
         chdir: /home/docker/home-assistant.{{inventory_hostname}}
         creates: /home/docker/home-assistant.{{inventory_hostname}}/home-assistant.init.log
 
+    #- name: Matter-Server TCP ports
+    #  ufw:
+    #    rule: allow
+    #    port: 5580
+    #    proto: tcp
+    
+    - name: Matter UDP ports
+      ufw:
+        rule: allow
+        port: "{{ item }}"
+        proto: udp
+      loop:
+        - 5353  # mDNS
+    #    - 5540  # Matter Discovery
+    
+    #- name: allow multicast for IOT net (192.168.143.0/24)
+    #  ufw:
+    #    rule: allow
+    #    from: 192.168.143.0/24
+    #    port: 5353
+    #    proto: udp
+  
+  
   handlers:
     - name: run genpw.sh
       ansible.builtin.shell: ./genpw.sh
