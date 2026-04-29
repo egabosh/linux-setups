@@ -35,6 +35,7 @@
       - nano-full
       - less
       - blkid
+      - luci-mod-rpc
 
     uci_vars:
       ## Basics
