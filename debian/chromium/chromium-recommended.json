@@ -39,5 +39,8 @@
   "ShowFullUrlsInAddressBar": true,
   "RoamingProfileSupportEnabled": false,
   "OsColorMode": "light"
+  "SecureDnsMode": 0,
+  "DnsOverHttpsMode": "off",
+  "DefaultDnsOverHttpsMode": "off"
 }
 
