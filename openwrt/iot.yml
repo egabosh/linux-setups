@@ -42,6 +42,7 @@
       - { key: "dhcp.iot_dnsmasq.logqueries", value: "1" }
       - { key: "dhcp.iot_dnsmasq.authoritative", value: "1" }
       - { key: "dhcp.iot_dnsmasq.sequential_ip", value: "1" }
+      - { key: "dhcp.iot_dnsmasq.readethers", value: "1" }
 
       # IoT zone
       - { key: "firewall.zone_iot", value: "zone" }
