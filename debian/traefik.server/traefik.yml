@@ -208,6 +208,11 @@
                     - "192.168.0.0/16"
                     - "172.16.0.0/12"
                     - "10.0.0.0/8"
+                    - "fe80::/10"
+                    - "fc00::/7"
+                    - "::1/128"
+                  ipStrategy:
+                    ipv6Subnet: 64
       notify: Restart traefik
 
     - name: /usr/local/sbin/traefik-qualys-ssl-labs-check.sh
