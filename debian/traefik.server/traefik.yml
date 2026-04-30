@@ -109,6 +109,9 @@
                 - --providers.file=true
                 - --providers.file.directory=/etc/traefik/providers.local
                 - --providers.file.watch=true
+                # log
+                - --accesslog.filepath=/log/access.log
+                - --accesslog.format=json
               container_name: traefik
               restart: unless-stopped
               security_opt:
@@ -125,6 +128,7 @@
                 - /var/run/docker.sock:/var/run/docker.sock:ro
                 - ./letsencrypt:/letsencrypt
                 - ./providers:/etc/traefik/providers.local
+                - ./log:/log
               labels:
                 - traefik.enable=true
                 - traefik.http.routers.traefik.rule=Host(`traefik.{{inventory_hostname}}`)
