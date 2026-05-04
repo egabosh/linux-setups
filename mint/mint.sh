@@ -69,7 +69,7 @@ sudo rm -f /usr/local/sbin/autoupdate.d/signal-cli.update
 [ -f /etc/cron.d/mint-config-update ] && rm /etc/cron.d/mint-config-update 
 
 # update mirror
-sudo sed -i -E 's|https?://[^/]+|https://mirror.netzwerge.de|g' /etc/apt/sources.list.d/official-package-repositories.list
+#sudo sed -i -E 's|https?://[^/]+|https://mirror.netzwerge.de|g' /etc/apt/sources.list.d/official-package-repositories.list
 sudo DEBIAN_FRONTEND=noninteractive apt-get update
 
 # Cleanup broken installs and packages
