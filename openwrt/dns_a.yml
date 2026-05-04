@@ -6,7 +6,6 @@
   vars:
 
     uci_vars:
-      # openwrt-ab
       - { key: "dhcp.host_{{ host | replace('.', '_') }}", value: "domain" }
       - { key: "dhcp.host_{{ host | replace('.', '_') }}.ip",   value: "{{ ip }}" }
       - { key: "dhcp.host_{{ host | replace('.', '_') }}.name", value: "{{ host }}" }
