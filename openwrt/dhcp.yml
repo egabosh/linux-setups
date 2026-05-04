@@ -60,7 +60,7 @@
         #if [ "$current" != "$desired" ]
         if ! echo "$current" | grep "$desired"
         then
-          if echo "{{ item.key }}" | grep -q "dhcp.lan_dnsmasq.listen_address"
+          if echo "{{ item.key }}" | egrep -q "dhcp\...._dnsmasq.listen_address|dhcp\...._dnsmasq.server|dhcp\....\.dhcp_option"
           then
             uci add_list {{ item.key }}="{{ item.value }}"
           else
