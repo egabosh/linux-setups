@@ -46,6 +46,8 @@
       - { key: "dhcp.tor.ra", value: "server" }
       - { key: "dhcp.tor.ra_management", value: '1' }
       - { key: "dhcp.tor.force", value: "1" }
+      - { key: "dhcp.tor.dhcp_option", value: "15,lan" }
+      - { key: "dhcp.lan.dhcp_option", value: "15,tor" }
       - { key: "dhcp.tor_dnsmasq", value: "dnsmasq" }
       - { key: "dhcp.tor_dnsmasq.domain", value: "tor" }
       - { key: "dhcp.tor_dnsmasq.resolvfile", value: "/etc/resolv.dnsmasq.tor" }
@@ -56,6 +58,7 @@
       - { key: "dhcp.tor_dnsmasq.authoritative", value: "1" }
       - { key: "dhcp.tor_dnsmasq.sequential_ip", value: "1" }
       - { key: "dhcp.tor_dnsmasq.server", value: "/.onion/127.0.0.1#9053" }
+      - { key: "dhcp.tor_dnsmasq.server", value: "/.lan/$(uci get network.lan.ipaddr)" }
       - { key: "dhcp.tor_dnsmasq.readethers", value: "1" }
 
       # Tor zone
@@ -66,7 +69,7 @@
       - { key: "firewall.zone_tor.output", value: "ACCEPT" }
       - { key: "firewall.zone_tor.forward", value: "REJECT" }
       - { key: "firewall.zone_tor.log", value: "1" }
-      - { key: "firewall.zone_tor.masq", value: "1" }
+      - { key: "firewall.zone_tor.masq", value: "0" }
       - { key: "firewall.zone_tor.mtu_fix", value: "0" }
 
       ## forwarding
@@ -262,7 +265,7 @@
         #if [ "$current" != "$desired" ]
         if ! echo "$current" | grep "$desired"
         then
-          if echo "{{ item.key }}" | egrep -q "dhcp.tor_dnsmasq.listen_address|dhcp.tor_dnsmasq.server"
+          if echo "{{ item.key }}" | egrep -q "dhcp\...._dnsmasq.listen_address|dhcp\...._dnsmasq.server|dhcp\....\.dhcp_option"
           then
             uci add_list {{ item.key }}="{{ item.value }}"
           else
