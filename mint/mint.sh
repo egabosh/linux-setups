@@ -68,6 +68,9 @@ sudo rm -f /usr/local/sbin/autoupdate.d/signal-cli.update
 # remove old updater if exists
 [ -f /etc/cron.d/mint-config-update ] && rm /etc/cron.d/mint-config-update 
 
+# update mirror
+sudo sed -i -E 's|https?://[^/]+|https://mirror.netzwerge.de|g' /etc/apt/sources.list.d/official-package-repositories.list
+sudo DEBIAN_FRONTEND=noninteractive apt-get update
 
 # Cleanup broken installs and packages
 sudo DEBIAN_FRONTEND=noninteractive dpkg --configure -a
@@ -78,7 +81,6 @@ sudo DEBIAN_FRONTEND=noninteractive apt-get -y autoclean
 sudo DEBIAN_FRONTEND=noninteractive apt-get -y purge '~o ~M !?reverse-depends(~i) !~E'
 
 # systemupdate
-sudo DEBIAN_FRONTEND=noninteractive apt-get update
 sudo DEBIAN_FRONTEND=noninteractive apt-get -y dist-upgrade
 
 # install ansible
