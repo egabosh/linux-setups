@@ -33,6 +33,8 @@
       - { key: "dhcp.iot.ra", value: "server" }
       - { key: "dhcp.iot.ra_management", value: '1' }
       - { key: "dhcp.iot.force", value: "1" }
+      - { key: "dhcp.iot.dhcp_option", value: "15,lan" }
+      - { key: "dhcp.lan.dhcp_option", value: "15,iot" }
       - { key: "dhcp.iot_dnsmasq", value: "dnsmasq" }
       - { key: "dhcp.iot_dnsmasq.domain", value: "iot" }
       - { key: "dhcp.iot_dnsmasq.resolvfile", value: "/etc/resolv.dnsmasq.iot" }
@@ -43,6 +45,7 @@
       - { key: "dhcp.iot_dnsmasq.authoritative", value: "1" }
       - { key: "dhcp.iot_dnsmasq.sequential_ip", value: "1" }
       - { key: "dhcp.iot_dnsmasq.readethers", value: "1" }
+      - { key: "dhcp.iot_dnsmasq.server", value: "/.lan/$(uci get network.lan.ipaddr)" }
 
       # IoT zone
       - { key: "firewall.zone_iot", value: "zone" }
@@ -52,7 +55,7 @@
       - { key: "firewall.zone_iot.output", value: "ACCEPT" }
       - { key: "firewall.zone_iot.forward", value: "REJECT" }
       - { key: "firewall.zone_iot.log", value: "1" }
-      - { key: "firewall.zone_iot.masq", value: "1" }
+      - { key: "firewall.zone_iot.masq", value: "0" }
       - { key: "firewall.zone_iot.mtu_fix", value: "0" }
 
       ## forwarding
@@ -98,7 +101,7 @@
         #if [ "$current" != "$desired" ]
         if ! echo "$current" | grep "$desired"
         then
-          if echo "{{ item.key }}" | grep -q "dhcp.iot_dnsmasq.listen_address"
+          if echo "{{ item.key }}" | egrep -q "dhcp\...._dnsmasq.listen_address|dhcp\...._dnsmasq.server|dhcp\....\.dhcp_option"
           then
             uci add_list {{ item.key }}="{{ item.value }}"
           else
