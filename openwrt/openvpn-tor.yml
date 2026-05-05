@@ -166,6 +166,7 @@
  
           sed -i 's/^[[:space:]]*-----/-----/' "${CLIENT_NAME}.ovpn"
         
+          CLIENT_HOSTNAME="$CLIENT_HOSTNAME.lan"
           # push to client
           ssh -o StrictHostKeyChecking=accept-new -o BatchMode=yes ${CLIENT_HOSTNAME} "echo OK"
           # copy openvpn client config
@@ -187,7 +188,7 @@
           ssh -o BatchMode=yes ${CLIENT_HOSTNAME} "uci set network.tor.defaultroute='0'"
           ssh -o BatchMode=yes ${CLIENT_HOSTNAME} "uci set network.tor.delegate='0'"
           [[ -n "{{ bridge_port }}" ]] && \
-           ssh -o BatchMode=yes ${CLIENT_HOSTNAME} "uci set network.tor_dev.ports='{{ bridge_port }}'"
+          ssh -o BatchMode=yes ${CLIENT_HOSTNAME} "uci set network.tor_dev.ports='{{ bridge_port }}'"
           ssh -o BatchMode=yes ${CLIENT_HOSTNAME} "uci commit"
           ssh -o BatchMode=yes ${CLIENT_HOSTNAME} "/etc/init.d/network reload"
           ssh -o BatchMode=yes ${CLIENT_HOSTNAME} "/etc/init.d/openvpn enable"
