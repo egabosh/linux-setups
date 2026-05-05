@@ -46,8 +46,7 @@
       - { key: "dhcp.tor.ra", value: "server" }
       - { key: "dhcp.tor.ra_management", value: '1' }
       - { key: "dhcp.tor.force", value: "1" }
-      - { key: "dhcp.tor.dhcp_option", value: "15,lan" }
-      - { key: "dhcp.lan.dhcp_option", value: "15,tor" }
+      - { key: "dhcp.tor.dhcp_option", value: "119,tor,lan" }
       - { key: "dhcp.tor_dnsmasq", value: "dnsmasq" }
       - { key: "dhcp.tor_dnsmasq.domain", value: "tor" }
       - { key: "dhcp.tor_dnsmasq.resolvfile", value: "/etc/resolv.dnsmasq.tor" }

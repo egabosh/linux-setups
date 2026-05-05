@@ -33,8 +33,7 @@
       - { key: "dhcp.iot.ra", value: "server" }
       - { key: "dhcp.iot.ra_management", value: '1' }
       - { key: "dhcp.iot.force", value: "1" }
-      - { key: "dhcp.iot.dhcp_option", value: "15,lan" }
-      - { key: "dhcp.lan.dhcp_option", value: "15,iot" }
+      - { key: "dhcp.iot.dhcp_option", value: "119,iot,lan" }
       - { key: "dhcp.iot_dnsmasq", value: "dnsmasq" }
       - { key: "dhcp.iot_dnsmasq.domain", value: "iot" }
       - { key: "dhcp.iot_dnsmasq.resolvfile", value: "/etc/resolv.dnsmasq.iot" }
