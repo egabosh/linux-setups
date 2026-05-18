@@ -128,11 +128,11 @@
         state: restarted
       when: resolved.changed
 
-    - name: Restart networking when systemd-resolved is new installed
-      service:
-        name: networking
-        state: restarted
-      when: resolved.changed
+    #- name: Restart networking when systemd-resolved is new installed
+    #  service:
+    #    name: networking
+    #    state: restarted
+    #  when: resolved.changed
 
     - name: set testing repo pinning for Debian 12 - bookworm (needed by dnscrypt-proxy)
       blockinfile:
