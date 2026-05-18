@@ -133,7 +133,6 @@
         group: docker
         marker: "# {mark} ANSIBLE MANAGED BLOCK"
         block: |
-            version: '3.6'
             services:
 
               turn.{{inventory_hostname}}:
