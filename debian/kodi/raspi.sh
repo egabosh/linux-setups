@@ -40,7 +40,7 @@ update-locale
 apt-get update
 
 # autoupdate after startup
-echo "@reboot root /usr/local/sbin/autoupdate.sh" >>/etc/crontab
+grep -q "/usr/local/sbin/autoupdate.sh" /etc/crontab || echo "@reboot root /usr/local/sbin/autoupdate.sh" >>/etc/crontab
 
 wget https://raw.githubusercontent.com/egabosh/linux-setups/refs/heads/main/debian/install.sh -O /usr/local/sbin/linux_setups_debian_install.sh
 chmod 700 /usr/local/sbin/linux_setups_debian_install.sh
