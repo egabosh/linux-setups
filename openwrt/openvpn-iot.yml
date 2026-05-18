@@ -123,7 +123,7 @@
         /usr/bin/easyrsa --batch --days=${CERT_DAYS} build-server-full openvpn-server nopass || exit 5
 
         # go through clients
-        for CLIENT_HOSTNAME in {{ clients }}
+        for CLIENT_HOSTNAME in {{ iot_clients }}
         do
           CLIENT_NAME=${CLIENT_HOSTNAME}.${VPNNAME}
 
@@ -190,8 +190,8 @@
           ssh -o BatchMode=yes ${CLIENT_HOSTNAME} "uci set network.iot.proto='none'"
           ssh -o BatchMode=yes ${CLIENT_HOSTNAME} "uci set network.iot.defaultroute='0'"
           ssh -o BatchMode=yes ${CLIENT_HOSTNAME} "uci set network.iot.delegate='0'"
-          [[ -n "{{ bridge_port }}" ]] && \
-          ssh -o BatchMode=yes ${CLIENT_HOSTNAME} "uci set network.iot_dev.ports='{{ bridge_port }}'"
+          [[ -n "{{ iot_bridge_port }}" ]] && \
+          ssh -o BatchMode=yes ${CLIENT_HOSTNAME} "uci set network.iot_dev.ports='{{ iot_bridge_port }}'"
           ssh -o BatchMode=yes ${CLIENT_HOSTNAME} "uci commit"
           ssh -o BatchMode=yes ${CLIENT_HOSTNAME} "/etc/init.d/network reload"
           ssh -o BatchMode=yes ${CLIENT_HOSTNAME} "/etc/init.d/openvpn enable"

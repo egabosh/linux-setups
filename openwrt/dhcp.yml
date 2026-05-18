@@ -18,7 +18,10 @@
       - { key: "dhcp.lan.dhcpv6", value: "server" }
       - { key: "dhcp.lan.ra", value: "server" }
       - { key: "dhcp.lan.ra_management", value: '1' }
+      - { key: "dhcp.lan.ra_default",    value: "1" }
+      - { key: "dhcp.lan.ra_lifetime",   value: "1800" }
       - { key: "dhcp.lan.force",  value: "1" }
+      - { key: "dhcp.lan.dns",  value: "$(uci get network.lan.ip6addr | cut -d/ -f1)" }
       - { key: "dhcp.lan_dnsmasq", value: "dnsmasq" }
       - { key: "dhcp.lan_dnsmasq.domain", value: "lan" }
       - { key: "dhcp.lan_dnsmasq.resolvfile", value: "/etc/resolv.dnsmasq.lan" }
@@ -31,6 +34,7 @@
       - { key: "dhcp.lan_dnsmasq.sequential_ip", value: "1" }
       - { key: "dhcp.lan_dnsmasq.readethers", value: "1" }
       - { key: "dhcp.lan.dhcp_option", value: "119,lan,iot,tor,wan" }
+      - { key: "dhcp.lan.dhcp_option", value: "6,$(uci get network.lan.ipaddr)" }
 
   tasks:
     - name: use local upstream dns

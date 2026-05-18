@@ -8,7 +8,7 @@
       - 'firewall.@defaults'
       - 'firewall.@zone'
       - 'firewall.@forwarding'
-      - 'firewall.@rule'
+      #- 'firewall.@rule'
 
     uci_vars:
       # global defaults
@@ -18,6 +18,7 @@
       - { key: "firewall.defaults.forward", value: "DROP" }
       - { key: "firewall.defaults.synflood_protect", value: "1" }
       - { key: "firewall.defaults.drop_invalid", value: "1" }
+      - { key: "firewall.defaults.flow_offloading", value: "1" }
 
       ## LAN zone
       - { key: "firewall.zone_lan", value: "zone" }
@@ -25,7 +26,7 @@
       - { key: "firewall.zone_lan.network", value: "lan" }
       - { key: "firewall.zone_lan.input", value: "ACCEPT" }
       - { key: "firewall.zone_lan.output", value: "ACCEPT" }
-      - { key: "firewall.zone_lan.forward", value: "REJECT" }
+      - { key: "firewall.zone_lan.forward", value: "ACCEPT" }
       - { key: "firewall.zone_lan.log", value: "1" }
       - { key: "firewall.zone_lan.masq", value: "0" }
       - { key: "firewall.zone_lan.mtu_fix", value: "0" }
@@ -64,6 +65,65 @@
       loop: "{{ uci_vars }}"
       register: uci_set_result
       changed_when: "not 'unchanged' in uci_set_result.stdout"
+
+    - name: write, run and create cronjob /etc/scripts/tor-nodes-blocklist-update.sh
+      raw: |
+        mkdir -p /etc/scripts
+        cat << 'EOF' > /etc/scripts/firewall_port_forwards_from_wan_to_newzone.sh
+        #!/bin/sh
+
+        # Duplicate all port forwards from zone 'wan' to new zone given by $1
+        newzone="$1"
+
+        if [[ -z "$newzone" ]]
+        then
+          echo "no new zone specified"
+          exit 1
+        fi
+
+        changed=0
+        while read -r name
+        do
+
+          src=$(uci get firewall."$name".src 2>/dev/null)
+          [ "$src" != "wan" ] && continue
+
+          newname="$(echo "$name" | sed 's/^redirect_//')_${newzone}"
+
+          # Skip if already exists
+          uci get firewall."$newname" >/dev/null 2>&1 && continue
+
+          uci set firewall."$newname"=rule
+          uci set firewall."$newname".src="$newzone"
+          uci set firewall."$newname".name="$newname"
+          uci set firewall."$newname".target="ACCEPT"
+
+          for param in proto dest dest_ip dest_port
+          do
+             val=$(uci get firewall."$name"."$param" 2>/dev/null)
+             if [ -n "$val" ]
+             then
+               uci set firewall."$newname"."$param"="$val"
+             fi
+          done
+
+          changed=1
+
+        done <<EOI
+        $(uci show firewall | grep -E "^firewall\.[a-zA-Z0-9_]+=redirect$" | cut -d. -f2 | cut -d= -f1)
+        EOI
+
+        if [ "$changed" = "1" ]
+        then
+          uci commit firewall
+          /etc/init.d/firewall reload
+        fi
+        EOF
+
+        chmod 700 /etc/scripts/firewall_port_forwards_from_wan_to_newzone.sh
+
+      changed_when: false
+
 
     - name: apply changes
       block:

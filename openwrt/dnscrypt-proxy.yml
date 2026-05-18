@@ -16,10 +16,6 @@
       raw: opkg update
       changed_when: false
 
-    - name: upgrade packages
-      raw: opkg list-upgradable | cut -f 1 -d ' ' | xargs -r opkg upgrade
-      changed_when: false
-
     - name: check installed packages
       raw: opkg list-installed
       register: installed_packages

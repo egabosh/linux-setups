@@ -8,6 +8,7 @@
     uci_vars:
 
       # WAN: PPPoE FB LAN1
+      - { key: "network.wan", value: "interface" }
       - { key: "network.wan.proto", value: "pppoe" }
       - { key: "network.wan.device", value: "wan"}
       - { key: "network.wan.username", value: "{{ pppoe_user }}" }

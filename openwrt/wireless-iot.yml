@@ -11,11 +11,11 @@
 
     uci_vars:
       - { key: "wireless.wifinet1", value: "wifi-iface" }
-      - { key: "wireless.wifinet1.device", value: "{{ wlandev }}" }
+      - { key: "wireless.wifinet1.device", value: "{{ iot_wlandev }}" }
       - { key: "wireless.wifinet1.mode", value: "ap" }
-      - { key: "wireless.wifinet1.key", value: "{{ wlan_key }}" }
+      - { key: "wireless.wifinet1.key", value: "{{ iot_wlan_key }}" }
       - { key: "wireless.wifinet1.isolate", value: "1" }
-      - { key: "wireless.wifinet1.ssid", value: "{{ wlan_ssid }}" }
+      - { key: "wireless.wifinet1.ssid", value: "{{ iot_wlan_ssid }}" }
       - { key: "wireless.wifinet1.network", value: "iot" }
       - { key: "wireless.wifinet1.encryption", value: "sae-mixed" }
 
