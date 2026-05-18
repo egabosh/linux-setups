@@ -19,26 +19,6 @@
       - { key: "network.wg_lan.ip6assign", value: "64" }
       - { key: "network.wg_lan.ipv6", value: "1" }
 
-      # IPv6 prefix delegation
-      - { key: "dhcp.wg_lan", value: "dhcp" }
-      - { key: "dhcp.wg_lan.interface", value: "wg_lan" }
-      - { key: "dhcp.wg_lan.start", value: "50" }
-      - { key: "dhcp.wg_lan.limit", value: "150" }
-      - { key: "dhcp.wg_lan.leasetime", value: "1h" }
-      - { key: "dhcp.wg_lan.rebind_protection", value: "0" }
-      - { key: "dhcp.wg_lan.dhcpv4", value: "server" }
-      - { key: "dhcp.wg_lan.dhcpv6", value: "server" }
-      - { key: "dhcp.wg_lan.ra", value: "server" }
-      - { key: "dhcp.wg_lan.ra_management", value: '1' }
-      - { key: "dhcp.wg_lan.force", value: "1" }
-      - { key: "dhcp.wg_lan_dnsmasq", value: "dnsmasq" }
-      - { key: "dhcp.wg_lan_dnsmasq.resolvfile", value: "/etc/resolv.dnsmasq.wg_lan" }
-      - { key: "dhcp.wg_lan_dnsmasq.listen_address", value: "192.168.44.1" }
-      - { key: "dhcp.wg_lan_dnsmasq.listen_address", value: "fdaa:a192:b168:cd44::1" }
-      - { key: "dhcp.wg_lan_dnsmasq.logqueries", value: "1" }
-      - { key: "dhcp.wg_lan_dnsmasq.authoritative", value: "1" }
-      - { key: "dhcp.wg_lan_dnsmasq.sequential_ip", value: "1" }
-
       # allow connections from internet
       - { key: "firewall.wireguard_allow_lan", value: "rule" }
       - { key: "firewall.wireguard_allow_lan.name", value: "ansible_allow_wireguard_lan" }
@@ -47,17 +27,10 @@
       - { key: "firewall.wireguard_allow_lan.dest_port", value: "59666" }
       - { key: "firewall.wireguard_allow_lan.target", value: "ACCEPT" }
 
-      # add to zone lan
+      # add to zone lan and allow intra zone forward
       - { key: "firewall.zone_lan.network", value: "wg_lan" }
+      - { key: "firewall.zone_lan.forward", value: "ACCEPT" }
   
-      # allow all betweewn lan and wg_lan
-      - { key: "firewall.wireguard_allow_lan_wg_lan", value: "rule" }
-      - { key: "firewall.wireguard_allow_lan_wg_lan.name", value: "ansible_allow_wireguard_lan_wg_lan" }
-      - { key: "firewall.wireguard_allow_lan_wg_lan.src", value: "lan" }
-      - { key: "firewall.wireguard_allow_lan_wg_lan.proto", value: "all" }
-      - { key: "firewall.wireguard_allow_lan_wg_lan.dest", value: "lan" }
-      - { key: "firewall.wireguard_allow_lan_wg_lan.target", value: "ACCEPT" }
-
   tasks:
     - name: update opkg db
       raw: opkg update
@@ -114,7 +87,7 @@
             - "uci commit"
             - "/etc/init.d/network reload"
             - "/etc/init.d/firewall reload"
-            - "/etc/init.d/dnsmasq restart"
-            - "/etc/init.d/odhcpd restart"
+#            - "/etc/init.d/dnsmasq restart"
+#            - "/etc/init.d/odhcpd restart"
           when: uci_set_result.changed
 
