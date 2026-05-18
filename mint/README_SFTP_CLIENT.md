@@ -15,7 +15,15 @@ sudo xed /etc/fstab
 ```
 Attention - do not change anything, only add the following line at the end - replace "USER-ON-SERVER" with the sftp-user on the server, "SFTP-SERVER-HOST" with the hostname of the SFTP-Server and the "USER-IN-MINT" with your local username in Mint:
 ```
-USER-ON-SERVER@SFTP-SERVER-HOST:/ /share fuse.sshfs  port=28,x-systemd.automount,_netdev,users,idmap=user,IdentityFile=/home/USER_IN_MINT/.ssh/id_ed25519,allow_other,reconnect,ServerAliveInterval=15,ServerAliveCountMax=4,auto_cache,kernel_cache 0 0
+USER-ON-SERVER@SFTP-SERVER-HOST:/ /share fuse.sshfs  port=28,x-systemd.automount,_netdev,users,idmap=user,IdentityFile=/home/USER_IN_MINT/.ssh/id_ed25519,allow_other,reconnect,ServerAliveInterval=15,ServerAliveCountMax=4,kernel_cache 0 0
+```
+Add `user_allow_other` to /etc/fuse.conf. Required because systemd mounts the share as root, but the user needs access.
+```
+sudo xed /etc/fuse.conf
+```
+Add a line with:
+```
+user_allow_other
 ```
 If you do not yet have an ed25519 keypair (~/.ssh/id\_ed25519 does not exist):
 ```
