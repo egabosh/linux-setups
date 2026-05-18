@@ -40,7 +40,6 @@
       create: yes
       marker: "# {mark} ANSIBLE MANAGED BLOCK"
       block: |
-        version: '3.6'
         services:
           sftp-share:
             build:
