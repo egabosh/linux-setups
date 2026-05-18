@@ -530,6 +530,9 @@
               sudo rm -f /etc/systemd/resolved.conf.d/DoHoT.conf 
               sudo systemctl restart systemd-resolved.service
             fi
+          elif g_check_tor_transparent_proxy
+          then
+            echo "transparent tor proxy detected - no DoHoT"
           else
             if [ -s /etc/dnscrypt-proxy/blocked-names.txt ]
             then
@@ -569,7 +572,7 @@
         marker: "# {mark} ANSIBLE MANAGED BLOCK"
         block: |
           . /etc/bash/gaboshlib.include
-
+          g_echo "START $0"
           # use possible alternative external tor server ip or reset to 127.0.0.1/localhost
           [[ $g_tor_host = localhost ]] && g_tor_host="127.0.0.1"
           g_valid_ip $g_tor_host || g_tor_host=$(host "$g_tor_host" | awk '/has address/ {print $NF; exit}')
