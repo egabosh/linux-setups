@@ -14,6 +14,7 @@
       - { key: "network.wan_7.vid", value: "7" }
 
       # WAN: PPPoE auf VLAN 7 (Telekom)
+      - { key: "network.wan", value: "interface" }
       - { key: "network.wan.proto", value: "pppoe" }
       - { key: "network.wan.device", value: "wan.7" }
       - { key: "network.wan.username", value: "{{ pppoe_user }}" }

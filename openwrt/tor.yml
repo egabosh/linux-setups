@@ -45,8 +45,12 @@
       - { key: "dhcp.tor.dhcpv6", value: "server" }
       - { key: "dhcp.tor.ra", value: "server" }
       - { key: "dhcp.tor.ra_management", value: '1' }
+      - { key: "dhcp.tor.ra_default", value: '1' }
+      - { key: "dhcp.tor.ra_lifetime", value: '1800' }
       - { key: "dhcp.tor.force", value: "1" }
       - { key: "dhcp.tor.dhcp_option", value: "119,tor,lan" }
+      - { key: "dhcp.tor.dhcp_option", value: "6,$(uci get network.tor.ipaddr)" }
+      - { key: "dhcp.tor.dns",  value: "$(uci get network.tor.ip6addr | cut -d/ -f1)" }
       - { key: "dhcp.tor_dnsmasq", value: "dnsmasq" }
       - { key: "dhcp.tor_dnsmasq.domain", value: "tor" }
       - { key: "dhcp.tor_dnsmasq.resolvfile", value: "/etc/resolv.dnsmasq.tor" }
@@ -60,36 +64,25 @@
       - { key: "dhcp.tor_dnsmasq.server", value: "/.lan/$(uci get network.lan.ipaddr)" }
       - { key: "dhcp.tor_dnsmasq.readethers", value: "1" }
 
-      # Tor zone
+      # tor zone
       - { key: "firewall.zone_tor", value: "zone" }
       - { key: "firewall.zone_tor.name", value: "tor" }
       - { key: "firewall.zone_tor.network", value: "tor" }
       - { key: "firewall.zone_tor.input", value: "REJECT" }
       - { key: "firewall.zone_tor.output", value: "ACCEPT" }
-      - { key: "firewall.zone_tor.forward", value: "REJECT" }
+      - { key: "firewall.zone_tor.forward", value: "ACCEPT" }
       - { key: "firewall.zone_tor.log", value: "1" }
       - { key: "firewall.zone_tor.masq", value: "0" }
       - { key: "firewall.zone_tor.mtu_fix", value: "0" }
 
       ## forwarding
-      - { key: "firewall.forwarding_tor_lan", value: "forwarding" }
-      - { key: "firewall.forwarding_tor_lan.src", value: "tor" }
-      - { key: "firewall.forwarding_tor_lan.dest", value: "lan" }
+      #- { key: "firewall.forwarding_tor_lan", value: "forwarding" }
+      #- { key: "firewall.forwarding_tor_lan.src", value: "tor" }
+      #- { key: "firewall.forwarding_tor_lan.dest", value: "lan" }
 
       - { key: "firewall.forwarding_lan_tor", value: "forwarding" }
       - { key: "firewall.forwarding_lan_tor.src", value: "lan" }
       - { key: "firewall.forwarding_lan_tor.dest", value: "tor" }
-
-      # allow forwarding for exceptions
-      - { key: "firewall.rule_forwarding_exceptions_tor",      value: "rule" }
-      - { key: "firewall.rule_forwarding_exceptions_tor.name",      value: "ansible_forwarding_exceptions_tor" }
-      - { key: "firewall.rule_forwarding_exceptions_tor.src",       value: "tor" }
-      - { key: "firewall.rule_forwarding_exceptions_tor.dest",       value: "wan" }
-      - { key: "firewall.rule_forwarding_exceptions_tor.proto",     value: "tcp" }
-      - { key: "firewall.rule_forwarding_exceptions_tor.dest_port", value: "80 443 993 587 465" }
-      - { key: "firewall.rule_forwarding_exceptions_tor.family", value: "ipv4" }
-      - { key: "firewall.rule_forwarding_exceptions_tor.ipset", value: "tor_whitelist" }
-      - { key: "firewall.rule_forwarding_exceptions_tor.target",    value: "ACCEPT" }
 
       # Allow-DHCP-TORLAN
       - { key: "firewall.rule_allow_dhcp_tor",      value: "rule" }
@@ -109,6 +102,16 @@
       - { key: "firewall.rule_allow_dns_tor.src_ip",  value: "192.168.142.0/24" }
       - { key: "firewall.rule_allow_dns_tor.dest_ip", value: "192.168.142.1" }
 
+      # Allow-DNS-TORLAN ipv6
+      - { key: "firewall.rule_allow_dns_tor6",      value: "rule" }
+      - { key: "firewall.rule_allow_dns_tor6.name",      value: "ansible_allow_dns_tor6" }
+      - { key: "firewall.rule_allow_dns_tor6.src",       value: "tor" }
+      - { key: "firewall.rule_allow_dns_tor6.proto",     value: "udp" }
+      - { key: "firewall.rule_allow_dns_tor6.dest_port", value: "53" }
+      - { key: "firewall.rule_allow_dns_tor6.target",    value: "ACCEPT" }
+      - { key: "firewall.rule_allow_dns_tor6.src_ip",  value: "fd12:3456:142::/64" }
+      - { key: "firewall.rule_allow_dns_tor6.dest_ip", value: "fd12:3456:142::1" }
+
       # Allow-NTP-TORLAN
       - { key: "firewall.rule_allow_ntp_tor",      value: "rule" }
       - { key: "firewall.rule_allow_ntp_tor.name",      value: "ansible_allow_ntp_tor" }
@@ -118,38 +121,6 @@
       - { key: "firewall.rule_allow_ntp_tor.target",    value: "ACCEPT" }
       - { key: "firewall.rule_allow_ntp_tor.src_ip",  value: "192.168.142.0/24" }
       - { key: "firewall.rule_allow_ntp_tor.dest_ip", value: "192.168.142.1" }
-
-      # ICMP/ping
-      - { key: "firewall.rule_allow_icmp_ping_tor",     value: "rule" }
-      - { key: "firewall.rule_allow_icmp_ping_tor.src",      value: "tor" }
-      - { key: "firewall.rule_allow_icmp_ping_tor.target",   value: "ACCEPT" }
-      - { key: "firewall.rule_allow_icmp_ping_tor.proto",    value: "icmp" }
-      - { key: "firewall.rule_allow_icmp_ping_tor.icmp_type",    value: "echo-request" }
-      - { key: "firewall.rule_allow_icmp_ping_tor.name",     value: "ansible_allow_icmp_ping_tor" }
-      - { key: "firewall.rule_allow_icmp_ping_tor.src_ip",  value: "192.168.142.0/24" }
-      - { key: "firewall.rule_allow_icmp_ping_tor.dest_ip", value: "192.168.142.1" }
-
-      # Allow-DHCPv6-TORLAN
-      - { key: "firewall.rule_allow_dhcpv6_tor",      value: "rule" }
-      - { key: "firewall.rule_allow_dhcpv6_tor.name", value: "ansible_allow_dhcpv6_tor" }
-      - { key: "firewall.rule_allow_dhcpv6_tor.src",  value: "tor" }
-      - { key: "firewall.rule_allow_dhcpv6_tor.proto",value: "udp" }
-      - { key: "firewall.rule_allow_dhcpv6_tor.dest_port", value: "546" }  # DHCPv6 Client-Port
-      - { key: "firewall.rule_allow_dhcpv6_tor.src_ip",   value: "fd12:3456:142::/64" }
-      - { key: "firewall.rule_allow_dhcpv6_tor.dest_ip",  value: "fd12:3456:142::1" }
-      - { key: "firewall.rule_allow_dhcpv6_tor.family",   value: "ipv6" }
-      - { key: "firewall.rule_allow_dhcpv6_tor.target",   value: "ACCEPT" }
-
-      # Allow-DNSv6-TORLAN  
-      - { key: "firewall.rule_allow_dnsv6_tor",      value: "rule" }
-      - { key: "firewall.rule_allow_dnsv6_tor.name", value: "ansible_allow_dnsv6_tor" }
-      - { key: "firewall.rule_allow_dnsv6_tor.src",  value: "tor" }
-      - { key: "firewall.rule_allow_dnsv6_tor.proto",value: "udp" }
-      - { key: "firewall.rule_allow_dnsv6_tor.dest_port", value: "53" }
-      - { key: "firewall.rule_allow_dnsv6_tor.src_ip",   value: "fd12:3456:142::/64" }
-      - { key: "firewall.rule_allow_dnsv6_tor.dest_ip",  value: "fd12:3456:142::1" }
-      - { key: "firewall.rule_allow_dnsv6_tor.family",   value: "ipv6" }
-      - { key: "firewall.rule_allow_dnsv6_tor.target",   value: "ACCEPT" }
 
       # Allow-NTPv6-TORLAN
       - { key: "firewall.rule_allow_ntpv6_tor",      value: "rule" }
@@ -162,16 +133,68 @@
       - { key: "firewall.rule_allow_ntpv6_tor.family",   value: "ipv6" }
       - { key: "firewall.rule_allow_ntpv6_tor.target",   value: "ACCEPT" }
 
-      # Allow-ICMPv6-Ping-TORLAN
-      - { key: "firewall.rule_allow_icmpv6_ping_tor",     value: "rule" }
-      - { key: "firewall.rule_allow_icmpv6_ping_tor.src",      value: "tor" }
-      - { key: "firewall.rule_allow_icmpv6_ping_tor.target",   value: "ACCEPT" }
-      - { key: "firewall.rule_allow_icmpv6_ping_tor.proto",    value: "icmp" }
+      # Allow-ICMPv6-ND-tor (Neighbor Solicitation/Advertisement/Router Solicitation)
+      - { key: "firewall.rule_allow_icmpv6_nd_tor",        value: "rule" }
+      - { key: "firewall.rule_allow_icmpv6_nd_tor.name",   value: "ansible_allow_icmpv6_nd_tor" }
+      - { key: "firewall.rule_allow_icmpv6_nd_tor.src",    value: "tor" }
+      - { key: "firewall.rule_allow_icmpv6_nd_tor.family", value: "ipv6" }
+      - { key: "firewall.rule_allow_icmpv6_nd_tor.proto",  value: "icmp" }
+      - { key: "firewall.rule_allow_icmpv6_nd_tor.icmp_type", value: "135 136 133" }
+      - { key: "firewall.rule_allow_icmpv6_nd_tor.target", value: "ACCEPT" }
+
+      # ICMP/ping
+      - { key: "firewall.rule_allow_icmp_ping_tor",     value: "rule" }
+      - { key: "firewall.rule_allow_icmp_ping_tor.src",      value: "tor" }
+      - { key: "firewall.rule_allow_icmp_ping_tor.target",   value: "ACCEPT" }
+      - { key: "firewall.rule_allow_icmp_ping_tor.proto",    value: "icmp" }
+      - { key: "firewall.rule_allow_icmp_ping_tor.icmp_type",    value: "echo-request" }
+      - { key: "firewall.rule_allow_icmp_ping_tor.name",     value: "ansible_allow_icmp_ping_tor" }
+      - { key: "firewall.rule_allow_icmp_ping_tor.src_ip",  value: "192.168.142.0/24" }
+      - { key: "firewall.rule_allow_icmp_ping_tor.dest_ip", value: "192.168.142.1" }
+
+      # ICML/ping6
+      - { key: "firewall.rule_allow_icmpv6_ping_tor",           value: "rule" }
+      - { key: "firewall.rule_allow_icmpv6_ping_tor.name",      value: "ansible_allow_icmpv6_ping_tor" }
+      - { key: "firewall.rule_allow_icmpv6_ping_tor.src",       value: "tor" }
+      - { key: "firewall.rule_allow_icmpv6_ping_tor.family",    value: "ipv6" }
+      - { key: "firewall.rule_allow_icmpv6_ping_tor.proto",     value: "icmp" }
       - { key: "firewall.rule_allow_icmpv6_ping_tor.icmp_type", value: "echo-request" }
-      - { key: "firewall.rule_allow_icmpv6_ping_tor.name",     value: "ansible_allow_icmpv6_ping_tor" }
+      - { key: "firewall.rule_allow_icmpv6_ping_tor.target",    value: "ACCEPT" }
       - { key: "firewall.rule_allow_icmpv6_ping_tor.src_ip",   value: "fd12:3456:142::/64" }
       - { key: "firewall.rule_allow_icmpv6_ping_tor.dest_ip",  value: "fd12:3456:142::1" }
-      - { key: "firewall.rule_allow_icmpv6_ping_tor.family",   value: "ipv6" }
+
+      # allow forwarding for exceptions
+      - { key: "firewall.rule_forwarding_exceptions_tor",      value: "rule" }
+      - { key: "firewall.rule_forwarding_exceptions_tor.name",      value: "ansible_forwarding_exceptions_tor" }
+      - { key: "firewall.rule_forwarding_exceptions_tor.src",       value: "tor" }
+      - { key: "firewall.rule_forwarding_exceptions_tor.dest",       value: "wan" }
+      - { key: "firewall.rule_forwarding_exceptions_tor.proto",     value: "tcp" }
+      - { key: "firewall.rule_forwarding_exceptions_tor.dest_port", value: "80 443 993 587 465" }
+      - { key: "firewall.rule_forwarding_exceptions_tor.family", value: "ipv4" }
+      - { key: "firewall.rule_forwarding_exceptions_tor.ipset", value: "tor_whitelist" }
+      - { key: "firewall.rule_forwarding_exceptions_tor.target",    value: "ACCEPT" }
+
+      ## Allow-DHCPv6-TORLAN
+      #- { key: "firewall.rule_allow_dhcpv6_tor",      value: "rule" }
+      #- { key: "firewall.rule_allow_dhcpv6_tor.name", value: "ansible_allow_dhcpv6_tor" }
+      #- { key: "firewall.rule_allow_dhcpv6_tor.src",  value: "tor" }
+      #- { key: "firewall.rule_allow_dhcpv6_tor.proto",value: "udp" }
+      #- { key: "firewall.rule_allow_dhcpv6_tor.dest_port", value: "546" }  # DHCPv6 Client-Port
+      #- { key: "firewall.rule_allow_dhcpv6_tor.src_ip",   value: "fd12:3456:142::/64" }
+      #- { key: "firewall.rule_allow_dhcpv6_tor.dest_ip",  value: "fd12:3456:142::1" }
+      #- { key: "firewall.rule_allow_dhcpv6_tor.family",   value: "ipv6" }
+      #- { key: "firewall.rule_allow_dhcpv6_tor.target",   value: "ACCEPT" }
+
+      ## Allow-DNSv6-TORLAN  
+      #- { key: "firewall.rule_allow_dnsv6_tor",      value: "rule" }
+      #- { key: "firewall.rule_allow_dnsv6_tor.name", value: "ansible_allow_dnsv6_tor" }
+      #- { key: "firewall.rule_allow_dnsv6_tor.src",  value: "tor" }
+      #- { key: "firewall.rule_allow_dnsv6_tor.proto",value: "udp" }
+      #- { key: "firewall.rule_allow_dnsv6_tor.dest_port", value: "53" }
+      #- { key: "firewall.rule_allow_dnsv6_tor.src_ip",   value: "fd12:3456:142::/64" }
+      #- { key: "firewall.rule_allow_dnsv6_tor.dest_ip",  value: "fd12:3456:142::1" }
+      #- { key: "firewall.rule_allow_dnsv6_tor.family",   value: "ipv6" }
+      #- { key: "firewall.rule_allow_dnsv6_tor.target",   value: "ACCEPT" }
 
       # allow tor proxy access
       - { key: "firewall.rule_allow_tor_proxy",    value: "rule" }
@@ -366,6 +389,12 @@
         grep -Fq "$cronjob" /etc/crontabs/root || echo "$cronjob" >>/etc/crontabs/root
       changed_when: false
 
+    - name: write, run and create cronjob /etc/scripts/firewall_port_forwards_from_wan_to_newzone.sh
+      raw: |
+        /etc/scripts/firewall_port_forwards_from_wan_to_newzone.sh tor
+        cronjob="1 5 * * *   /etc/scripts/firewall_port_forwards_from_wan_to_newzone.sh tor"
+        grep -Fq "$cronjob" /etc/crontabs/root || echo "$cronjob" >>/etc/crontabs/root
+      changed_when: false        
 
     - name: write /etc/nftables.d/10-tor_routing.sh
       raw: |
@@ -410,7 +439,7 @@
 
         # redirect ping
         nft add rule inet fw4 dstnat_tor iifname "br-tor" ip protocol icmp icmp type echo-request dnat to 192.168.142.1
-        nft add rule inet fw4 dstnat_tor iifname "br-tor" ip6 nexthdr icmpv6 icmpv6 type echo-request dnat to [::1]
+        nft add rule inet fw4 dstnat_tor iifname "br-tor" ip6 nexthdr icmpv6 icmpv6 type echo-request dnat to "[::1]"
 
         # do not allow tor in tor
         nft add rule inet fw4 dstnat_tor iifname "br-tor" ip protocol tcp ip daddr @tor_ipv4 log prefix \"TOR_ROUTING_IPV4_DROP: \" drop
@@ -443,5 +472,6 @@
             - "/etc/init.d/privoxy restart"
             - "/etc/init.d/firewall reload"
             - "/etc/init.d/dnsmasq restart"
+            - "/etc/init.d/odhcpd restart"
           when: uci_set_result.changed
 
