@@ -172,17 +172,19 @@
         content: |
           [Unit]
           Description=Kodi Media Center Standalone
-          After=graphical.target network-online.target
-          Wants=network-online.target
+          After=systemd-user-sessions.service
           Conflicts=lightdm.service
-          
+
           [Service]
           User=user
           Group=user
-          Type=simple
+          Type=exec
+          TTYPath=/dev/tty7
+          StandardInput=tty
+          StandardOutput=journal
           ExecStart=/usr/bin/kodi --standalone -fs
-          Restart=no
-          
+          Restart=on-failure
+
           [Install]
           WantedBy=multi-user.target
 
