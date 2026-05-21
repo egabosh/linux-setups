@@ -183,7 +183,6 @@
           StandardInput=tty
           StandardOutput=journal
           ExecStart=/usr/bin/kodi --standalone -fs
-          Restart=on-failure
 
           [Install]
           WantedBy=multi-user.target
