@@ -70,8 +70,8 @@
             secret: "{{session_secret.stdout}}"
             name: auth.{{inventory_hostname}}_session
             same_site: lax
-            expiration: 1h
-            inactivity: 15m
+            expiration: 16h
+            inactivity: 4h
             remember_me: 1M
             cookies:
               - domain: "{{inventory_hostname}}"
