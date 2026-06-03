@@ -11,6 +11,10 @@
 
 # after installation (if you want to use my setup)
 boot the new installed linux mint system
+## deactivate optional DoHoT
+```
+date | sudo tee /etc/dontusedohot
+```
 ## set your domainname and your target server if you want to use x11vnc with SSH
 ```
 # domain for the system
