@@ -937,6 +937,15 @@
         state: present
         backup: yes
 
+    - name: no systemd Core Dumps
+      copy:
+        dest: /etc/systemd/coredump.conf.d/disable.conf
+        content: |
+          [Coredump]
+          Storage=none
+          ProcessSizeMax=0
+      notify: reload systemd
+
 
   handlers:
 
@@ -963,4 +972,7 @@
         name: ssh
         state: restarted
 
+    - name: reload systemd
+      systemd:
+        daemon_reload: yes
 
