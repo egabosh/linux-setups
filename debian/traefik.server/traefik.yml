@@ -395,6 +395,20 @@
         interface: br-traefik
         direction: in
 
+    - name: Install logrotate for Traefik access log
+      ansible.builtin.copy:
+        dest: /etc/logrotate.d/traefik
+        mode: '0644' 
+        content: |
+          /home/docker/traefik/log/access.log {
+              daily
+              rotate 7
+              compress
+              delaycompress
+              missingok
+              notifempty
+              copytruncate
+          }
 
   handlers:
 
