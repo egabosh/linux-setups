@@ -1,0 +1,192 @@
+---
+- hosts: all
+  gather_facts: false
+  vars:
+    ai_mac: "8c:dc:d4:32:6d:ba"
+    ai_host: "ai.lan"
+    idle_timeout_minutes: 15
+
+  tasks:
+
+    - name: Install wakeonlan
+      ansible.builtin.apt:
+        name: wakeonlan
+        state: present
+
+    - name: Create AI WoL hosts file (populated by app playbooks)
+      ansible.builtin.copy:
+        dest: /usr/local/etc/ai-wol-hosts.txt
+        mode: '0644'
+        content: |
+          # AI hostnames that trigger WoL – one per line
+          # Populated by openwebui.yml, opencode playbook, etc.
+        force: false
+
+    - name: Warn if SSH key auth fails
+      ansible.builtin.shell: |
+        ssh -o StrictHostKeyChecking=no -o BatchMode=yes -o ConnectTimeout=3 root@{{ ai_host }} "id" 2>/dev/null || \
+        echo "NEED_SSH_KEY"
+      register: ssh_check
+      changed_when: false
+
+
+    - name: Print SSH key setup instructions if needed
+      ansible.builtin.debug:
+        msg:
+          - "copy ssh-key to {{ ai_host }}:"
+          - "  ssh-copy-id root@{{ ai_host }}"
+          - ""
+          - "Then rerun playbook."
+      when: "'NEED_SSH_KEY' in ssh_check.stdout"
+
+    - name: Create WoL tail script
+      ansible.builtin.copy:
+        dest: /usr/local/bin/wol-watch-tail.sh
+        mode: '0755'
+        content: |
+          #!/bin/bash
+          # Tail Traefik access.log, WoL on request to any host in /usr/local/etc/ai-wol-hosts.txt.
+          HOSTS_FILE="/usr/local/etc/ai-wol-hosts.txt"
+          LOG="/home/docker/traefik/log/access.log"
+          MAC="{{ ai_mac }}"
+          HOST="{{ ai_host }}"
+          PINGFILE=/tmp/ai_last_ping
+          PING_INTERVAL=10
+
+          . /etc/bash/gaboshlib.include
+
+          PATTERN=$(sed '/^#/d; /^$/d' "$HOSTS_FILE" | paste -sd '|' | sed 's/\./\\&/g')
+          [ -z "$PATTERN" ] && exit 1
+
+          exec tail -F "$LOG" 2>/dev/null \
+            | grep -a --line-buffered -E '"RequestAddr":"('"$PATTERN"')"' \
+            | grep -a -E -v 'ClientAddr":"192.168.41.1' \
+            | while read -r line
+            do
+
+              # rate-limit ping to once per PING_INTERVAL seconds
+              if [ -f "$PINGFILE" ]
+              then
+                age=$(( $EPOCHSECONDS - $(cat "$PINGFILE") ))
+                [[ $age -lt $PING_INTERVAL ]] && continue
+              fi
+              echo $EPOCHSECONDS >"$PINGFILE"
+
+              if ping -c1 -W2 "$HOST" &>/dev/null
+              then
+                g_echo_note "$HOST pingable - no WoL"
+                PING_INTERVAL=10
+                continue
+              fi
+
+              PING_INTERVAL=2
+              host=$(echo "$line" | sed 's/.*"RequestAddr":"\([^"]*\)".*/\1/')
+              g_echo "WoL triggered by $host ($HOST down)"
+              wakeonlan -i 255.255.255.255 "$MAC" &>/dev/null
+            done
+
+    - name: Create wol-watch-tail systemd service
+      ansible.builtin.copy:
+        dest: /etc/systemd/system/wol-watch-tail.service
+        mode: '0644'
+        content: |
+          [Unit]
+          Description=WoL trigger – tail Traefik access.log
+          After=network.target
+          StartLimitIntervalSec=0
+
+          [Service]
+          Type=simple
+          ExecStart=/usr/local/bin/wol-watch-tail.sh
+          Restart=always
+          RestartSec=10
+          TimeoutStopSec=10
+          KillMode=mixed
+          KillSignal=SIGTERM
+          SendSIGHUP=no
+
+          [Install]
+          WantedBy=multi-user.target
+
+    - name: Enable + start tail service
+      ansible.builtin.systemd:
+        name: wol-watch-tail
+        state: started
+        enabled: true
+        daemon_reload: true
+
+    - name: Create idle-check script
+      ansible.builtin.copy:
+        dest: /usr/local/bin/wol-watch-idle.sh
+        mode: '0755'
+        content: |
+          #!/bin/bash
+          # Suspend host when no request for >15min. Runs in a loop every 5min.
+          HOSTS_FILE="/usr/local/etc/ai-wol-hosts.txt"
+          LOG="/home/docker/traefik/log/access.log"
+          HOST="{{ ai_host }}"
+          IDLE_TIMEOUT={{ idle_timeout_minutes * 60 }}
+          LOOP_INTERVAL=300
+
+          . /etc/bash/gaboshlib.include
+
+          PATTERN=$(sed '/^#/d; /^$/d' "$HOSTS_FILE" | paste -sd '|' | sed 's/\./\\&/g')
+          [ -z "$PATTERN" ] && exit 1
+
+          while true
+          do
+            sleep $LOOP_INTERVAL
+
+            last=$(grep -a -E '"RequestAddr":"('"$PATTERN"')"' "$LOG" 2>/dev/null \
+              | grep -a -E -v 'ClientAddr":"192.168.41.1' \
+              | tail -1 \
+              | sed 's/.*"StartLocal":"\([^"]*\)".*/\1/')
+            if [ -n "$last" ]
+            then
+              last_epoch=$(date -d "$(echo "$last" | sed 's/T/ /; s/+.*//')" +%s 2>/dev/null)
+              now=$EPOCHSECONDS
+              idle=$(( now - last_epoch ))
+            else
+              # make lower / suspend if no last log entry
+              idle=$(( IDLE_TIMEOUT - 1 ))
+            fi
+            
+            if [ "$idle" -ge "$IDLE_TIMEOUT" ] 
+            then
+              ping -c1 -W2 "$HOST" &>/dev/null || continue
+              g_echo_warn "$HOST idle ${idle}s – suspending via SSH"
+              ssh -o StrictHostKeyChecking=no -o ConnectTimeout=5 -o ServerAliveInterval=3 -o ServerAliveCountMax=2 -o BatchMode=yes root@"$HOST" "systemctl suspend" &>/dev/null
+            else
+              g_echo "IDLE $idle < IDLE_TIMEOUT $IDLE_TIMEOUT"
+            fi
+          done
+
+    - name: Create idle systemd service
+      ansible.builtin.copy:
+        dest: /etc/systemd/system/wol-watch-idle.service
+        mode: '0644'
+        content: |
+          [Unit]
+          Description=WoL idle suspend – check every 5min
+          After=network.target
+
+          [Service]
+          Type=simple
+          ExecStart=/usr/local/bin/wol-watch-idle.sh
+          Restart=always
+          RestartSec=10
+          TimeoutStopSec=10
+          KillMode=mixed
+          KillSignal=SIGTERM
+          SendSIGHUP=no
+
+          [Install]
+          WantedBy=multi-user.target
+
+    - name: Enable + start idle service
+      ansible.builtin.systemd:
+        name: wol-watch-idle
+        state: started
+        enabled: true
+        daemon_reload: true
+
