@@ -425,6 +425,13 @@
       register: uci_set_result_ips
       changed_when: "not 'unchanged' in uci_set_result_ips.stdout"
 
+    - name: restart asterisk on new ip
+      raw: |
+        cat << 'EOF' > /etc/hotplug.d/iface/99-asterisk
+        [ "$INTERFACE" = "wan" ] && [ "$ACTION" = "ifup" ] && /etc/init.d/asterisk restart
+        EOF
+        chmod 755 /etc/hotplug.d/iface/99-asterisk
+      changed_when: false
 
     - name: start and enable asterisk
       raw: |
