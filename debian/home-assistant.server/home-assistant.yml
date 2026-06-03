@@ -319,12 +319,14 @@
         chdir: /home/docker/home-assistant.{{inventory_hostname}}
         creates: /home/docker/home-assistant.{{inventory_hostname}}/home-assistant.init.log
 
-    #- name: Matter-Server TCP ports
-    #  ufw:
-    #    rule: allow
-    #    port: 5580
-    #    proto: tcp
-    
+    - name: Allow port 8123/tcp on iot0 interface for healthchecks for example for shelly switches
+      community.general.ufw:
+        rule: allow
+        port: '8123'
+        proto: tcp
+        interface: iot0
+        direction: in
+
     - name: Matter UDP ports
       ufw:
         rule: allow
@@ -332,16 +334,8 @@
         proto: udp
       loop:
         - 5353  # mDNS
-    #    - 5540  # Matter Discovery
-    
-    #- name: allow multicast for IOT net (192.168.143.0/24)
-    #  ufw:
-    #    rule: allow
-    #    from: 192.168.143.0/24
-    #    port: 5353
-    #    proto: udp
   
-  
+
   handlers:
     - name: run genpw.sh
       ansible.builtin.shell: ./genpw.sh
