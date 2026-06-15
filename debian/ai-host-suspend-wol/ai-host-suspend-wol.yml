@@ -60,7 +60,7 @@
 
           exec tail -F "$LOG" 2>/dev/null \
             | grep -a --line-buffered -E '"RequestAddr":"('"$PATTERN"')"' \
-            | grep -a -E -v 'ClientAddr":"192.168.41.1' \
+            | grep -a -E -v 'ClientAddr":"192.168.41.1|RequestPath":"/_app/version.json|RequestPath":"/"|directory=|/global/|/provider|/path|/project' \
             | while read -r line
             do
 
@@ -84,6 +84,8 @@
               g_echo "WoL triggered by $host ($HOST down)"
               wakeonlan -i 255.255.255.255 "$MAC" &>/dev/null
             done
+      notify:
+        - restart wol services
 
     - name: Create wol-watch-tail systemd service
       ansible.builtin.copy:
@@ -107,6 +109,8 @@
 
           [Install]
           WantedBy=multi-user.target
+      notify:
+        - restart wol services
 
     - name: Enable + start tail service
       ansible.builtin.systemd:
@@ -138,7 +142,7 @@
             sleep $LOOP_INTERVAL
 
             last=$(grep -a -E '"RequestAddr":"('"$PATTERN"')"' "$LOG" 2>/dev/null \
-              | grep -a -E -v 'ClientAddr":"192.168.41.1' \
+              | grep -a -E -v 'ClientAddr":"192.168.41.1|RequestPath":"/_app/version.json|RequestPath":"/"|directory=|/global/|/provider|/path|/project' \
               | tail -1 \
               | sed 's/.*"StartLocal":"\([^"]*\)".*/\1/')
             if [ -n "$last" ]
@@ -153,13 +157,29 @@
             
             if [ "$idle" -ge "$IDLE_TIMEOUT" ] 
             then
+
               ping -c1 -W2 "$HOST" &>/dev/null || continue
+
+              if ssh -o StrictHostKeyChecking=no -o ConnectTimeout=5 -o ServerAliveInterval=3 -o ServerAliveCountMax=2 -o BatchMode=yes $HOST ss -tnap | egrep -q '^ESTAB .*:8' 
+              then
+                g_echo_note "ai seems to be still active"
+                continue
+              fi
+
+              if ssh -o StrictHostKeyChecking=no -o ConnectTimeout=5 -o ServerAliveInterval=3 -o ServerAliveCountMax=2 -o BatchMode=yes $HOST ps ax | grep -v grep | grep -q 'ffmpeg'
+              then
+                g_echo_note "ffmpeg seems to be still active"
+                continue
+              fi
+
               g_echo_warn "$HOST idle ${idle}s – suspending via SSH"
               ssh -o StrictHostKeyChecking=no -o ConnectTimeout=5 -o ServerAliveInterval=3 -o ServerAliveCountMax=2 -o BatchMode=yes root@"$HOST" "systemctl suspend" &>/dev/null
             else
               g_echo "IDLE $idle < IDLE_TIMEOUT $IDLE_TIMEOUT"
             fi
           done
+      notify:
+        - restart wol services
 
     - name: Create idle systemd service
       ansible.builtin.copy:
@@ -182,6 +202,8 @@
 
           [Install]
           WantedBy=multi-user.target
+      notify:
+        - restart wol services
 
     - name: Enable + start idle service
       ansible.builtin.systemd:
@@ -189,4 +211,15 @@
         state: started
         enabled: true
         daemon_reload: true
+
+  handlers:
+    - name: restart wol services
+      ansible.builtin.systemd:
+        daemon_reload: true
+        name: "{{ item }}"
+        state: restarted
+        enabled: true
+      loop:
+        - wol-watch-tail
+        - wol-watch-idle
 
