@@ -20,18 +20,36 @@ Nutzung auf einene Gefahr!!! Nur mit Enter/Return fortfahren wenn dieses Skript 
 
 whoami | grep -q ^root$ || read x
 
-# Check for using DoHoT
-if [ -s /etc/dnscrypt-proxy/blocked-names.txt ]
+
+### Check for using DoHoT
+dotot=1
+if [[ -s /etc/bash/gaboshlib.include ]] 
 then
-  if [ -s /etc/dontusedohot ]
+  . /etc/bash/gaboshlib.include
+  if ! g_check_tor 
   then
-    if [ -s /etc/systemd/resolved.conf.d/DoHoT.conf ] 
-    then
-      sudo rm -f /etc/systemd/resolved.conf.d/DoHoT.conf 
-      sudo systemctl restart systemd-resolved.service
-    fi
+    echo "=== Tor unreachable -> no dohot"
+    unset dohot
+  fi
+else
+  echo "===  no gaboshlib to check tor -> dont use dohot"
+  unset dohot
+fi
+
+# manual deactivated?
+[ -s /etc/dontusedohot ] && unset dohot
+
+# deactivate dohot?
+if [ -z "$dohot" ]
+then
+  if [ -s /etc/systemd/resolved.conf.d/DoHoT.conf ] 
+  then
+    echo "=== Deactivating DoHoT"
+    sudo rm -f /etc/systemd/resolved.conf.d/DoHoT.conf 
+    sudo systemctl restart systemd-resolved.service
   fi
 fi
+
 
 # identify default user
 defaultuser=$(getent passwd 1000 | cut -d: -f1)
