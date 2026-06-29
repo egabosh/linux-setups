@@ -49,10 +49,14 @@
               max_lifetime: 180d
             allowed_lifetime_min: 30d
             allowed_lifetime_max: 180d
+            #purge_jobs:
+            #  - longest_max_lifetime: 3d
+            #    interval: 12h
+            #  - shortest_max_lifetime: 3d
+            #    interval: 1d
             purge_jobs:
-              - longest_max_lifetime: 3d
-                interval: 12h
-              - shortest_max_lifetime: 3d
+              - shortest_max_lifetime: 30d
+                longest_max_lifetime: 180d
                 interval: 1d
           federation_ip_range_blacklist:
             - '127.0.0.0/8'
@@ -313,7 +317,7 @@
               "default_theme": "dark",
               "default_device_display_name" : "Matrix",
               "room_directory": {
-                  "servers": ["matrix.{{inventory_hostname}}", "matrix.org"]
+                  "servers": ["matrix.{{inventory_hostname}}"]
               },
               "enable_presence_by_hs_url": {
                   "https://matrix.org": false,
@@ -412,7 +416,8 @@
             matrix.{{inventory_hostname}}--db:
               image: docker.io/postgres:15
               restart: unless-stopped
-              command: postgres -c wal_level=minimal -c max_wal_size=100MB -c max_wal_senders=0
+              #command: postgres -c wal_level=minimal -c max_wal_size=100MB -c max_wal_senders=0
+              command: postgres -c wal_level=minimal -c max_wal_size=100MB -c max_wal_senders=0 -c shared_buffers=256MB -c effective_cache_size=768MB -c maintenance_work_mem=256MB -c work_mem=8MB -c autovacuum_vacuum_scale_factor=0.05 -c autovacuum_analyze_scale_factor=0.02
               volumes:
                 - ./matrixdb-data:/var/lib/postgresql/data
                 - /etc/localtime:/etc/localtime:ro
