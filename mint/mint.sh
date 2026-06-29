@@ -26,28 +26,7 @@ dotot=1
 if [[ -s /etc/bash/gaboshlib.include ]] 
 then
   . /etc/bash/gaboshlib.include
-  if ! g_check_tor 
-  then
-    echo "=== Tor unreachable -> no dohot"
-    unset dohot
-  fi
-else
-  echo "===  no gaboshlib to check tor -> dont use dohot"
-  unset dohot
-fi
-
-# manual deactivated?
-[ -s /etc/dontusedohot ] && unset dohot
-
-# deactivate dohot?
-if [ -z "$dohot" ]
-then
-  if [ -s /etc/systemd/resolved.conf.d/DoHoT.conf ] 
-  then
-    echo "=== Deactivating DoHoT"
-    sudo rm -f /etc/systemd/resolved.conf.d/DoHoT.conf 
-    sudo systemctl restart systemd-resolved.service
-  fi
+  g_check_fix_dns_stack
 fi
 
 
