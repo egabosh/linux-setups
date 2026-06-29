@@ -3,69 +3,10 @@
   hosts: all
   tasks:
 
-    - name: Install Basic Packages
+    - name: Install dosbox for retrogmain in kodi
       apt:
         name:
-          # share desk
-          - x11vnc
-          # tools for android-smartphones/LineageOS
-          - heimdall-flash
-          - adb
-          - fastboot
-          - mkbootimg
-          # desktop specific
-          - cinnamon-desktop-environment
-          - cinnamon-l10n
-          - gnome-terminal
-          - dconf-cli
-          - dphys-swapfile
-          - tsdecrypt
-          - x264
-          - x265
-          - flatpak
-          - ttf-mscorefonts-installer
-          - fonts-terminus
-          - mint-y-icons
-          # useful other stuff
-          - pwgen
-          - arj
-          - p7zip
-          - unace
-          - unadf
-          - bvi
-          - fdupes
-          - debootstrap
-          - geoip-bin
-          - sshfs
-          - speedtest-cli
-          - gnome-characters
-          - blueman
-          # dconf-gui
-          - dconf-editor
-          # Media
-          - vlc
-          - gthumb
-          - mediainfo-gui
-          - easytag
-          - audacity
-          - asunder
-          - mediathekview
-          - audacious
-          - guvcview
-          - easyeffects
-          - calf-plugins
-          # retro
           - dosbox
-          # brennen
-          - brasero
-          # misc
-          - gpodder
-          - wireguard
-          - wireguard-tools
-          - tinyproxy
-          - hardinfo
-          - rpi-imager
-          - redshift-gtk
         update_cache: yes
         install_recommends: no
 
@@ -137,33 +78,6 @@
           # Kodi Optimizations (reduces latency)
           gpu_mem=256
           disable_fw_kms_setup=1
-
-    - name: lightdm config dir
-      file:
-        path: /etc/lightdm
-        state: directory
-        owner: root
-        group: root
-        mode: '0755'
-
-    - name: lightdm config
-      copy:
-        dest: /etc/lightdm/lightdm.conf
-        content: |
-          [Seat:*]
-          autologin-user=user
-          autologin-user-timeout=0
-          user-session=cinnamon
-          greeter-session=lightdm-gtk-greeter
-          greeter-hide-users=false
-          greeter-show-manual-login=true
-          allow-guest=false
-        backup: yes
-
-    - name: Disable lightdm
-      ansible.builtin.systemd:
-        name: lightdm.service
-        enabled: false
 
     # 2. Kodi Standalone Service
     - name: Kodi Standalone Service
