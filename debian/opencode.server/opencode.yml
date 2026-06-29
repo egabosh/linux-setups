@@ -107,6 +107,19 @@
         state: directory
         mode: '0550'
 
+    - name: Create AGENTS.md if not exists
+      copy:
+        content: |
+          # Coding Standards
+
+          ## General
+          - All comments and variable names are in English
+          - Use gaboshlib (/etc/bash/gaboshlib) whenever sensible and available
+          - Use Ansible playbooks for installations and configurations by default
+        dest: "/home/docker/opencode.{{inventory_hostname}}/opencode-config/AGENTS.md"
+        mode: "0644"
+        force: false
+
     - name: /home/docker/opencode.{{inventory_hostname}}/opencode-config/opencode.json
       copy:
         content: |
@@ -127,7 +140,10 @@
               }
             },
             "model": "ai/llamacpp-default",
-            "shell": "/bin/bash"
+            "shell": "/bin/bash",
+            "instructions": [
+              "AGENTS.md"
+            ]
           }
         dest: /home/docker/opencode.{{inventory_hostname}}/opencode-config/opencode.json
         mode: 0440
