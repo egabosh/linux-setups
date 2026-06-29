@@ -151,8 +151,8 @@
               now=$EPOCHSECONDS
               idle=$(( now - last_epoch ))
             else
-              # make lower / suspend if no last log entry
-              idle=$(( IDLE_TIMEOUT - 1 ))
+              # make higher / suspend if no last log entry
+              idle=$(( IDLE_TIMEOUT + 1 ))
             fi
             
             if [ "$idle" -ge "$IDLE_TIMEOUT" ] 
