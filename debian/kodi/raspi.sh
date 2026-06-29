@@ -49,6 +49,7 @@ export PLAYBOOKS="debian/basics/basics.yml
 debian/basics/localization-de.yml
 https://raw.githubusercontent.com/egabosh/gtc-rename/refs/heads/main/gtc-rename.yml 
 https://raw.githubusercontent.com/egabosh/gtc-crypt/refs/heads/main/gtc-crypt.yml
+debian/raspberry/raspberry.yml
 debian/firewall/firewall.yml
 debian/autoupdate/autoupdate.yml
 debian/backup/backup.yml
