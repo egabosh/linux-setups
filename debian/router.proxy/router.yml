@@ -36,7 +36,7 @@
             . router-env
 
             echo $(htpasswd -nb $USER $PASSWORD) >providers/router.usersfile
-            defaultgw=$(ip route | awk '/default/ { print $3 }')
+            defaultgw=$(ip route | awk '/default/ { print $3 }' | head -n1)
 
             echo "
           http:
