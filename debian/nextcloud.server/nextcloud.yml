@@ -470,9 +470,7 @@
           docker compose exec -T -u www-data nextcloud.{{inventory_hostname}} ./occ dav:sync-birthday-calendar
           docker compose exec -T -u www-data nextcloud.{{inventory_hostname}} ./occ trashbin:cleanup --all-users
           docker compose exec -T -u www-data nextcloud.{{inventory_hostname}} ./occ files:cleanup
-          docker compose exec -T -u www-data nextcloud.{{inventory_hostname}} ./occ files:scan --all --generate-metadata --home-only --no-interaction -q
-          # maps:scan-photos replaced by "occ files:scan --generate-metadata"
-          #docker compose exec -T -u www-data nextcloud.{{inventory_hostname}} ./occ maps:scan-photos --now
+          docker compose exec -T -u www-data nextcloud.{{inventory_hostname}} ./occ files:scan --all --home-only --no-interaction -q
           docker compose exec -T -u www-data nextcloud.{{inventory_hostname}} ./occ db:convert-filecache-bigint -n
           # define stun/turn server maybe new password
           if [ -s /home/docker/turn.{{inventory_hostname}}/env ]
