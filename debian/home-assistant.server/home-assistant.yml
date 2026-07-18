@@ -19,6 +19,14 @@
         state: directory
         mode: '0750'
 
+    - name: Create /home/docker/home-assistant.{{inventory_hostname}}/ha_pingcheck_data dir
+      ansible.builtin.file:
+        path: /home/docker/home-assistant.{{inventory_hostname}}/ha_pingcheck_data
+        state: directory
+        owner: root
+        group: docker
+        mode: '0755'
+
     - name: Create oidc client secret
       ansible.builtin.shell: |
         /home/docker/authelia.{{inventory_hostname}}/gen-oidc-client-secret.sh /home/docker/home-assistant.{{inventory_hostname}}
@@ -169,6 +177,30 @@
                   --log-level-sdk none
                   --bluetooth-adapter 0
               #privileged: true
+            
+            ha_pingcheck.{{inventory_hostname}}:
+              image: nginx:latest
+              restart: unless-stopped
+              ports:
+                - "8889:80"
+              volumes:
+                - /home/docker/home-assistant.{{inventory_hostname}}/ha_pingcheck_data:/usr/share/nginx/html/pingcheck:ro
+                - /etc/localtime:/etc/localtime:ro
+              networks:
+                - traefik
+              labels:
+                - traefik.enable=true
+                - traefik.http.routers.ha_pingcheck.rule=Host(`ha-health.defiant.dedyn.io`)
+                - traefik.http.routers.ha_pingcheck.entrypoints=https
+                - traefik.http.routers.ha_pingcheck.tls=true
+                - traefik.http.routers.ha_pingcheck.tls.certresolver=letsencrypt
+                - traefik.http.routers.ha_pingcheck.middlewares=secHeaders@file
+                - traefik.http.services.ha_pingcheck.loadbalancer.server.port=80
+                - traefik.docker.network=traefik
+
+          networks:
+            traefik:
+              external: true
         backup: yes
       notify: Restart home-assistant
 
@@ -334,7 +366,107 @@
         proto: udp
       loop:
         - 5353  # mDNS
-  
+    
+
+    ### Pingcheck for IOT Hosts
+    - name: Deploy ha_pingcheck ping loop script
+      ansible.builtin.copy:
+        content: |
+          #!/bin/bash
+          #set -o pipefail
+          HOME=/tmp
+          . /etc/bash/gaboshlib.include
+          DIR="/home/docker/home-assistant.{{inventory_hostname}}/ha_pingcheck_data"
+          ROUTER="router"
+          INTERVAL=2
+
+          g_echo "ha_pingcheck started"
+
+          while true
+          do
+            g_echo "Fetching host list"
+            hosts=$(ssh -o StrictHostKeyChecking=no \
+                        -o BatchMode=yes \
+                        -o ConnectTimeout=5 \
+                        root@"$ROUTER" \
+                        "uci show dhcp | grep 'name=' | cut -d\"'\" -f2" 2>/dev/null) || true
+
+            [ -n "$hosts" ] || {
+              g_echo "No hosts"
+              sleep "$INTERVAL"
+              continue
+            }
+
+            mkdir -p "$DIR"
+
+            for host in $hosts
+            do
+              [ -z "$host" ] && continue
+
+              start=$(date +%s%N)
+              cat "$DIR/${host}.json" >> "$DIR/${host}-history.json"
+              if ping -c3 -W3 "$host" >/dev/null 2>&1 || { sleep 3; ping -c3 -W3 "$host" >/dev/null 2>&1; }
+              then
+                rtt=$(( ( $(date +%s%N) - start ) / 1000000 ))
+                printf '{"hostname":"%s","status":"up","last_check":"%s","rtt":%d}\n' \
+                  "$host" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$rtt" \
+                  > "$DIR/${host}.json"
+                g_logger "host $host up"
+              else
+                printf '{"hostname":"%s","status":"down","last_check":"%s"}\n' \
+                  "$host" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+                  > "$DIR/${host}.json"
+                g_logger "host $host down"
+              fi
+            done
+
+            sleep "$INTERVAL"
+          done
+        dest: /usr/local/bin/ha_pingcheck
+        owner: root
+        group: root
+        mode: '0755'
+      notify: Restart ha_pingcheck
+
+    - name: Deploy systemd service for ha_pingcheck
+      ansible.builtin.copy:
+        content: |
+          [Unit]
+          Description=HA Ping Check Host Loop
+          After=network.target
+
+          [Service]
+          Type=simple
+          ExecStart=/usr/local/bin/ha_pingcheck
+          Restart=always
+          RestartSec=10
+          StandardOutput=journal
+          StandardError=journal
+
+          [Install]
+          WantedBy=multi-user.target
+        dest: /etc/systemd/system/ha_pingcheck.service
+        owner: root
+        group: root
+        mode: '0644'
+      notify: Restart ha_pingcheck
+
+    - name: Enable and start ha_pingcheck service
+      ansible.builtin.systemd:
+        name: ha_pingcheck
+        state: started
+        enabled: true
+        daemon_reload: true
+      notify: Restart ha_pingcheck
+
+    - name: Allow port 8889/tcp on iot0 interface for ping healthchecks for example for shelly scripts
+      community.general.ufw:
+        rule: allow
+        port: '8889'
+        proto: tcp
+        interface: iot0
+        direction: in
+
 
   handlers:
     - name: run genpw.sh
@@ -355,5 +487,11 @@
       ansible.builtin.shell: docker-compose down && docker-compose up -d
       args:
         chdir: /home/docker/authelia.{{inventory_hostname}}
+
+    - name: Restart ha_pingcheck
+      ansible.builtin.systemd:
+        name: ha_pingcheck
+        state: restarted
+        daemon_reload: true
 
 
