@@ -56,6 +56,7 @@
           - html-xml-utils
           - wget
           - bind9-host
+          - dnsutils
           - python3-pip
           - python3-venv
           - python3-html2text
@@ -936,6 +937,14 @@
         line: '{{ ansible_default_ipv4.address }} {{ ansible_hostname }} {{ inventory_hostname }}'
         state: present
         backup: yes
+
+    - name: Create /etc/systemd/coredump.conf.d dir
+      ansible.builtin.file:
+        path: /etc/systemd/coredump.conf.d
+        owner: root
+        group: root
+        state: directory
+        mode: '0755'
 
     - name: no systemd Core Dumps
       copy:
