@@ -138,6 +138,7 @@
                 - ENABLE_TAGS_GENERATION=false
                 # Auth / OIDC
                 - ENABLE_OAUTH_SIGNUP=true
+                - ENABLE_OAUTH_ROLE_MAPPING=true
                 - ENABLE_API_KEYS=true
                 - OAUTH_MERGE_ACCOUNTS_BY_EMAIL=false
                 - OAUTH_SCOPES=openid profile email groups
@@ -159,9 +160,9 @@
                 # Web Search (SearXNG)
                 - ENABLE_WEB_SEARCH=true
                 - WEB_SEARCH_ENGINE=searxng
-                - WEB_SEARCH_RESULT_COUNT=5
+                - WEB_SEARCH_RESULT_COUNT=3
                 - SEARXNG_QUERY_URL=http://searxng:8080/search?format=json&q=<query>
-                - ENABLE_RAG_LOCAL_WEB_FETCH=true
+                - ENABLE_RAG_LOCAL_WEB_FETCH=false
                 - BYPASS_WEB_SEARCH_WEB_LOADER=true
                 # AI Model Defaults (llama.cpp via OpenAI-compatible API)
                 - OLLAMA_BASE_URL=
@@ -170,8 +171,10 @@
                 - ENABLE_OPENAI_API=true
                 - BYPASS_MODEL_ACCESS_CONTROL=true
                 - DEFAULT_MODEL_METADATA={"capabilities":{"vision":true,"web_search":true,"image_generation":true,"builtin_tools":true}}
-                - DEFAULT_MODEL_PARAMS={"function_calling":"native"}
+                #- DEFAULT_MODEL_PARAMS={"function_calling":"native"}
+                - DEFAULT_MODEL_PARAMS={"function_calling":"native","max_tokens":8192}
                 - DEFAULT_PROMPT_SUGGESTIONS=[]
+                - OPENAI_API_REQUEST_TIMEOUT=180
                 # Image Generation (ComfyUI)
                 - ENABLE_IMAGE_GENERATION=true
                 - IMAGE_GENERATION_ENGINE=comfyui
@@ -384,10 +387,10 @@
         chdir: /home/docker/openwebui.{{ inventory_hostname }}
       changed_when: false
 
-    - name: Set ComfyUI workflows in DB
+    - name: Set ComfyUI workflows in DB (key-value schema)
       ansible.builtin.shell: |
         python3 <<'PYEOF'
-        import json, sqlite3
+        import json, sqlite3, time
 
         DB = "/home/docker/openwebui.{{ inventory_hostname }}/openwebui-data/webui.db"
 
@@ -413,7 +416,7 @@
             "6": {"class_type": "CLIPTextEncode", "inputs": {"clip": ["4", 1], "text": "NEGATIVE_PROMPT"}},
             "7": {"class_type": "CLIPTextEncode", "inputs": {"clip": ["4", 1], "text": "PROMPT"}},
             "8": {"class_type": "SaveImage", "inputs": {"filename_prefix": "ComfyUI", "images": ["5", 0]}},
-            "10": {"class_type": "VAEEncode", "inputs": {"pixels": ["11", 0], "vae": ["4", 2]}},
+            "10": {"class_type": "VAEEncode", "inputs": {"samples": ["11", 0], "vae": ["4", 2]}},
             "11": {"class_type": "LoadImage", "inputs": {"image": ""}},
         }
         gen_nodes = [
@@ -433,43 +436,38 @@
             {"type": "image",           "node_ids": ["11"], "key": "image"},
         ]
 
-        def deep_set(d, path, value):
-            for p in path.split(".")[:-1]:
-                d = d.setdefault(p, {})
-            d[path.split(".")[-1]] = value
-
         db = sqlite3.connect(DB)
         c = db.cursor()
-        c.execute("SELECT data FROM config ORDER BY id DESC LIMIT 1")
-        row = c.fetchone()
-        conf = json.loads(row[0]) if row else {}
+        now = int(time.time())
 
-        deep_set(conf, "ui.prompt_suggestions", [])
+        c.execute("SELECT key FROM config")
+        existing = {row[0] for row in c.fetchall()}
 
-        conf["COMFYUI_WORKFLOW_NODES"] = gen_nodes
-        deep_set(conf, "image_generation.comfyui.workflow", json.dumps(WF))
-        deep_set(conf, "image_generation.comfyui.nodes", gen_nodes)
+        def upsert(key, value):
+            c.execute(
+                "INSERT INTO config (key, value, updated_at) VALUES (?, ?, ?) "
+                "ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at",
+                (key, json.dumps(value) if not isinstance(value, str) else value, now),
+            )
 
-        conf["IMAGES_EDIT_COMFYUI_WORKFLOW_NODES"] = edit_nodes
-        conf["IMAGES_EDIT_COMFYUI_WORKFLOW"] = json.dumps(EDIT_WF)
-        deep_set(conf, "images.edit.comfyui.workflow", json.dumps(EDIT_WF))
-        deep_set(conf, "images.edit.comfyui.nodes", edit_nodes)
+        upsert("COMFYUI_WORKFLOW_NODES", gen_nodes)
+        upsert("image_generation.comfyui.workflow", json.dumps(WF))
+        upsert("image_generation.comfyui.nodes", gen_nodes)
 
-        # Set OpenAI-compatible connection for llama.cpp (only if not already configured)
+        upsert("IMAGES_EDIT_COMFYUI_WORKFLOW_NODES", edit_nodes)
+        upsert("IMAGES_EDIT_COMFYUI_WORKFLOW", json.dumps(EDIT_WF))
+        upsert("images.edit.comfyui.workflow", json.dumps(EDIT_WF))
+        upsert("images.edit.comfyui.nodes", edit_nodes)
+
+        upsert("ui.prompt_suggestions", [])
+
         needs_restart = False
-        if "openai" not in conf:
-            deep_set(conf, "openai.enable", True)
-            deep_set(conf, "openai.api_base_urls", ["http://{{ ai_host }}:8080/v1"])
-            deep_set(conf, "openai.api_keys", [""])
-            deep_set(conf, "openai.api_configs", {})
+        if "openai.enable" not in existing:
+            upsert("openai.enable", True)
+            upsert("openai.api_base_urls", ["http://{{ ai_host }}:8080/v1"])
+            upsert("openai.api_keys", [""])
+            upsert("openai.api_configs", {})
             needs_restart = True
-
-        c.execute(
-            "UPDATE config SET data = ? WHERE id = (SELECT MAX(id) FROM config)",
-            (json.dumps(conf),),
-        )
-        if c.rowcount == 0:
-            c.execute("INSERT INTO config (data, version) VALUES (?, 1)", (json.dumps(conf),))
 
         db.commit()
         db.close()
