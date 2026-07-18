@@ -5,7 +5,7 @@
 
     - name: check if we are in an container env by existing systemd
       stat:
-        path: /usr/bin/systemd
+        path: /lib/systemd/systemd
       register: nocontainer
 
 
