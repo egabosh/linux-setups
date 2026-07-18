@@ -134,16 +134,28 @@
                 },
                 "models": {
                   "llamacpp-default": {
-                    "name": "llamacpp-default"
+                    "name": "llamacpp-default",
+                    "reasoning": true,
+                    "limit": {
+                      "context": 133120,
+                      "output": 32768
+                    },
+                    "parameters": {
+                      "maxTokens": 32768,
+                      "temperature": 0.7,
+                      "topP": 0.8
+                    }
                   }
                 }
               }
             },
             "model": "ai/llamacpp-default",
             "shell": "/bin/bash",
-            "instructions": [
-              "AGENTS.md"
-            ]
+            "instructions": ["AGENTS.md"],
+            "compaction": {
+              "auto": true,
+              "tail_turns": 10
+            }
           }
         dest: /home/docker/opencode.{{inventory_hostname}}/opencode-config/opencode.json
         mode: 0440
