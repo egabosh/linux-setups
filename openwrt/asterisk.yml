@@ -29,7 +29,7 @@
     uci_vars:
       - { key: "asterisk.general.enabled", value: "1" }
  
-      # 1und1-SIP incoming calls
+      # SIP incoming calls
       - { key: "firewall.rule_{{ sip_provider_name }}_sip_incoming",    value: "rule" }
       - { key: "firewall.rule_{{ sip_provider_name }}_sip_incoming.src",     value: "wan" }
       - { key: "firewall.rule_{{ sip_provider_name }}_sip_incoming.target",  value: "ACCEPT" }
@@ -152,7 +152,8 @@
 
         for account in {{ accounts }}
         do
-          account_name=$(echo $account | cut -d: -f1)
+          account_name=$(echo $account | cut -d: -f4)
+          [[ -z "$account_name" ]] && account_name=$(echo $account | cut -d: -f1)
           echo "
         [${account_name}]
         ; Outgoing local/international calls
@@ -185,7 +186,8 @@
         account_id=2
         for account in {{ accounts }}
         do
-          account_name=$(echo $account | cut -d: -f1)
+          account_name=$(echo $account | cut -d: -f4)
+          [[ -z "$account_name" ]] && account_name=$(echo $account | cut -d: -f1)
           account_mail=$(echo $account | cut -d: -f3)
           account_id=$((account_id + 1))
           echo "
@@ -255,7 +257,9 @@
         
         for account in {{ accounts }}
         do
-          account_name=$(echo $account | cut -d: -f1)
+          account_name=$(echo $account | cut -d: -f4)
+          [[ -z "$account_name" ]] && account_name=$(echo $account | cut -d: -f1)
+          account_user=$(echo $account | cut -d: -f1)
           account_pw=$(echo $account | cut -d: -f2)
           echo "
         ; SIP Account for $account_name
@@ -277,7 +281,7 @@
         auth_type = userpass
         realm = {{ sip_server_realm }}
         password = $account_pw
-        username = $account_name
+        username = $account_user
          
         [${account_name}]
         type = aor
@@ -319,7 +323,8 @@
         for account in {{ accounts }}
         do
           account_id=$((account_id + 1))
-          account_name=$(echo $account | cut -d: -f1)
+          account_name=$(echo $account | cut -d: -f4)
+          [[ -z "$account_name" ]] && account_name=$(echo $account | cut -d: -f1)
           for phone_id in 0 1 2 3 4 5 6 7 8 9
           do
             echo "
@@ -387,7 +392,8 @@
         for account in {{ accounts }}
         do
           account_id=$((account_id + 1))
-          account_name=$(echo $account | cut -d: -f1)
+          account_name=$(echo $account | cut -d: -f4)
+          [[ -z "$account_name" ]] && account_name=$(echo $account | cut -d: -f1)
           account_email=$(echo $account | cut -d: -f3 | sed 's/,/|/g')
           echo "${account_id}0 => ,OpenWRT-PBX,${account_email}" >>/etc/asterisk/voicemail.conf
         done
