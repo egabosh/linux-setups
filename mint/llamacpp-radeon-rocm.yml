@@ -17,11 +17,12 @@
     #mmproj_file: "Qwen3.6-27B-mmproj-BF16.gguf"
     #mmproj_url: "https://huggingface.co/llmfan46/Qwen3.6-27B-uncensored-heretic-v2-Native-MTP-Preserved-GGUF/resolve/main/{{ mmproj_file}}"
     model_file: "Qwen3.6-35B-A3B-uncensored-heretic-IQ4_NL.gguf"
+    #model_file: "Qwen3.6-35B-A3B-uncensored-heretic-Q4_K_M.gguf"
     model_url: "https://huggingface.co/jorge-erdb/Qwen3.6-35B-A3B-uncensored-heretic-GGUF/resolve/main/{{ model_file }}"
     mmproj_file: "mmproj-Qwen3.6-35B-A3B-Q6_K.gguf"
     mmproj_url: "https://huggingface.co/batiai/Qwen3.6-35B-A3B-GGUF/resolve/main/{{ mmproj_file }}"
-    context_length: 131072
-    # context_length: 262144
+    context_length: 133120
+    #context_length: 262144
     cache_type: "q4_0"
     ansible_remote_tmp: /opt/tmp/ansible_$$
 
@@ -111,6 +112,7 @@
           Group=llama
 
           # ROCm environment
+          Environment=HSA_ENABLE_SDMA=0
           Environment=HSA_OVERRIDE_GFX_VERSION=11.0.0
           Environment=ROCR_VISIBLE_DEVICES=0
           Environment=HIP_VISIBLE_DEVICES=0
@@ -130,12 +132,19 @@
             --mmproj {{ models_dir }}/{{ mmproj_file }} \
             -c {{ context_length }} \
             -ngl 99 \
-            --cache-type-k q4_0 \
-            --cache-type-v q4_0 \
+            --cache-type-k {{cache_type}} \
+            --cache-type-v {{cache_type}} \
+            --reasoning on \
+            --n-predict 32768 \
+            --reasoning-budget 4096 \
             --port 8080 \
             --host 0.0.0.0 \
+            --parallel 2 \
+            -b 2048 \
+            -ub 256 \
             -lv 2
-
+          
+          # --flash-attn on \
           Restart=on-failure
           RestartSec=10
           StandardOutput=journal
@@ -176,6 +185,7 @@
         rm -rf build/
         cmake -B build \
           -DGGML_HIP=ON \
+          -DGGML_HIP_ROCWMMA_FATTN=ON \    
           -DCMAKE_PREFIX_PATH={{ rocm_path }} \
           -DAMDGPU_TARGETS=gfx1100 \
           -DCMAKE_BUILD_TYPE=Release
