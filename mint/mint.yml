@@ -4,6 +4,13 @@
   gather_facts: yes
   tasks:
 
+    - name: Remove packages
+      apt:
+        name: timeshift
+        state: absent
+        autoremove: yes
+        purge: yes
+
     - name: Install Basic Packages
       apt:
         name:
