@@ -96,10 +96,11 @@
           # Seting up TOR transparent proxy for tor-router
           #VirtualAddrNetwork 10.192.0.0/10
           AutomapHostsOnResolve 1
-          TransPort 0.0.0.0:9040
-          TransPort [::]:9040
-          DNSPort 0.0.0.0:5353
-          DNSPort [::]:5353
+          TransPort 0.0.0.0:9040 IPv4Traffic
+          TransPort [::]:9040 IPv4Traffic IPv6Traffic
+          DNSPort 0.0.0.0:5353 IPv4Traffic
+          DNSPort [::]:5353 IPv4Traffic IPv6Traffic
+          VirtualAddrNetworkIPv6 [FC00::]/7
           # Falls outgping geblockt wird und nur 80/443 geht
           FascistFirewall 1
         backup: yes
@@ -156,6 +157,8 @@
             address 192.168.{{ sn }}.1
             broadcast 192.168.{{ sn }}.255
             netmask 255.255.255.0
+          iface tornet0 inet6 static
+            address fdaa:a192:b168:cd43::1/64
       notify:
       - Restart tornet0
 
@@ -231,6 +234,30 @@
       notify:
       - Restart ufw
 
+    - name: NAT66 redirect for tornet0 to transparent Tor-proxy
+      ansible.builtin.blockinfile:
+        path: /etc/ufw/before6.rules
+        marker: "# {mark} ANSIBLE MANAGED BLOCK for tornet0"
+        insertbefore: BOF
+        block: |
+          *nat
+          :PREROUTING ACCEPT [0:0]
+          :POSTROUTING ACCEPT [0:0]
+          # Never touch NDP/multicast/link-local
+          -A PREROUTING -i tornet0 -d fe80::/10 -j RETURN
+          -A PREROUTING -i tornet0 -d ff00::/8 -j RETURN
+          # DNS via Tor (Tor synthesizes AAAA, serves onion hosts)
+          -A PREROUTING -i tornet0 -s fdaa:a192:b168:cd43::/64 -d fdaa:a192:b168:cd43::1 -p udp --dport 53 -j REDIRECT --to-ports 5353
+          # Redirect all TCP-Connections to transparent Tor-Proxy
+          -A PREROUTING -i tornet0 -s fdaa:a192:b168:cd43::/64 -p tcp --syn -j REDIRECT --to-ports 9040
+          # Redirect all non TCP-Connections into nirvana because Tor only speaks TCP
+          -A PREROUTING -i tornet0 -s fdaa:a192:b168:cd43::/64 ! -p tcp -j DNAT --to ::1
+          COMMIT
+        backup: yes
+      notify:
+       - Reload ufw
+
+
     - name: Allow Routing
       community.general.ufw:
         rule: allow
@@ -299,6 +326,8 @@
           dhcp-option=option:ntp-server,192.168.{{ sn }}.1
           log-queries
           log-dhcp
+          enable-ra
+          dhcp-range=fdaa:a192:b168:cd43::,ra-stateless,ra-names
       notify:
       - Restart dnsmasq-tornet0
 
