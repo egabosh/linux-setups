@@ -263,9 +263,10 @@
         #HashedControlPassword 16:F7222A0CBC254E536056DCBBD27A7D051D68BCF1E9020681C0A3656B84
         # Seting up TOR transparent proxy for tor-router
         #VirtualAddrNetwork 10.192.0.0/10
+        VirtualAddrNetworkIPv6 [FC00::]/7
         AutomapHostsOnResolve 1
-        TransPort 0.0.0.0:9040
-        TransPort [::]:9040
+        TransPort 0.0.0.0:9040 IPv4Traffic
+        TransPort [::]:9040 IPv4Traffic IPv6Traffic
         SafeLogging 0
         ClientUseIPv6 1
         DNSPort 9053
@@ -443,7 +444,7 @@
 
         # do not allow tor in tor
         nft add rule inet fw4 dstnat_tor iifname "br-tor" ip protocol tcp ip daddr @tor_ipv4 log prefix \"TOR_ROUTING_IPV4_DROP: \" drop
-        nft add rule inet fw4 dstnat_tor iifname "br-tor" ip6 nexthdr tcp ip6 daddr @tor_ipv6 log prefix \"TOR_ROUTING_IPV4_DROP: \" drop
+        nft add rule inet fw4 dstnat_tor iifname "br-tor" ip6 nexthdr tcp ip6 daddr @tor_ipv6 log prefix \"TOR_ROUTING_IPV6_DROP: \" drop
 
         # exceptions
         nft list set inet fw4 tor_whitelist >/dev/null 2>&1 && nft add rule inet fw4 dstnat_tor iifname "br-tor" ip protocol tcp ip daddr @tor_whitelist tcp dport 443 accept
