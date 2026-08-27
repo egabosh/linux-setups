@@ -209,7 +209,7 @@
             --host 0.0.0.0 \
             --parallel 2 \
             -b 1024 \
-            -ub 256 \
+            -ub 512 \
             -lv 2
 
           Restart=on-failure
