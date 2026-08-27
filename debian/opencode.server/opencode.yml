@@ -32,7 +32,7 @@
                 - ./projects:/projects:rw
                 - ./opencode-config:/root/.config/opencode:rw
                 - ./opencode-data:/root/.local/share/opencode:rw
-                - ./ssh/:/root/.ssh:ro
+                - ./ssh/:/root/.ssh:rw
               networks:
                 - opencode.{{inventory_hostname}}--network
                 - traefik
@@ -76,7 +76,7 @@
           ENV DEBIAN_FRONTEND=noninteractive
           # opencode and tools
           RUN apt-get update \
-           && apt-get install -y bash curl nodejs git vim htop tree \
+           && apt-get install -y bash curl nodejs git vim htop tree sshpass \
            && rm -rf /var/lib/apt/lists/* \
            && unset VERSION \
            && curl -fsSL https://opencode.ai/install | bash
@@ -137,11 +137,11 @@
                     "name": "llamacpp-default",
                     "reasoning": true,
                     "limit": {
-                      "context": 133120,
-                      "output": 32768
+                      "context": 200704,
+                      "output": 8192
                     },
                     "parameters": {
-                      "maxTokens": 32768,
+                      "maxTokens": 8192,
                       "temperature": 0.7,
                       "topP": 0.8
                     }
