@@ -13,11 +13,12 @@
     service_name: "llama-server"
     rocm_path: "/opt/rocm"
 
-    # Qwen3.8-27B Q3_K_M - bartowski GGUF with MTP support
+    # Qwen3.8-27B IQ3_M - bartowski GGUF with MTP support
     # 27B dense, 262K native context, best local all-rounder (code+knowledge)
-    # VRAM: ~15.7GB model + 1.7GB MTP + 0.9GB mmproj + 0.5GB KV(q4_0@32K) + 2GB overhead = ~20.8GB
-    model_url: "https://huggingface.co/bartowski/Qwen3.8-27B-GGUF/resolve/main/Qwen3.8-27B-Q3_K_M.gguf"
-    model_file: "Qwen3.8-27B-Q3_K_M.gguf"
+    # IQ3_M (importance-weighted) beats Q3_K_M in quality at smaller size (~13.9GB vs 14.6GB)
+    # VRAM: ~13.9GB model + 1.7GB MTP + 0.9GB mmproj + KV(q4_0@128K) + 2GB overhead ~21.9GB
+    model_url: "https://huggingface.co/bartowski/Qwen3.8-27B-GGUF/resolve/main/Qwen3.8-27B-IQ3_M.gguf"
+    model_file: "Qwen3.8-27B-IQ3_M.gguf"
     # MTP (Multi-Token Prediction) draft head for speculative decoding (2-3x faster)
     # Works with any Qwen3.8-27B quant (same architecture)
     mtp_url: "https://huggingface.co/ggml-org/Qwen3.8-27B-GGUF/resolve/main/mtp-Qwen3.8-27B-Q8_0.gguf"
@@ -203,7 +204,7 @@
             --host 0.0.0.0 \
             --parallel 2 \
             -b 1024 \
-            -ub 256 \
+            -ub 512 \
             -lv 2
 
           Restart=on-failure
