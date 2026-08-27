@@ -1,11 +1,12 @@
 ---
-- name: Setup & Update llama.cpp ROCm Server with model
+- name: Setup & Update llama.cpp ROCm Server - Coding Model
   hosts: all
 
   environment:
     TMPDIR: /opt/tmp
 
   vars:
+    # Server configuration
     llama_user: "llama"
     llama_dir: "/opt/llama.cpp"
     models_dir: "/opt/llama-models"
@@ -13,13 +14,31 @@
     service_name: "llama-server"
     rocm_path: "/opt/rocm"
 
-    # Qwen3.6-35B-A3B uncensored heretic - MoE general (uncensored)
-    model_file: "Qwen3.6-35B-A3B-uncensored-heretic-IQ4_NL.gguf"
-    model_url: "https://huggingface.co/jorge-erdb/Qwen3.6-35B-A3B-uncensored-heretic-GGUF/resolve/main/{{ model_file }}"
-    mmproj_file: "mmproj-Qwen3.6-35B-A3B-Q6_K.gguf"
-    mmproj_url: "https://huggingface.co/batiai/Qwen3.6-35B-A3B-GGUF/resolve/main/{{ mmproj_file }}"
-    context_length: 262144
+    # Qwen3.8-27B Q3_K_M - Dense coding model (27.8B params), smaller quant for full GPU offload
+    # Best open-weight coding model: SWE-bench Pro 61.7%, Terminal-Bench 73.0%
+    # VRAM: ~15.7GB model + 1.7GB MTP + 3.1GB KV(q4_0@200K) + 2GB overhead = ~22.5GB - fits 24GB!
+    model_url: "https://huggingface.co/bartowski/Qwen3.8-27B-GGUF/resolve/main/Qwen3.8-27B-Q3_K_M.gguf"
+    model_file: "Qwen3.8-27B-Q3_K_M.gguf"
+
+    # MTP (Multi-Token Prediction) draft head for speculative decoding (2-3x faster)
+    # Works with any Qwen3.8-27B quant (same architecture)
+    mtp_url: "https://huggingface.co/ggml-org/Qwen3.8-27B-GGUF/resolve/main/mtp-Qwen3.8-27B-Q8_0.gguf"
+    mtp_file: "mtp-Qwen3.8-27B-Q8_0.gguf"
+
+    # No vision for coding model
+    mmproj_file: ""
+    mmproj_url: ""
+
+    # Context and cache settings - 200K (fits full SymbiOS repo + 80K conversation)
+    # Qwen3.8 native context: 262,144 tokens
+    # VRAM: ~15.7GB model + 1.7GB MTP + 3.1GB KV(q4_0@200K) + 2GB overhead = ~22.5GB
+    # Fits on 24GB with 1.5GB headroom for full GPU offload (no CPU layers)
+    context_length: 200704
     cache_type: "q4_0"
+
+    # Qwen3.8 needs reasoning budget - 1024 balances speed vs quality for coding
+    reasoning_budget: 1024
+
     ansible_remote_tmp: /opt/tmp/ansible_$$
 
   tasks:
@@ -101,29 +120,30 @@
         url: "{{ model_url }}"
         dest: "{{ models_dir }}/{{ model_file }}"
         mode: "0644"
+        #owner: "{{ llama_user }}"
         timeout: 7200
         force: no
       when: not model_stat.stat.exists
 
-    - name: Check for existing Vision Projector
+    - name: Check for existing MTP draft head
       ansible.builtin.stat:
-        path: "{{ models_dir }}/{{ mmproj_file }}"
-      register: mmproj_stat
+        path: "{{ models_dir }}/{{ mtp_file }}"
+      register: mtp_stat
 
-    - name: Download Vision Projector (if not present)
+    - name: Download MTP draft head (if not present)
       ansible.builtin.get_url:
-        url: "{{ mmproj_url }}"
-        dest: "{{ models_dir }}/{{ mmproj_file }}"
+        url: "{{ mtp_url }}"
+        dest: "{{ models_dir }}/{{ mtp_file }}"
         mode: "0644"
-        timeout: 7200
+        timeout: 3600
         force: no
-      when: not mmproj_stat.stat.exists
+      when: not mtp_stat.stat.exists
 
     - name: Deploy systemd service file
       ansible.builtin.copy:
         content: |
           [Unit]
-          Description=llama.cpp ROCm Inference Server
+          Description=llama.cpp ROCm Inference Server - Coding Model (Qwen3.8-27B)
           After=network.target
 
           [Service]
@@ -139,7 +159,7 @@
           Environment=LD_LIBRARY_PATH={{ rocm_path }}/lib:{{ rocm_path }}/lib64:/usr/lib/x86_64-linux-gnu
           Environment=PATH={{ rocm_path }}/bin:{{ rocm_path }}/llvm/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
-          # HIP/ROCm JIT needs read/write access to /tmp and /var/tmp
+          # HIP/ROCm JIT requires read/write access to /tmp and /var/tmp
           PrivateTmp=false
           ProtectSystem=full
           ProtectHome=read-only
@@ -147,9 +167,10 @@
           # No restrictive privilege or device filters (often block HIP)
           NoNewPrivileges=no
 
+          # Qwen3.8-27B - Dense model for coding (best open-weight SWE-bench)
           ExecStart=/opt/llama.cpp/build/bin/llama-server \
             -m {{ models_dir }}/{{ model_file }} \
-            --mmproj {{ models_dir }}/{{ mmproj_file }} \
+            --spec-draft-model {{ models_dir }}/{{ mtp_file }} \
             -c {{ context_length }} \
             -ngl 99 \
             --no-kv-offload \
@@ -157,13 +178,22 @@
             -cram -1 \
             --cache-type-k {{ cache_type }} \
             --cache-type-v {{ cache_type }} \
+            --flash-attn on \
             --reasoning on \
-            --n-predict 32768 \
-            --reasoning-budget 4096 \
+            --reasoning-budget {{ reasoning_budget }} \
+            --chat-template-kwargs '{"preserve_thinking": true}' \
+            --spec-type draft-mtp \
+            -ngld 99 \
+            --n-predict 8192 \
+            --temp 0.6 \
+            --top-p 0.95 \
+            --top-k 20 \
+            --presence-penalty 0.0 \
+            --repeat-penalty 1.0 \
             --port {{ server_port }} \
             --host 0.0.0.0 \
             --parallel 2 \
-            -b 2048 \
+            -b 1024 \
             -ub 256 \
             -lv 2
 
@@ -190,7 +220,7 @@
         state: started
         daemon_reload: yes
 
-    - name: Allow llama port through UFW
+    - name: Allow coding model port through UFW
       community.general.ufw:
         rule: allow
         port: "{{ server_port }}"

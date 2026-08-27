@@ -1,5 +1,5 @@
 ---
-- name: Setup & Update llama.cpp ROCm Server with model
+- name: Setup & Update llama.cpp ROCm Server - Qwen3.8-27B all-rounder
   hosts: all
 
   environment:
@@ -13,13 +13,29 @@
     service_name: "llama-server"
     rocm_path: "/opt/rocm"
 
-    # Qwen3.6-35B-A3B uncensored heretic - MoE general (uncensored)
-    model_file: "Qwen3.6-35B-A3B-uncensored-heretic-IQ4_NL.gguf"
-    model_url: "https://huggingface.co/jorge-erdb/Qwen3.6-35B-A3B-uncensored-heretic-GGUF/resolve/main/{{ model_file }}"
-    mmproj_file: "mmproj-Qwen3.6-35B-A3B-Q6_K.gguf"
-    mmproj_url: "https://huggingface.co/batiai/Qwen3.6-35B-A3B-GGUF/resolve/main/{{ mmproj_file }}"
-    context_length: 262144
+    # Qwen3.8-27B Q3_K_M - bartowski GGUF with MTP support
+    # 27B dense, 262K native context, best local all-rounder (code+knowledge)
+    # VRAM: ~15.7GB model + 1.7GB MTP + 0.9GB mmproj + 0.5GB KV(q4_0@32K) + 2GB overhead = ~20.8GB
+    model_url: "https://huggingface.co/bartowski/Qwen3.8-27B-GGUF/resolve/main/Qwen3.8-27B-Q3_K_M.gguf"
+    model_file: "Qwen3.8-27B-Q3_K_M.gguf"
+    # MTP (Multi-Token Prediction) draft head for speculative decoding (2-3x faster)
+    # Works with any Qwen3.8-27B quant (same architecture)
+    mtp_url: "https://huggingface.co/ggml-org/Qwen3.8-27B-GGUF/resolve/main/mtp-Qwen3.8-27B-Q8_0.gguf"
+    mtp_file: "mtp-Qwen3.8-27B-Q8_0.gguf"
+    # Vision projector for image/video input (Qwen3.8 supports native vision)
+    mmproj_file: "mmproj-Qwen3.8-27B-bf16.gguf"
+    mmproj_url: "https://huggingface.co/bartowski/Qwen3.8-27B-GGUF/resolve/main/{{ mmproj_file }}"
+
+    # VRAM budget (24GB): ~15.7GB model + 1.7GB MTP + ~0.9GB mmproj + KV(q4_0) + overhead
+    # KV cache on GPU (no --no-kv-offload): ~48KB/token at q4_0
+    # 128K: 15.7+1.7+0.9+6.3+2.0 = 25.6GB peak (vision+128K); text-only ~21.9GB - fits 24GB
+    # 200K would OOM with KV on GPU (KV ~9.6GB); use coding.yml (KV on CPU) for 200K
+    context_length: 131072
     cache_type: "q4_0"
+
+    # Qwen3.8 needs reasoning budget - 1024 balances speed vs quality for general use
+    reasoning_budget: 1024
+
     ansible_remote_tmp: /opt/tmp/ansible_$$
 
   tasks:
@@ -105,6 +121,20 @@
         force: no
       when: not model_stat.stat.exists
 
+    - name: Check for existing MTP draft head
+      ansible.builtin.stat:
+        path: "{{ models_dir }}/{{ mtp_file }}"
+      register: mtp_stat
+
+    - name: Download MTP draft head (if not present)
+      ansible.builtin.get_url:
+        url: "{{ mtp_url }}"
+        dest: "{{ models_dir }}/{{ mtp_file }}"
+        mode: "0644"
+        timeout: 3600
+        force: no
+      when: not mtp_stat.stat.exists
+
     - name: Check for existing Vision Projector
       ansible.builtin.stat:
         path: "{{ models_dir }}/{{ mmproj_file }}"
@@ -117,7 +147,7 @@
         mode: "0644"
         timeout: 7200
         force: no
-      when: not mmproj_stat.stat.exists
+      when: not mmproj_stat.stat.exists and mmproj_file | length > 0
 
     - name: Deploy systemd service file
       ansible.builtin.copy:
@@ -149,21 +179,30 @@
 
           ExecStart=/opt/llama.cpp/build/bin/llama-server \
             -m {{ models_dir }}/{{ model_file }} \
+            --spec-draft-model {{ models_dir }}/{{ mtp_file }} \
             --mmproj {{ models_dir }}/{{ mmproj_file }} \
             -c {{ context_length }} \
             -ngl 99 \
-            --no-kv-offload \
             --kv-unified \
             -cram -1 \
             --cache-type-k {{ cache_type }} \
             --cache-type-v {{ cache_type }} \
+            --flash-attn on \
             --reasoning on \
-            --n-predict 32768 \
-            --reasoning-budget 4096 \
+            --reasoning-budget {{ reasoning_budget }} \
+            --chat-template-kwargs '{"preserve_thinking": true}' \
+            --spec-type draft-mtp \
+            -ngld 99 \
+            --n-predict 8192 \
+            --temp 0.6 \
+            --top-p 0.95 \
+            --top-k 20 \
+            --presence-penalty 0.0 \
+            --repeat-penalty 1.0 \
             --port {{ server_port }} \
             --host 0.0.0.0 \
             --parallel 2 \
-            -b 2048 \
+            -b 1024 \
             -ub 256 \
             -lv 2
 
