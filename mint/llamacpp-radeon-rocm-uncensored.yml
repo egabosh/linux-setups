@@ -60,6 +60,7 @@
           - wget
           - curl
           - pkg-config
+          - pwgen
           - ufw
         state: present
 
@@ -154,6 +155,29 @@
         force: no
       when: not mmproj_stat.stat.exists and mmproj_file | length > 0
 
+    # API key auth: generated once on the server, referenced by clients (OpenWebUI, opencode)
+    - name: Create llama API key directory
+      ansible.builtin.file:
+        path: /etc/llama-server
+        state: directory
+        owner: root
+        group: "{{ llama_user }}"
+        mode: "0750"
+
+    # Generate a random API key once; persists across model switches so clients keep working
+    - name: Generate llama API key (idempotent)
+      ansible.builtin.shell: |
+        [ -s /etc/llama-server/api-key ] || \
+        printf 'LLAMA_API_KEY=%s\n' "$(pwgen -s 64)" > /etc/llama-server/api-key
+      changed_when: false
+
+    - name: Secure llama API key file
+      ansible.builtin.file:
+        path: /etc/llama-server/api-key
+        owner: root
+        group: "{{ llama_user }}"
+        mode: "0640"
+
     - name: Deploy systemd service file
       ansible.builtin.copy:
         content: |
@@ -173,6 +197,9 @@
           Environment=HIP_VISIBLE_DEVICES=0
           Environment=LD_LIBRARY_PATH={{ rocm_path }}/lib:{{ rocm_path }}/lib64:/usr/lib/x86_64-linux-gnu
           Environment=PATH={{ rocm_path }}/bin:{{ rocm_path }}/llvm/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+          # API key auth: systemd loads the key file and expands it into ExecStart
+          EnvironmentFile=/etc/llama-server/api-key
 
           # HIP/ROCm JIT needs read/write access to /tmp and /var/tmp
           PrivateTmp=false
@@ -199,15 +226,16 @@
             --chat-template-kwargs '{"preserve_thinking": true}' \
             --spec-type draft-mtp \
             -ngld 99 \
-            --n-predict 8192 \
+            --n-predict 32768 \
             --temp 0.7 \
             --top-p 0.8 \
             --top-k 20 \
             --presence-penalty 1.5 \
             --repeat-penalty 1.0 \
+            --api-key ${LLAMA_API_KEY} \
             --port {{ server_port }} \
             --host 0.0.0.0 \
-            --parallel 2 \
+             --parallel 4 \
             -b 1024 \
             -ub 512 \
             -lv 2
