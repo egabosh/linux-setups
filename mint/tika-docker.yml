@@ -1,0 +1,61 @@
+---
+- name: Apache Tika server (Docker container on ai.lan)
+  hosts: all
+  become: yes
+  vars:
+    tika_port: 9998
+    ansible_remote_tmp: /opt/tmp/ansible_$$
+
+  tasks:
+    - name: Create /home/docker/tika.{{inventory_hostname}} dir
+      ansible.builtin.file:
+        path: /home/docker/tika.{{inventory_hostname}}
+        owner: root
+        group: docker
+        state: directory
+        mode: '0770'
+
+    - name: Tika Docker Config
+      ansible.builtin.blockinfile:
+        path: /home/docker/tika.{{inventory_hostname}}/docker-compose.yml
+        create: yes
+        mode: 0440
+        owner: root
+        group: docker
+        marker: "# {mark} ANSIBLE MANAGED BLOCK"
+        block: |
+
+          services:
+            tika:
+              image: apache/tika:latest-full
+              restart: unless-stopped
+              ports:
+                - "{{ tika_port }}:{{ tika_port }}"
+              cap_drop:
+                - ALL
+              cap_add:
+                - CHOWN
+                - SETGID
+                - SETUID
+                - DAC_OVERRIDE
+                - FOWNER
+                - NET_BIND_SERVICE
+              logging:
+                driver: json-file
+                options:
+                  max-size: 1m
+                  max-file: 1
+        backup: yes
+      notify: Restart tika
+
+    - name: UFW allow Tika port
+      community.general.ufw:
+        rule: allow
+        port: "{{ tika_port }}"
+        proto: tcp
+
+  handlers:
+    - name: Restart tika
+      ansible.builtin.shell: docker compose up -d --force-recreate
+      args:
+        chdir: /home/docker/tika.{{inventory_hostname}}
