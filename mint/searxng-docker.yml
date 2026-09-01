@@ -1,0 +1,143 @@
+---
+- name: SearXNG metasearch (Docker container on ai.lan)
+  hosts: all
+  become: yes
+  vars:
+    searxng_port: 8081
+    ansible_remote_tmp: /opt/tmp/ansible_$$
+
+  tasks:
+    - name: Create /home/docker/searxng.{{inventory_hostname}} dir
+      ansible.builtin.file:
+        path: /home/docker/searxng.{{inventory_hostname}}
+        owner: root
+        group: docker
+        state: directory
+        mode: '0770'
+
+    - name: Create searxng data dir
+      ansible.builtin.file:
+        path: /home/docker/searxng.{{inventory_hostname}}/searxng-data
+        owner: root
+        group: docker
+        state: directory
+        mode: '0770'
+
+    - name: Generate searxng secret key
+      ansible.builtin.shell: >
+        [ -s /home/docker/searxng.{{inventory_hostname}}/searxng_secret ] ||
+        detached_pid=$(
+          openssl rand -hex 32 > /home/docker/searxng.{{inventory_hostname}}/searxng_secret
+          echo $!);
+        wait $detached_pid
+      args:
+        executable: /bin/bash
+      changed_when: false
+
+    - name: Load searxng secret key
+      ansible.builtin.slurp:
+        src: /home/docker/searxng.{{inventory_hostname}}/searxng_secret
+      register: searxng_secret
+
+    - name: Write searxng limiter.toml (suppress missing config warning)
+      ansible.builtin.copy:
+        dest: /home/docker/searxng.{{inventory_hostname}}/searxng-data/limiter.toml
+        force: false
+        owner: root
+        group: docker
+        mode: '0640'
+        content: |
+          # minimal limiter config - suppresses WARNING about missing limiter.toml
+          [botdetection.ip_limit]
+
+    - name: Write searxng settings.yml
+      ansible.builtin.copy:
+        dest: /home/docker/searxng.{{inventory_hostname}}/searxng-data/settings.yml
+        owner: root
+        group: docker
+        mode: '0640'
+        content: |
+          use_default_settings: true
+
+          general:
+            instance_name: "SearXNG ai.{{inventory_hostname}}"
+            debug: false
+
+          server:
+            secret_key: "{{ searxng_secret['content'] | b64decode }}"
+            bind_address: "0.0.0.0"
+            port: 8080
+            rateLimit: true
+
+          search:
+            safe_search: 0
+            default_lang: ''
+            formats:
+              - html
+              - json
+            engines:
+              - name: google
+                disabled: false
+              - name: duckduckgo
+                disabled: false
+              - name: wikipedia
+                disabled: false
+              - name: bing
+                disabled: false
+              # deactivate failing engines
+              - name: ahmia
+                disabled: true
+              - name: torch
+                disabled: true
+              - name: radio browser
+                disabled: true
+
+          ui:
+            static_use_hash: true
+      changed_when: false
+
+    - name: SearXNG Docker Config
+      ansible.builtin.blockinfile:
+        path: /home/docker/searxng.{{inventory_hostname}}/docker-compose.yml
+        create: yes
+        mode: 0440
+        owner: root
+        group: docker
+        marker: "# {mark} ANSIBLE MANAGED BLOCK"
+        block: |
+
+          services:
+            searxng:
+              image: searxng/searxng:latest
+              restart: unless-stopped
+              ports:
+                - "{{ searxng_port }}:8080"
+              volumes:
+                - ./searxng-data:/etc/searxng:rw
+              cap_drop:
+                - ALL
+              cap_add:
+                - CHOWN
+                - SETGID
+                - SETUID
+                - DAC_OVERRIDE
+                - NET_BIND_SERVICE
+              logging:
+                driver: json-file
+                options:
+                  max-size: 1m
+                  max-file: 1
+        backup: yes
+      notify: Restart searxng
+
+    - name: UFW allow SearXNG port
+      community.general.ufw:
+        rule: allow
+        port: "{{ searxng_port }}"
+        proto: tcp
+
+  handlers:
+    - name: Restart searxng
+      ansible.builtin.shell: docker compose up -d --force-recreate
+      args:
+        chdir: /home/docker/searxng.{{inventory_hostname}}

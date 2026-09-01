@@ -5,6 +5,18 @@
     ai_host: "ai.lan"
   tasks:
 
+    # llama.cpp API key: generated once on ai.lan by the llamacpp playbooks
+    - name: Fetch llama API key from ai.lan
+      ansible.builtin.slurp:
+        src: /etc/llama-server/api-key
+      delegate_to: ai.lan
+      register: llama_api_key_b64
+      no_log: true
+
+    - name: Parse llama API key
+      ansible.builtin.set_fact:
+        llama_api_key: "{{ (llama_api_key_b64.content | b64decode).split('=', 1)[1] | trim }}"
+
     - name: Create /home/docker/openwebui.{{inventory_hostname}} dir
       ansible.builtin.file:
         path: /home/docker/openwebui.{{inventory_hostname}}
@@ -12,84 +24,6 @@
         group: docker
         state: directory
         mode: '0550'
-
-    - name: Create searxng data dir
-      ansible.builtin.file:
-        path: /home/docker/openwebui.{{inventory_hostname}}/searxng-data
-        owner: root
-        group: docker
-        state: directory
-        mode: '0750'
-      changed_when: false
-
-    - name: Generate searxng secret key
-      ansible.builtin.shell: |
-        [ -s /home/docker/openwebui.{{inventory_hostname}}/searxng_secret ] || \
-        tr -dc 'A-Za-z0-9' < /dev/urandom | head -c 64 \
-        > /home/docker/openwebui.{{inventory_hostname}}/searxng_secret
-      changed_when: false
-
-    - name: Load searxng secret key
-      ansible.builtin.slurp:
-        path: /home/docker/openwebui.{{inventory_hostname}}/searxng_secret
-      register: searxng_secret
-
-    - name: Write searxng limiter.toml (suppress missing config warning)
-      ansible.builtin.copy:
-        dest: /home/docker/openwebui.{{inventory_hostname}}/searxng-data/limiter.toml
-        force: false
-        owner: root
-        group: docker
-        mode: '0640'
-        content: |
-          # minimal limiter config – suppresses WARNING about missing limiter.toml
-          [botdetection.ip_limit]
-
-    - name: Write searxng settings.yml
-      ansible.builtin.copy:
-        dest: /home/docker/openwebui.{{inventory_hostname}}/searxng-data/settings.yml
-        owner: root
-        group: docker
-        mode: '0640'
-        content: |
-          use_default_settings: true
-
-          general:
-            instance_name: "SearXNG ai.{{inventory_hostname}}"
-            debug: false
-
-          server:
-            secret_key: "{{ searxng_secret['content'] | b64decode }}"
-            bind_address: "0.0.0.0"
-            port: 8080
-            rateLimit: true
-
-          search:
-            safe_search: 0
-            default_lang: ''
-            formats:
-              - html
-              - json
-            engines:
-              - name: google
-                disabled: false
-              - name: duckduckgo
-                disabled: false
-              - name: wikipedia
-                disabled: false
-              - name: bing
-                disabled: false
-              # deactivate failing engines
-              - name: ahmia
-                disabled: true
-              - name: torch
-                disabled: true
-              - name: radio browser
-                disabled: true
-
-          ui:
-            static_use_hash: true
-      changed_when: false
 
     - name: Add ai.{{ inventory_hostname }} to WoL hosts file
       ansible.builtin.lineinfile:
@@ -108,6 +42,19 @@
         - oidc_password
         - oidc_digest
       changed_when: false
+
+    - name: Read OIDC secret files from target host
+      ansible.builtin.slurp:
+        src: "/home/docker/openwebui.{{ inventory_hostname }}/{{ item }}"
+      loop:
+        - oidc_password
+        - oidc_digest
+      register: oidc_secrets
+
+    - name: Set OIDC secret facts
+      ansible.builtin.set_fact:
+        oidc_password: "{{ oidc_secrets.results[0].content | b64decode | trim }}"
+        oidc_digest: "{{ oidc_secrets.results[1].content | b64decode | trim }}"
 
     - name: /home/docker/openwebui.{{inventory_hostname}}/docker-compose.yml Container Configuration
       ansible.builtin.blockinfile:
@@ -146,7 +93,7 @@
                 - OAUTH_MERGE_ACCOUNTS_BY_EMAIL=false
                 - OAUTH_SCOPES=openid profile email groups
                 - OAUTH_CLIENT_ID=ai
-                - OAUTH_CLIENT_SECRET={{ lookup('file', '/home/docker/openwebui.' + inventory_hostname + '/oidc_password') }}
+                - OAUTH_CLIENT_SECRET={{ oidc_password }}
                 - OPENID_PROVIDER_URL=https://auth.{{inventory_hostname}}/.well-known/openid-configuration
                 - OAUTH_ALLOWED_ROLES=ai,ai-admin
                 - OAUTH_ADMIN_ROLES=ai-admin
@@ -155,22 +102,24 @@
                 - OAUTH_MAP_EMAIL_TO_USERNAME=true
                 - AUTO_APPROVE_OAUTH_ACCOUNTS=true
                 - DEFAULT_USER_ROLE=user
-                # RAG / Document Processing
-                - CONTENT_EXTRACTION_ENGINE=external
+                # RAG / Document Processing (Tika runs as Docker container on ai.lan)
+                - CONTENT_EXTRACTION_ENGINE=tika
+                - TIKA_SERVER_URL=http://ai.lan:9998
+                - TIKA_SERVER_VERSION=4
                 - PDF_EXTRACT_IMAGES=true
                 - ENABLE_IMAGE_INTERPRETATION=true
                 - BYPASS_EMBEDDING_AND_RETRIEVAL=true
-                # Web Search (SearXNG)
+                # Web Search (SearXNG runs as Docker container on ai.lan)
                 - ENABLE_WEB_SEARCH=true
                 - WEB_SEARCH_ENGINE=searxng
                 - WEB_SEARCH_RESULT_COUNT=3
-                - SEARXNG_QUERY_URL=http://searxng:8080/search?format=json&q=<query>
+                - SEARXNG_QUERY_URL=http://{{ ai_host }}:8081/search?format=json&q=<query>
                 - ENABLE_RAG_LOCAL_WEB_FETCH=false
                 - BYPASS_WEB_SEARCH_WEB_LOADER=true
                 # AI Model Defaults (llama.cpp via OpenAI-compatible API)
                 - OLLAMA_BASE_URL=
                 - OPENAI_API_BASE_URL=http://{{ ai_host }}:8080/v1
-                - OPENAI_API_KEY=
+                - OPENAI_API_KEY={{ llama_api_key }}
                 - ENABLE_OPENAI_API=true
                 - BYPASS_MODEL_ACCESS_CONTROL=true
                 - DEFAULT_MODEL_METADATA={"capabilities":{"vision":true,"web_search":true,"image_generation":true,"builtin_tools":true}}
@@ -180,7 +129,7 @@
                 - ENABLE_MESSAGE_RATING=false
                 - ENABLE_FOLLOW_UP_GENERATION=false
                 - DEFAULT_CONTEXT_LENGTH=131072
-                - DEFAULT_MODEL_PARAMS={"function_calling":"native","max_tokens":8192}
+                - DEFAULT_MODEL_PARAMS={"function_calling":"native","max_tokens":32768}
                 - DEFAULT_PROMPT_SUGGESTIONS=[]
                 - OPENAI_API_REQUEST_TIMEOUT=180
                 - ENABLE_CONTEXT_COMPACTION=true
@@ -208,9 +157,6 @@
               volumes:
                 - /etc/localtime:/etc/localtime:ro
                 - ./openwebui-data:/app/backend/data
-              depends_on:
-                searxng:
-                  condition: service_started
               networks:
                 - openwebui.{{inventory_hostname}}--network
                 - traefik
@@ -229,26 +175,6 @@
                 - traefik.docker.network=traefik
                 # sec
                 - traefik.http.routers.openwebui-{{ ansible_facts['hostname'] }}.middlewares=secHeaders@file
-
-            searxng:
-              image: searxng/searxng:latest
-              restart: unless-stopped
-              networks:
-                - openwebui.{{inventory_hostname}}--network
-              volumes:
-                - ./searxng-data:/etc/searxng:rw
-              cap_drop:
-                - ALL
-              cap_add:
-                - CHOWN
-                - SETGID
-                - SETUID
-                - DAC_OVERRIDE
-              logging:
-                driver: json-file
-                options:
-                  max-size: 1m
-                  max-file: 1
 
           networks:
             openwebui.{{inventory_hostname}}--network:
@@ -286,9 +212,8 @@
                 # OpenWebUI
                 - client_id: 'ai'
                   client_name: 'OpenWebUI'
-                  client_secret: '{{ lookup('file', '/home/docker/openwebui.' + inventory_hostname + '/oidc_digest') }}'
+                  client_secret: '{{ oidc_digest }}'
                   public: false
-                  #authorization_policy: '{{ lookup('file', '/home/docker/authelia.' + inventory_hostname + '/authorization_policy') }}'
                   authorization_policy: one_factor
                   redirect_uris:
                     - 'https://ai.{{inventory_hostname}}/oauth/oidc/callback'
@@ -487,6 +412,27 @@
       changed_when: '"restart" in db_config_result.stdout'
       notify: Restart openwebui
 
+    # Store the llama.cpp API key so OpenWebUI authenticates against ai.lan.
+    # openai.api_keys is parallel to openai.api_base_urls (written by the task above).
+    - name: Store llama API key in OpenWebUI DB (openai.api_keys)
+      ansible.builtin.shell: |
+        DB=/home/docker/openwebui.{{ inventory_hostname }}/openwebui-data/webui.db
+        NEW='["{{ llama_api_key }}"]'
+        CUR=$(sqlite3 "$DB" "SELECT value FROM config WHERE key='openai.api_keys'")
+        if [ "$CUR" != "$NEW" ]; then
+          sqlite3 "$DB" \
+            "INSERT INTO config (key, value, updated_at) VALUES
+               ('openai.enable', 'true', strftime('%s','now')*1000),
+               ('openai.api_base_urls', '[\"http://{{ ai_host }}:8080/v1\"]', strftime('%s','now')*1000),
+               ('openai.api_keys', '$NEW', strftime('%s','now')*1000)
+             ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at;"
+          echo changed
+        fi
+      register: openai_key_db
+      changed_when: "'changed' in openai_key_db.stdout"
+      notify: Restart openwebui
+      no_log: true
+
     - name: Flush handlers - restart OpenWebUI to pick up DB config
       ansible.builtin.meta: flush_handlers
 
@@ -494,11 +440,6 @@
 
     - name: Restart openwebui
       ansible.builtin.shell: docker compose up -d --force-recreate
-      args:
-        chdir: /home/docker/openwebui.{{inventory_hostname}}
-
-    - name: Restart searxng
-      ansible.builtin.shell: docker compose up -d --force-recreate searxng
       args:
         chdir: /home/docker/openwebui.{{inventory_hostname}}
 
