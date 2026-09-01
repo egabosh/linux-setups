@@ -6,7 +6,7 @@
   vars:
     uci_vars:
       - { key: "wireless.{{ wlandev }}.disabled", value: "0" }
-      - { key: "wireless.{{ wlandev }}.country", value: "{{ wlan_contry }}" }
+      - { key: "wireless.{{ wlandev }}.country", value: "{{ wlan_country }}" }
       # default WLAN
       - { key: "wireless.default_{{ wlandev }}.ssid", value: "{{ wlan_ssid }}" }
       - { key: "wireless.default_{{ wlandev }}.encryption", value: "sae" }
