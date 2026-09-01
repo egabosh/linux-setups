@@ -172,6 +172,18 @@
                 continue
               fi
 
+              if [[ -s /tmp/no-suspend ]]
+              then
+                g_echo_note "/tmp/no-suspend exists and is not empty"
+                continue
+              fi
+
+              if [[ $(ssh -o StrictHostKeyChecking=no -o ConnectTimeout=5 -o ServerAliveInterval=3 -o ServerAliveCountMax=2 -o BatchMode=yes $HOST who | grep "172.23." | wc -l) -ge 1 ]]
+              then
+                g_echo_note "ssh-session seems to be still active"
+                continue
+              fi
+
               g_echo_warn "$HOST idle ${idle}s – suspending via SSH"
               ssh -o StrictHostKeyChecking=no -o ConnectTimeout=5 -o ServerAliveInterval=3 -o ServerAliveCountMax=2 -o BatchMode=yes root@"$HOST" "systemctl suspend" &>/dev/null
             else
