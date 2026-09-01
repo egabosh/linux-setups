@@ -185,7 +185,7 @@
 
     - name: write, run and create cronjob /etc/scripts/firewall_port_forwards_from_wan_to_newzone.sh
       raw: |
-        /etc/scripts/firewall_port_forwards_from_wan_to_newzone.sh tor
+        /etc/scripts/firewall_port_forwards_from_wan_to_newzone.sh iot
         cronjob="1 4 * * *   /etc/scripts/firewall_port_forwards_from_wan_to_newzone.sh iot"
         grep -Fq "$cronjob" /etc/crontabs/root || echo "$cronjob" >>/etc/crontabs/root
       changed_when: false

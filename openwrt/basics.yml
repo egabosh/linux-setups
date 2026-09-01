@@ -49,7 +49,7 @@
       - { key: "network.lan.ula_prefix", value: "{{ ipv6_ula_prefix }}" }
       - { key: "network.lan.ip6addr", value: "{{ ip6 }}" }
       - { key: "network.lan.ip6assign", value: "64" }
-      - { key: "network.globals.ula_prefix", value: "{{ ipv6_ula_prefix }}" }
+      #- { key: "network.globals.ula_prefix", value: "{{ ipv6_ula_prefix }}" }
       - { key: "system.ntp.server", value: "{{ ntp_server }}" }
       - { key: "fstab.@global[0].anon_mount",      value: "0" }
       - { key: "fstab.@global[0].anon_swap",       value: "0" }

@@ -208,7 +208,7 @@
         echo "
         [default]
         include => incoming
-        " >>/etc/asterisk/extensions.confa
+        " >>/etc/asterisk/extensions.conf
         chmod 644 /etc/asterisk/extensions.conf
       changed_when: false
 
