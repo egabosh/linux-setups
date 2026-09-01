@@ -3,6 +3,18 @@
   hosts: all
   tasks:
 
+    # llama.cpp API key: generated once on ai.lan by the llamacpp playbooks
+    - name: Fetch llama API key from ai.lan
+      ansible.builtin.slurp:
+        src: /etc/llama-server/api-key
+      delegate_to: ai.lan
+      register: llama_api_key_b64
+      no_log: true
+
+    - name: Parse llama API key
+      ansible.builtin.set_fact:
+        llama_api_key: "{{ (llama_api_key_b64.content | b64decode).split('=', 1)[1] | trim }}"
+
     - name: Create /home/docker/opencode.{{inventory_hostname}} dir
       ansible.builtin.file:
         path: /home/docker/opencode.{{inventory_hostname}}
@@ -130,7 +142,8 @@
                 "npm": "@ai-sdk/openai-compatible",
                 "name": "ai.lan",
                 "options": {
-                  "baseURL": "http://ai.lan:8080/v1"
+                  "baseURL": "http://ai.lan:8080/v1",
+                  "apiKey": "{{ llama_api_key }}"
                 },
                 "models": {
                   "llamacpp-default": {
