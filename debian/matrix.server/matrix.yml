@@ -645,29 +645,29 @@
 #        validate: /bin/bash -n %s
 #      notify: run matrix.update
 
-    - name: /usr/local/sbin/runchecks.d/matrix.check
-      blockinfile:
-        path: /usr/local/sbin/runchecks.d/matrix.check
-        mode: "0400"
-        owner: root
-        group: root
-        create: yes
-        marker: "# {mark} ANSIBLE MANAGED BLOCK"
-        block: |
-          egrep "^State:.+D \(|State:.+Z \(|State:.+R \(" /proc/[0-9]*/status | cut -d/ -f3 | while read dzpid
-          do
-            if find ${g_tmp}/proc-check/$dzpid -mmin +30 | grep -q $dzpid
-            then
-              if ps auxn | egrep -q "3000.*$dzpid.+ Z "
-              then
-                #g_echo_warn "Killing synapse server because of zombie curls"
-                kill $(pgrep -f "/usr/local/bin/python -m synapse.app.homeserver --config-path /data/homeserver.yaml")
-               sleep 2
-              fi
-            fi
-          done
-        backup: yes
-        validate: /bin/bash -n %s
+#    - name: /usr/local/sbin/runchecks.d/matrix.check
+#      blockinfile:
+#        path: /usr/local/sbin/runchecks.d/matrix.check
+#        mode: "0400"
+#        owner: root
+#        group: root
+#        create: yes
+#        marker: "# {mark} ANSIBLE MANAGED BLOCK"
+#        block: |
+#          egrep "^State:.+D \(|State:.+Z \(|State:.+R \(" /proc/[0-9]*/status | cut -d/ -f3 | while read dzpid
+#          do
+#            if find ${g_tmp}/proc-check/$dzpid -mmin +30 | grep -q $dzpid
+#            then
+#              if ps auxn | egrep -q "3000.*$dzpid.+ Z "
+#              then
+#                #g_echo_warn "Killing synapse server because of zombie curls"
+#                kill $(pgrep -f "/usr/local/bin/python -m synapse.app.homeserver --config-path /data/homeserver.yaml")
+#               sleep 2
+#              fi
+#            fi
+#          done
+#        backup: yes
+#        validate: /bin/bash -n %s
 
   handlers:
     - name: run genpw.sh
