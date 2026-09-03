@@ -181,14 +181,6 @@
       #  creates: /home/docker/opencode.{{inventory_hostname}}/opencode-config/opencode.json
       notify: Restart opencode
 
-    - name: Add opencode to WoL hosts file
-      ansible.builtin.lineinfile:
-        path: /usr/local/etc/ai-wol-hosts.txt
-        line: opencode.{{ inventory_hostname }}
-        create: true
-        mode: '0644'
-
-
 ##################
 #### Authelia ####
 ##################
