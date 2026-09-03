@@ -1,0 +1,236 @@
+---
+- name: hermes-agent
+  hosts: all
+  vars:
+    hermes_agent_image: "nousresearch/hermes-agent:latest"
+
+  tasks:
+
+    # --- Prerequisites ---
+
+    - name: Create /home/docker/hermes-agent.{{inventory_hostname}} dir
+      ansible.builtin.file:
+        path: /home/docker/hermes-agent.{{inventory_hostname}}
+        owner: root
+        group: docker
+        state: directory
+        mode: '0550'
+
+    - name: Create /home/docker/hermes-agent.{{inventory_hostname}}/data dir
+      ansible.builtin.file:
+        path: /home/docker/hermes-agent.{{inventory_hostname}}/data
+        owner: "10000"
+        group: docker
+        state: directory
+        mode: '0770'
+
+    # --- OIDC client secret generation via Authelia ---
+
+    - name: Create oidc client secret
+      ansible.builtin.shell: |
+        /home/docker/authelia.{{inventory_hostname}}/gen-oidc-client-secret.sh /home/docker/hermes-agent.{{inventory_hostname}}
+      changed_when: false
+      failed_when: false
+
+    - name: Read OIDC secret files from target host
+      ansible.builtin.slurp:
+        src: "/home/docker/hermes-agent.{{inventory_hostname}}/{{ item }}"
+      loop:
+        - oidc_password
+        - oidc_digest
+      register: oidc_secrets
+
+    - name: Set OIDC secret facts
+      ansible.builtin.set_fact:
+        oidc_password: "{{ oidc_secrets.results[0].content | b64decode | trim }}"
+        oidc_digest: "{{ oidc_secrets.results[1].content | b64decode | trim }}"
+
+    # --- API server key for the gateway (OpenAI-compatible API / web UI)
+
+    - name: Generate API server key if missing
+      ansible.builtin.shell: |
+        [ -f /home/docker/hermes-agent.{{inventory_hostname}}/api_server_key ] && exit 0
+        openssl rand -hex 32 >/home/docker/hermes-agent.{{inventory_hostname}}/api_server_key
+        chmod 0400 /home/docker/hermes-agent.{{inventory_hostname}}/api_server_key
+        chown root:docker /home/docker/hermes-agent.{{inventory_hostname}}/api_server_key
+      changed_when: false
+
+    - name: Read API server key
+      ansible.builtin.slurp:
+        src: "/home/docker/hermes-agent.{{inventory_hostname}}/api_server_key"
+      register: api_server_key_b64
+      no_log: true
+
+    - name: Set API server key fact
+      ansible.builtin.set_fact:
+        api_server_key: "{{ api_server_key_b64.content | b64decode | trim }}"
+        api_server_cors: "https://hermes-agent.{{ ansible_facts['nodename'] }}"
+
+    # --- Docker Compose configuration ---
+
+    - name: Pre-pull hermes-agent Docker image
+      community.docker.docker_image:
+        name: "{{ hermes_agent_image }}"
+        source: pull
+      register: hermes_pull
+
+    - name: /home/docker/hermes-agent.{{inventory_hostname}}/docker-compose.yml Container Configuration
+      blockinfile:
+        path: /home/docker/hermes-agent.{{inventory_hostname}}/docker-compose.yml
+        create: yes
+        mode: 0440
+        owner: root
+        group: docker
+        marker: "# {mark} ANSIBLE MANAGED BLOCK"
+        block: |
+
+          services:
+
+            hermes-agent.{{inventory_hostname}}:
+              image: {{ hermes_agent_image }}
+              container_name: hermes-agent
+              restart: unless-stopped
+              volumes:
+                - ./data:/opt/data
+                - /etc/localtime:/etc/localtime:ro
+              environment:
+                - HERMES_UID=10000
+                - HERMES_GID=10000
+                # Enable the web dashboard (SPA + JSON-RPC/WS gateway, port 9119)
+                - HERMES_DASHBOARD=true
+                # Dashboard auth gate: self-hosted OIDC against Authelia
+                - HERMES_DASHBOARD_OIDC_ISSUER=https://auth.{{ inventory_hostname }}
+                - HERMES_DASHBOARD_OIDC_CLIENT_ID=hermes-agent
+                # Confidential client: Authelia requires client authentication at the token endpoint
+                - HERMES_DASHBOARD_OIDC_CLIENT_SECRET={{ oidc_password }}
+                - HERMES_DASHBOARD_OIDC_SCOPES=openid profile email
+                # Public URL so the OIDC redirect_uri matches the Authelia registration
+                - HERMES_DASHBOARD_PUBLIC_URL=https://hermes-agent.{{ inventory_hostname }}
+                - API_SERVER_ENABLED=true
+                - API_SERVER_HOST=0.0.0.0
+                - API_SERVER_KEY={{ api_server_key }}
+                - API_SERVER_CORS_ORIGINS={{ api_server_cors }}
+              networks:
+                - hermes-agent.{{inventory_hostname}}--network
+                - traefik
+              labels:
+                - traefik.enable=true
+                # HTTPS
+                - traefik.http.routers.hermes-agent-{{ ansible_facts['hostname'] }}.rule=Host(`hermes-agent.{{ ansible_facts['nodename'] }}`)
+                - traefik.http.routers.hermes-agent-{{ ansible_facts['hostname'] }}.entrypoints=https
+                - traefik.http.routers.hermes-agent-{{ ansible_facts['hostname'] }}.tls=true
+                # Proxy to dashboard web UI (SPA + JSON-RPC/WS)
+                - traefik.http.services.hermes-agent-{{ ansible_facts['hostname'] }}.loadbalancer.server.port=9119
+                - traefik.http.routers.hermes-agent-{{ ansible_facts['hostname'] }}.service=hermes-agent-{{ ansible_facts['hostname'] }}
+                # cert via letsencrypt
+                - traefik.http.routers.hermes-agent-{{ ansible_facts['hostname'] }}.tls.certresolver=letsencrypt
+                # Security headers (auth is handled natively by the dashboard OIDC gate)
+                - traefik.http.routers.hermes-agent-{{ ansible_facts['hostname'] }}.middlewares=secHeaders@file
+                # Traefik network
+                - traefik.docker.network=traefik
+              command: ["gateway", "run"]
+
+          networks:
+            hermes-agent.{{inventory_hostname}}--network:
+              driver: bridge
+              driver_opts:
+                com.docker.network.bridge.name: br-hermes-agent
+            traefik:
+              external: true
+
+        backup: yes
+      notify: Restart hermes-agent
+
+    # --- Authelia OIDC client registration ---
+
+    - name: Write OIDC config in authelias configuration.yml
+      ansible.builtin.blockinfile:
+        path: /home/docker/authelia.{{inventory_hostname}}/authelia-data/configuration.yml
+        marker: "# {mark} ANSIBLE MANAGED BLOCK OIDC hermes-agent.{{inventory_hostname}}"
+        block: |2
+                # Hermes Agent
+                - client_id: 'hermes-agent'
+                  client_name: 'Hermes Agent'
+                  client_secret: '{{ oidc_digest }}'
+                  public: false
+                  authorization_policy: one_factor
+                  redirect_uris:
+                    - 'https://hermes-agent.{{inventory_hostname}}/auth/callback'
+                  scopes:
+                    - 'openid'
+                    - 'profile'
+                    - 'groups'
+                    - 'email'
+                  response_types:
+                    - 'code'
+                  grant_types:
+                    - 'authorization_code'
+                  access_token_signed_response_alg: 'none'
+                  userinfo_signed_response_alg: 'none'
+                  token_endpoint_auth_method: 'client_secret_basic'
+        insertafter: "^# END ANSIBLE MANAGED BLOCK OIDC"
+        backup: yes
+        validate: docker run --rm -v "{{ ansible_env.HOME }}/.ansible:{{ ansible_env.HOME }}/.ansible" authelia/authelia:latest authelia validate-config --config %s
+      notify: Restart authelia
+
+    # --- LDAP groups for authorization ---
+
+    - name: Create group and add user if not exists
+      ansible.builtin.shell: |
+        ldapaddgroup hermes-agent
+        ldapaddgroup hermes-agent-admin
+        ldapaddusertogroup admin hermes-agent-admin
+      changed_when: false
+      failed_when: false
+
+    # --- Start hermes-agent ---
+
+    - name: Start hermes-agent
+      ansible.builtin.shell: docker-compose up -d
+      args:
+        chdir: /home/docker/hermes-agent.{{inventory_hostname}}
+
+    # --- Local model integration (ai.lan / llama.cpp) ---
+
+    - name: Fetch llama API key from ai.lan
+      ansible.builtin.slurp:
+        src: /etc/llama-server/api-key
+      delegate_to: ai.lan
+      register: llama_api_key_b64
+      no_log: true
+
+    - name: Parse llama API key
+      ansible.builtin.set_fact:
+        llama_api_key: "{{ (llama_api_key_b64.content | b64decode).split('=', 1)[1] | trim }}"
+      no_log: true
+
+    - name: Store llama API key in hermes .env
+      ansible.builtin.shell: |
+        docker exec hermes-agent sh -c \
+          "grep -q '^HERMES_LLAMA_API_KEY=' /opt/data/.env && sed -i '/^HERMES_LLAMA_API_KEY=/d' /opt/data/.env; echo 'HERMES_LLAMA_API_KEY={{ llama_api_key }}' >>/opt/data/.env"
+      no_log: true
+      changed_when: false
+
+    - name: Configure local-llm custom provider for hermes
+      ansible.builtin.shell: |
+        docker exec hermes-agent /opt/hermes/.venv/bin/hermes config set providers.local-llm.base_url 'https://llm.{{inventory_hostname}}/v1'
+        docker exec hermes-agent /opt/hermes/.venv/bin/hermes config set providers.local-llm.api_key '${HERMES_LLAMA_API_KEY}'
+        docker exec hermes-agent /opt/hermes/.venv/bin/hermes config set model.provider local-llm
+        docker exec hermes-agent /opt/hermes/.venv/bin/hermes config set model.default local-llm/llamacpp-default
+        docker exec hermes-agent /opt/hermes/.venv/bin/hermes config set model.base_url ''
+        # Increase LLM API timeout to 180s (WoL wake-up via traefik may delay first response)
+        docker exec hermes-agent /opt/hermes/.venv/bin/hermes config set model.timeout 180
+      changed_when: false
+      notify: Restart hermes-agent
+
+  handlers:
+
+    - name: Restart hermes-agent
+      ansible.builtin.shell: docker-compose up -d --force-recreate
+      args:
+        chdir: /home/docker/hermes-agent.{{inventory_hostname}}
+
+    - name: Restart authelia
+      ansible.builtin.shell: docker-compose down && docker-compose up -d
+      args:
+        chdir: /home/docker/authelia.{{inventory_hostname}}

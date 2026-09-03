@@ -25,13 +25,6 @@
         state: directory
         mode: '0550'
 
-    - name: Add ai.{{ inventory_hostname }} to WoL hosts file
-      ansible.builtin.lineinfile:
-        path: /usr/local/etc/ai-wol-hosts.txt
-        line: ai.{{ inventory_hostname }}
-        create: true
-        mode: '0644'
-
     - name: Ensure OIDC secret files exist (placeholder for template)
       ansible.builtin.copy:
         dest: "/home/docker/openwebui.{{ inventory_hostname }}/{{ item }}"
@@ -118,7 +111,7 @@
                 - BYPASS_WEB_SEARCH_WEB_LOADER=true
                 # AI Model Defaults (llama.cpp via OpenAI-compatible API)
                 - OLLAMA_BASE_URL=
-                - OPENAI_API_BASE_URL=http://{{ ai_host }}:8080/v1
+                - OPENAI_API_BASE_URL=https://llm.{{inventory_hostname}}/v1
                 - OPENAI_API_KEY={{ llama_api_key }}
                 - ENABLE_OPENAI_API=true
                 - BYPASS_MODEL_ACCESS_CONTROL=true
@@ -399,7 +392,7 @@
         needs_restart = False
         if "openai.enable" not in existing:
             upsert("openai.enable", True)
-            upsert("openai.api_base_urls", ["http://{{ ai_host }}:8080/v1"])
+            upsert("openai.api_base_urls", ["https://llm.{{inventory_hostname}}/v1"])
             upsert("openai.api_keys", [""])
             upsert("openai.api_configs", {})
             needs_restart = True
@@ -423,7 +416,7 @@
           sqlite3 "$DB" \
             "INSERT INTO config (key, value, updated_at) VALUES
                ('openai.enable', 'true', strftime('%s','now')*1000),
-               ('openai.api_base_urls', '[\"http://{{ ai_host }}:8080/v1\"]', strftime('%s','now')*1000),
+               ('openai.api_base_urls', '[\"https://llm.{{inventory_hostname}}/v1\"]', strftime('%s','now')*1000),
                ('openai.api_keys', '$NEW', strftime('%s','now')*1000)
              ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at;"
           echo changed

@@ -20,6 +20,7 @@
         content: |
           # AI hostnames that trigger WoL – one per line
           # Populated by openwebui.yml, opencode playbook, etc.
+          ai.{{ inventory_hostname }}
         force: false
 
     - name: Warn if SSH key auth fails
