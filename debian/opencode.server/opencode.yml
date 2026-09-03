@@ -140,10 +140,12 @@
             "provider": {
               "ai": {
                 "npm": "@ai-sdk/openai-compatible",
-                "name": "ai.lan",
+                "name": "local-llm",
                 "options": {
-                  "baseURL": "http://ai.lan:8080/v1",
-                  "apiKey": "{{ llama_api_key }}"
+                  "baseURL": "https://llm.{{inventory_hostname}}/v1",
+                  "apiKey": "{{ llama_api_key }}",
+                  "timeout": 180000,
+                  "chunkTimeout": 1800000
                 },
                 "models": {
                   "llamacpp-default": {
