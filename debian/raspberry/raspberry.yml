@@ -74,13 +74,13 @@
         raspi-config nonint do_{{ item.action }} {{ item.value }}
       loop:
         - { action: ssh, value: "0" }
-        - { action: vnc, value: "0" }
+        - { action: vnc, value: "1" }
         - { action: boot_splash, value: "1" }
-        - { action: boot_behaviour, value: "B4" }
+#        - { action: boot_behaviour, value: "B4" }
         - { action: blanking, value: "1" }
         - { action: serial_hw, value: "1" }
         - { action: onewire, value: "0" }
-        - { action: wayland, value: "W1" }
+#        - { action: wayland, value: "W1" }
       changed_when: false
    
 #    - name: Remove the grpup pi
