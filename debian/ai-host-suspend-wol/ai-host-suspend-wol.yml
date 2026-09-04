@@ -61,9 +61,11 @@
 
           exec tail -F "$LOG" 2>/dev/null \
             | grep -a --line-buffered -E '"RequestAddr":"('"$PATTERN"')"' \
-            | grep -a -E -v 'ClientAddr":"192.168.41.1|RequestPath":"/_app/version.json|RequestPath":"/"|directory=|/global/|/provider|/path|/project' \
+            | grep -v '"RequestPath":"/"' \
             | while read -r line
             do
+
+              echo "=====  check request"
 
               # rate-limit ping to once per PING_INTERVAL seconds
               if [ -f "$PINGFILE" ]
@@ -143,7 +145,7 @@
             sleep $LOOP_INTERVAL
 
             last=$(grep -a -E '"RequestAddr":"('"$PATTERN"')"' "$LOG" 2>/dev/null \
-              | grep -a -E -v 'ClientAddr":"192.168.41.1|RequestPath":"/_app/version.json|RequestPath":"/"|directory=|/global/|/provider|/path|/project' \
+              | grep -v '"RequestPath":"/"' \
               | tail -1 \
               | sed 's/.*"StartLocal":"\([^"]*\)".*/\1/')
             if [ -n "$last" ]
