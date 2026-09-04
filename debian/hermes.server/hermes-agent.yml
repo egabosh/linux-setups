@@ -90,6 +90,12 @@
               image: {{ hermes_agent_image }}
               container_name: hermes-agent
               restart: unless-stopped
+              deploy:
+                resources:
+                  limits:
+                    memory: 1536m
+                    cpus: "1.5"
+                    pids: 200
               volumes:
                 - ./data:/opt/data
                 - /etc/localtime:/etc/localtime:ro
