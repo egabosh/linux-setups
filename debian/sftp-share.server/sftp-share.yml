@@ -121,11 +121,11 @@
         for SFTPUSERPW in $SFTPUSERS
         do
           SFTPUSER=$(echo ${SFTPUSERPW} | cut -d ":" -f1)
-          useradd -g sftp-share -G 33,101 -m -s /usr/sbin/nologin $SFTPUSER
-          echo ${SFTPUSERPW} | chpasswd
-          unset $SFTPUSERPW
+          id "$SFTPUSER" &>/dev/null || useradd -g sftp-share -G 33,101 -m -s /usr/sbin/nologin "$SFTPUSER"
+          echo "${SFTPUSERPW}" | chpasswd
+          unset SFTPUSERPW
         done
-        unset $SFTPUSERS
+        unset SFTPUSERS
         ### Start SSHD/SFTP-Server
         /usr/sbin/sshd -D -f /etc/sftp-share.conf -E /proc/1/fd/1
       backup: yes
