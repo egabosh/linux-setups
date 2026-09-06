@@ -342,7 +342,7 @@
             find -mmin -5 /tmp/$host >/dev/null 2>&1 | grep -q $host && continue
             if ! wget --dns-timeout=120 -t5 --waitretry=120 --connect-timeout=300 --read-timeout=15 http://${host} >${g_tmp}/traefik-wget-check -O /dev/null 2>&1 
             then
-              if ! egrep -q "401 Unauthorized|403 Forbidden" ${g_tmp}/traefik-wget-check
+              if ! egrep -q "401 Unauthorized|403 Forbidden|415 Unsupported Media Type" ${g_tmp}/traefik-wget-check
               then
                 g_echo_error "Error while connecting ${host} with wget:
           
