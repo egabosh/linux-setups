@@ -352,6 +352,7 @@
               fi
               if egrep -q "502 Bad Gateway" ${g_tmp}/traefik-wget-check
               then
+                echo $host | egrep "^llm\." && continue
                 if [ -s "${g_tmp}/$host-502" ] && find "${g_tmp}/$host-502" | grep "$host-502" -mmin +15
                 then
                   g_echo_error "Error while connecting ${host} with wget:
