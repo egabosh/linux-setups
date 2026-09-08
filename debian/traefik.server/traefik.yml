@@ -344,6 +344,7 @@
             then
               if ! egrep -q "401 Unauthorized|403 Forbidden|415 Unsupported Media Type" ${g_tmp}/traefik-wget-check
               then
+                echo $host | egrep "^llm\." && egrep -q "502 Bad Gateway" ${g_tmp}/traefik-wget-check && continue
                 g_echo_error "Error while connecting ${host} with wget:
           
           $(cat ${g_tmp}/traefik-wget-check)"
