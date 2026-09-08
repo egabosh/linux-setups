@@ -63,7 +63,7 @@
                 - traefik.docker.network=traefik
                 # sec
                 - traefik.http.routers.opencode-{{ ansible_facts['hostname'] }}.middlewares=secHeaders@file,authelia@file
-              entrypoint: ["/root/.opencode/bin/opencode", "serve", "--hostname=0.0.0.0", "--port=80", "--print-logs", "--log-level", "WARN"]
+              entrypoint: ["tini", "-g", "--", "/root/.opencode/bin/opencode", "serve", "--hostname=0.0.0.0", "--port=80", "--print-logs", "--log-level", "WARN"]
 
           networks:
             opencode.{{inventory_hostname}}--network:
@@ -88,7 +88,7 @@
           ENV DEBIAN_FRONTEND=noninteractive
           # opencode and tools
           RUN apt-get update \
-           && apt-get install -y bash curl nodejs git vim htop tree sshpass \
+            && apt-get install -y bash curl nodejs git vim htop tree sshpass tini \
            && rm -rf /var/lib/apt/lists/* \
            && unset VERSION \
            && curl -fsSL https://opencode.ai/install | bash
@@ -144,7 +144,7 @@
                 "options": {
                   "baseURL": "https://llm.{{inventory_hostname}}/v1",
                   "apiKey": "{{ llama_api_key }}",
-                  "timeout": 180000,
+                  "timeout": 600000,
                   "chunkTimeout": 1800000
                 },
                 "models": {
