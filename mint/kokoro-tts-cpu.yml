@@ -1,0 +1,315 @@
+---
+# Kokoro-82M TTS (German, female voices) - CPU, FOSS (Apache-2.0).
+# Runs on CPU in realtime (82M params); no ROCm torch required.
+# Same OpenAI-compatible API + shared Bearer auth as the other AI services.
+# Port 8084 (replaces XTTS-v2, which was removed: model weights CPML = not FOSS).
+- name: Kokoro TTS (German female voices, CPU)
+  hosts: all
+  become: yes
+
+  vars:
+    kokoro_user: llama
+    kokoro_home: /opt/kokoro
+    kokoro_venv: "{{ kokoro_home }}/venv"
+    kokoro_port: 8084
+    model_url: "https://huggingface.co/kikiri-tts/kikiri-german-base-51speakers-synthetic/resolve/main/kikiri_german_base_51spk_ep4.pth"
+    model_file: "{{ kokoro_home }}/models/kikiri_german_base_51spk_ep4.pth"
+    voices:
+      victoria: "{{ kokoro_home }}/voices/victoria.pt"
+      kerstin: "{{ kokoro_home }}/voices/df_kerstin.pt"
+    ansible_remote_tmp: /opt/tmp/ansible_$$
+
+  environment:
+    TMPDIR: /opt/tmp
+
+  tasks:
+    - name: Install system dependencies (espeak-ng G2P, build tools)
+      ansible.builtin.apt:
+        name:
+          - espeak-ng
+          - git
+          - build-essential
+          - python3-dev
+          - python3-venv
+          - python3-pip
+          - libsndfile1
+        state: present
+        update_cache: yes
+
+    - name: Kokoro directories
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        owner: "{{ kokoro_user }}"
+        group: "{{ kokoro_user }}"
+      loop:
+        - "{{ kokoro_home }}"
+        - "{{ kokoro_home }}/models"
+        - "{{ kokoro_home }}/voices"
+
+    - name: Create venv (system python3)
+      ansible.builtin.command:
+        cmd: "python3 -m venv {{ kokoro_venv }}"
+        creates: "{{ kokoro_venv }}/bin/python"
+
+    - name: Upgrade pip in venv
+      ansible.builtin.pip:
+        name: pip
+        state: latest
+        virtualenv: "{{ kokoro_venv }}"
+
+    - name: Install CPU torch (PyTorch CPU wheels)
+      ansible.builtin.pip:
+        name: torch
+        virtualenv: "{{ kokoro_venv }}"
+        extra_args: "--index-url https://download.pytorch.org/whl/cpu --force-reinstall"
+
+    - name: Install German-support libs (semidark misaki + kokoro forks)
+      ansible.builtin.pip:
+        name:
+          - soundfile
+          - numpy
+          - huggingface_hub
+          - gguf
+          - "misaki[de] @ git+https://github.com/semidark/misaki.git"
+          - "git+https://github.com/semidark/kokoro.git"
+        virtualenv: "{{ kokoro_venv }}"
+
+    - name: Download German Kokoro backbone (2.0 GB, resumable)
+      ansible.builtin.shell:
+        cmd: "wget -c -q -O {{ model_file }} '{{ model_url }}' && test -s {{ model_file }}"
+      async: 3600
+      poll: 15
+      changed_when: false
+
+    - name: Download Kokoro architecture config (hexgrad, same for German models)
+      ansible.builtin.get_url:
+        url: "https://huggingface.co/hexgrad/Kokoro-82M/resolve/main/config.json"
+        dest: "{{ kokoro_home }}/models/config.json"
+        owner: "{{ kokoro_user }}"
+        group: "{{ kokoro_user }}"
+        force: no
+
+    - name: Download voicepacks (Victoria, Kerstin)
+      ansible.builtin.get_url:
+        url: "{{ item.url }}"
+        dest: "{{ item.dest }}"
+        owner: "{{ kokoro_user }}"
+        group: "{{ kokoro_user }}"
+        force: no
+      loop:
+        - url: "https://huggingface.co/kikiri-tts/kikiri-german-victoria/resolve/main/voices/victoria.pt"
+          dest: "{{ voices.victoria }}"
+        - url: "https://huggingface.co/cryptomilk/kokoro-german-kerstin/resolve/main/voices/df_kerstin.pt"
+          dest: "{{ voices.kerstin }}"
+
+    - name: Download Eva voicepack (GGUF, public from cstr recovery)
+      ansible.builtin.get_url:
+        url: "https://huggingface.co/cstr/kokoro-voices-GGUF/resolve/main/kokoro-voice-df_eva.gguf"
+        dest: "{{ kokoro_home }}/voices/df_eva.gguf"
+        owner: "{{ kokoro_user }}"
+        group: "{{ kokoro_user }}"
+        force: no
+
+    - name: Convert Eva GGUF voicepack to PyTorch .pt (voice.pack tensor)
+      ansible.builtin.command:
+        cmd: "{{ kokoro_venv }}/bin/python -c \"from gguf import GGUFReader; import torch; import numpy as np; r = GGUFReader('{{ kokoro_home }}/voices/df_eva.gguf'); t = next(x for x in r.tensors if x.name == 'voice.pack'); a = t.data.astype(np.float32); torch.save(torch.from_numpy(a), '{{ kokoro_home }}/voices/df_eva.pt')\""
+      changed_when: false
+
+    - name: Chown model/voices/venv to service user
+      ansible.builtin.file:
+        path: "{{ kokoro_home }}"
+        owner: "{{ kokoro_user }}"
+        group: "{{ kokoro_user }}"
+        recurse: yes
+
+    - name: Kokoro proxy script
+      ansible.builtin.copy:
+        dest: "{{ kokoro_home }}/tts_kokoro_proxy.py"
+        owner: "{{ kokoro_user }}"
+        group: "{{ kokoro_user }}"
+        mode: "0644"
+        content: |
+          import json, io, os, sys
+          from http.server import HTTPServer, BaseHTTPRequestHandler
+          import numpy as np
+
+          PORT      = int(os.environ.get('TTS_PORT', '8084'))
+          SPEED     = float(os.environ.get('TTS_SPEED', '1.0'))
+          MODELS    = "{{ kokoro_home }}/models"
+          VOICE_DIR = "{{ kokoro_home }}/voices"
+          # Voices: dict voice-name -> voicepack file (all Apache-2.0)
+          VOICES = {
+              'victoria': os.path.join(VOICE_DIR, 'victoria.pt'),
+              'kerstin':  os.path.join(VOICE_DIR, 'df_kerstin.pt'),
+              'eva':      os.path.join(VOICE_DIR, 'df_eva.pt'),
+          }
+          # Same shared key as llama.cpp (file format LLAMA_API_KEY=...)
+          API_KEY_FILE = os.environ.get('API_KEY_FILE', '/etc/llama-server/api-key')
+
+          def _authorized_self(handler):
+              """Require Authorization: Bearer <shared llama.cpp key>."""
+              header = handler.headers.get('Authorization', '')
+              if not header.startswith('Bearer '):
+                  return False
+              token = header[7:].strip()
+              try:
+                  with open(API_KEY_FILE) as f:
+                      for line in f:
+                          line = line.strip()
+                          if line.startswith('LLAMA_API_KEY=') and line.split('=', 1)[1] == token:
+                              return True
+              except OSError:
+                  return False
+              return False
+
+          print('Loading Kokoro German model...')
+          sys.stdout.flush()
+          import torch
+          from kokoro import KModel, KPipeline
+          model_path = os.path.join(MODELS, 'kikiri_german_base_51spk_ep4.pth')
+          config_path = os.path.join(MODELS, 'config.json')
+          model = KModel(
+              repo_id='kikiri-tts/kikiri-german-base-51speakers-synthetic',
+              config=config_path,
+              model=model_path,
+          )
+          pipeline = KPipeline(lang_code='d', model=model)
+          # misaki German G2P can emit 'y' (short u) which is not in the Kokoro vocab;
+          # normalize it to 'y' as recommended by the Thorsten-Voice Kokoro model card.
+          _orig_g2p = pipeline.g2p
+          pipeline.g2p = lambda text: (lambda ps, tok: (ps.replace('\u028f', 'y'), tok))(*_orig_g2p(text))
+          voice_tensors = {
+              name: torch.load(path, map_location='cpu', weights_only=True)
+              for name, path in VOICES.items()
+          }
+          print(f'Pipeline ready on port {PORT}. Voices: {", ".join(VOICES)}')
+          sys.stdout.flush()
+
+          SAMPLE_RATE = 24000
+
+          class TTSHandler(BaseHTTPRequestHandler):
+              def _resolve_voice(self, name):
+                  """Map OpenAI voice names / alias to a loaded German voice."""
+                  key = (name or '').lower().strip().replace('df_', '')
+                  if key in voice_tensors:
+                      return voice_tensors[key]
+                  # OpenAI-ish aliases and unknown values -> default voice (Victoria)
+                  return voice_tensors['victoria']
+
+              def _synthesize(self, text, speed, voice_name):
+                  tensor = self._resolve_voice(voice_name)
+                  chunks = [audio for _, _, audio in pipeline(text, voice=tensor, speed=speed)]
+                  audio = np.concatenate([np.asarray(c, dtype=np.float32) for c in chunks])
+                  audio = np.clip(audio, -1.0, 1.0)
+                  audio_int16 = (audio * 32767.0).astype(np.int16)
+                  return audio_int16.tobytes()
+
+              def do_GET(self):
+                  if '/health' in self.path:
+                      self._json(200, {'status': 'ok', 'voices': list(VOICES), 'device': 'cpu'})
+                  elif '/v1/models' in self.path:
+                      if not _authorized_self(self):
+                          self._json(401, {'error': 'Unauthorized'})
+                          return
+                      self._json(200, {'data': [{'id': v, 'object': 'model'} for v in VOICES]})
+                  else:
+                      self._json(404, {'error': 'not found'})
+
+              def do_POST(self):
+                  if not _authorized_self(self):
+                      self._json(401, {'error': 'Unauthorized'})
+                      return
+                  if '/v1/audio/speech' in self.path or self.path == '/':
+                      self._handle_tts()
+                  else:
+                      self._json(404, {'error': 'not found'})
+
+              def _json(self, code, obj):
+                  self.send_response(code)
+                  self.send_header('Content-Type', 'application/json')
+                  self.end_headers()
+                  self.wfile.write(json.dumps(obj).encode())
+
+              def _handle_tts(self):
+                  try:
+                      length = int(self.headers.get('Content-Length', 0))
+                      body = json.loads(self.rfile.read(length))
+                      text = body.get('input') or body.get('text', '')
+                      if not text:
+                          self._json(400, {'error': 'no input text'})
+                          return
+                      voice = body.get('voice', 'victoria')
+                      speed = float(body.get('speed', SPEED))
+                      speed = max(0.5, min(2.0, speed))
+                      data = self._synthesize(text, speed, voice)
+                      self.send_response(200)
+                      self.send_header('Content-Type', 'audio/wav')
+                      self.send_header('Content-Length', str(44 + len(data)))
+                      self.end_headers()
+                      import wave
+                      buf = io.BytesIO()
+                      with wave.open(buf, 'wb') as w:
+                          w.setnchannels(1)
+                          w.setsampwidth(2)
+                          w.setframerate(SAMPLE_RATE)
+                          w.writeframes(data)
+                      self.wfile.write(buf.getvalue())
+                  except Exception as e:
+                      import traceback
+                      traceback.print_exc()
+                      self._json(500, {'error': str(e)})
+
+          if __name__ == '__main__':
+              HTTPServer(('0.0.0.0', PORT), TTSHandler).serve_forever()
+
+    - name: Deploy systemd service
+      ansible.builtin.copy:
+        dest: /etc/systemd/system/kokoro-tts.service
+        owner: root
+        group: root
+        mode: "0644"
+        content: |
+          [Unit]
+          Description=Kokoro-82M TTS (German, FOSS)
+          After=network-online.target
+          Wants=network-online.target
+
+          [Service]
+          Type=simple
+          User={{ kokoro_user }}
+          Group={{ kokoro_user }}
+          WorkingDirectory={{ kokoro_home }}
+          Environment=PATH={{ kokoro_venv }}/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+          Environment=TTS_PORT={{ kokoro_port }}
+          Environment=TTS_SPEED=1.0
+          ExecStart={{ kokoro_venv }}/bin/python {{ kokoro_home }}/tts_kokoro_proxy.py
+          Restart=on-failure
+          RestartSec=10
+          StandardOutput=journal
+          StandardError=journal
+          SyslogIdentifier=kokoro-tts
+
+          [Install]
+          WantedBy=multi-user.target
+      notify: Restart Kokoro TTS
+
+    - name: Enable and start Kokoro TTS
+      ansible.builtin.systemd:
+        name: kokoro-tts
+        enabled: yes
+        state: started
+        daemon_reload: yes
+
+    - name: Allow Kokoro port {{ kokoro_port }} in UFW
+      community.general.ufw:
+        rule: allow
+        port: "{{ kokoro_port }}"
+        proto: tcp
+
+  handlers:
+    - name: Restart Kokoro TTS
+      ansible.builtin.systemd:
+        name: kokoro-tts
+        state: restarted
+        daemon_reload: yes
