@@ -1,0 +1,64 @@
+---
+# ComfyUI CPU variant: shared base via import + CPU torch + CPU service.
+- name: ComfyUI with CPU backend
+  ansible.builtin.import_playbook: comfyui-install.yml
+
+- name: ComfyUI CPU backend
+  hosts: all
+
+  environment:
+    TMPDIR: /opt/tmp
+    PIP_CACHE_DIR: /opt/.pip-cache
+
+  tasks:
+    - name: Install CPU torch
+      ansible.builtin.pip:
+        name: torch
+        virtualenv: "{{ comfyui_dir }}/venv"
+        extra_args: "--index-url https://download.pytorch.org/whl/cpu --force-reinstall"
+
+    - name: Install ComfyUI Python dependencies in venv
+      ansible.builtin.pip:
+        requirements: "{{ comfyui_dir }}/requirements.txt"
+        virtualenv: "{{ comfyui_dir }}/venv"
+        chdir: "{{ comfyui_dir }}"
+        extra_args: "--index-url https://download.pytorch.org/whl/cpu --extra-index-url https://pypi.org/simple"
+
+    - name: Deploy ComfyUI systemd service (CPU)
+      ansible.builtin.copy:
+        dest: /etc/systemd/system/comfyui.service
+        owner: root
+        group: root
+        mode: "0644"
+        content: |
+          [Unit]
+          Description=ComfyUI (CPU)
+          After=network.target
+
+          [Service]
+          Type=simple
+          User={{ comfyui_user }}
+          Group={{ comfyui_user }}
+          WorkingDirectory={{ comfyui_dir }}
+          Environment=PATH={{ comfyui_dir }}/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+          ExecStart={{ comfyui_dir }}/venv/bin/python {{ comfyui_dir }}/main.py --cpu --listen 0.0.0.0 --port {{ comfyui_port }}
+          Restart=on-failure
+          RestartSec=10
+          TimeoutStartSec=300
+
+          [Install]
+          WantedBy=multi-user.target
+      notify: Restart ComfyUI
+
+    - name: Enable ComfyUI
+      ansible.builtin.systemd:
+        name: comfyui
+        enabled: yes
+        daemon_reload: yes
+
+  handlers:
+    - name: Restart ComfyUI
+      ansible.builtin.systemd:
+        name: comfyui
+        state: restarted
+        daemon_reload: yes

@@ -1,5 +1,7 @@
 ---
-- name: Install ComfyUI (CPU) on ai.lan
+# Shared ComfyUI base: user, deps, clone, venv, model, workflow, UFW.
+# Run standalone or imported by comfyui-cpu.yml / comfyui-radeon-rocm.yml.
+- name: Install ComfyUI base (shared)
   hosts: all
 
   vars:
@@ -13,11 +15,22 @@
     PIP_CACHE_DIR: /opt/.pip-cache
 
   tasks:
+    - name: Expose shared ComfyUI facts to following plays (variants)
+      ansible.builtin.set_fact:
+        comfyui_user: "{{ comfyui_user }}"
+        comfyui_dir: "{{ comfyui_dir }}"
+        comfyui_port: "{{ comfyui_port }}"
+
+    - name: Ensure /opt/tmp exists and is world-writable for remote_tmp
+      ansible.builtin.file:
+        path: /opt/tmp
+        state: directory
+        mode: "1777"
 
     - name: Ensure llama user exists
       ansible.builtin.user:
         name: "{{ comfyui_user }}"
-        groups: video
+        groups: video,render
         append: yes
         system: yes
         create_home: yes
@@ -38,6 +51,14 @@
           - wget
         state: present
         update_cache: yes
+
+    - name: Create ComfyUI base dir (owned by llama) so git clone can write into /opt
+      ansible.builtin.file:
+        path: "{{ comfyui_dir }}"
+        state: directory
+        owner: "{{ comfyui_user }}"
+        group: "{{ comfyui_user }}"
+        mode: "0755"
 
     - name: Clone ComfyUI repository
       ansible.builtin.git:
@@ -61,84 +82,24 @@
         virtualenv: "{{ comfyui_dir }}/venv"
         virtualenv_python: python3
 
-    - name: CPU torch
-      ansible.builtin.pip:
-        name: torch
-        virtualenv: "{{ comfyui_dir }}/venv"
-        extra_args: "--index-url https://download.pytorch.org/whl/cpu --force-reinstall"
-
-    - name: Install ComfyUI Python dependencies in venv
-      ansible.builtin.pip:
-        requirements: "{{ comfyui_dir }}/requirements.txt"
-        virtualenv: "{{ comfyui_dir }}/venv"
-        chdir: "{{ comfyui_dir }}"
-        extra_args: "--index-url https://download.pytorch.org/whl/cpu --extra-index-url https://pypi.org/simple"
-
-    - name: kornia entfernen (AVX2-Binary crasht auf Xeon E5-2696)
-      ansible.builtin.pip:
-        name:
-          - kornia
-          - kornia-rs
-        virtualenv: "{{ comfyui_dir }}/venv"
-        state: absent
- 
-    - name: kornia-Import lazy machen (top-level import kornia = Startup-Crash)
-      ansible.builtin.replace:
-        path: "{{ comfyui_dir }}/comfy_extras/nodes_post_processing.py"
-        regexp: '^import kornia$'
-        replace: '# import kornia (lazy, siehe Funktionen)'
- 
-    - name: Git skip-worktree für gepatche Node-Datei
-      ansible.builtin.command:
-        cmd: git update-index --skip-worktree comfy_extras/nodes_post_processing.py
-        chdir: "{{ comfyui_dir }}"
-      changed_when: false
-      become: yes
-      become_user: "{{ comfyui_user }}"
-
-    - name: create models dir
+    - name: Create models dir
       ansible.builtin.file:
         path: "{{ comfyui_dir }}/models/checkpoints"
         state: directory
         mode: "0755"
 
-    - name: downlaod SD 1.5 model
+    - name: Check for existing SD 1.5 model
+      ansible.builtin.stat:
+        path: "{{ comfyui_dir }}/models/checkpoints/sd15.safetensors"
+      register: comfyui_model_stat
+
+    - name: Download SD 1.5 model (only when not present)
       ansible.builtin.get_url:
         url: https://huggingface.co/runwayml/stable-diffusion-v1-5/resolve/main/v1-5-pruned.safetensors
         dest: "{{ comfyui_dir }}/models/checkpoints/sd15.safetensors"
         timeout: 120
-
-    - name: Deploy ComfyUI systemd service
-      ansible.builtin.copy:
-        dest: /etc/systemd/system/comfyui.service
-        owner: root
-        group: root
-        mode: "0644"
-        content: |
-          [Unit]
-          Description=ComfyUI (CPU)
-          After=network.target
-
-          [Service]
-          Type=simple
-          User={{ comfyui_user }}
-          Group={{ comfyui_user }}
-          WorkingDirectory={{ comfyui_dir }}
-          Environment=PATH={{ comfyui_dir }}/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-          ExecStart={{ comfyui_dir }}/venv/bin/python {{ comfyui_dir }}/main.py --cpu --listen 0.0.0.0 --port {{ comfyui_port }}
-          Restart=on-failure
-          RestartSec=10
-          TimeoutStartSec=300
-
-          [Install]
-          WantedBy=multi-user.target
-      notify: Restart ComfyUI
-
-    - name: Enable ComfyUI
-      ansible.builtin.systemd:
-        name: comfyui
-        enabled: yes
-        daemon_reload: yes
+        force: no
+      when: not comfyui_model_stat.stat.exists
 
     - name: Deploy ComfyUI workflow (API format)
       ansible.builtin.copy:
@@ -206,7 +167,6 @@
               }
             }
           }
-      notify: Restart ComfyUI
 
     - name: Set ownership on ComfyUI directory
       ansible.builtin.file:
@@ -215,15 +175,7 @@
         group: "{{ comfyui_user }}"
         recurse: yes
 
-
     - name: Allow ComfyUI port {{ comfyui_port }} in UFW
       ansible.builtin.shell:
         cmd: ufw allow {{ comfyui_port }}/tcp
       changed_when: false
-
-  handlers:
-    - name: Restart ComfyUI
-      ansible.builtin.systemd:
-        name: comfyui
-        state: restarted
-        daemon_reload: yes
