@@ -7,9 +7,9 @@
     ansible_remote_tmp: /opt/tmp/ansible_$$
 
   tasks:
-    - name: Create /home/docker/tika.{{inventory_hostname}} dir
+    - name: Create /home/docker/tika dir
       ansible.builtin.file:
-        path: /home/docker/tika.{{inventory_hostname}}
+        path: /home/docker/tika
         owner: root
         group: docker
         state: directory
@@ -17,7 +17,7 @@
 
     - name: Tika Docker Config
       ansible.builtin.blockinfile:
-        path: /home/docker/tika.{{inventory_hostname}}/docker-compose.yml
+        path: /home/docker/tika/docker-compose.yml
         create: yes
         mode: 0440
         owner: root
@@ -58,4 +58,4 @@
     - name: Restart tika
       ansible.builtin.shell: docker compose up -d --force-recreate
       args:
-        chdir: /home/docker/tika.{{inventory_hostname}}
+        chdir: /home/docker/tika

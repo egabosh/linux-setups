@@ -1,0 +1,127 @@
+---
+# WoL (Wake-on-LAN) for ai.lan - robust NM config + cron watchdog fallback
+#
+# Primary: NetworkManager sets 802-3-ethernet.wake-on-lan=magic on all ethernet
+# profiles, so NM re-arms the NIC for magic packets whenever a connection is
+# activated or deactivated (e.g. on shutdown).
+#
+# Fallback: a cron watchdog (`wol-watch.sh`, every minute) re-arms hardware WoL
+# on ANY physical NIC, independent of NM profiles or connection state.
+#
+# BIOS note: ASUS AMI BIOS cannot be configured from the OS (no WMI/NVRAM API
+# on desktop boards). Defaults are fine (Power On By PCI-E = Enabled,
+# ErP Ready = Disabled), so the OS settings below are sufficient for S3/S5.
+#
+# Usage:
+#   ansible-playbook -i ai.lan, mint/wake-on-lan.yml
+
+- hosts: all
+  gather_facts: false
+  vars:
+    wol_nic_mac: "b0:82:e2:aa:c5:16"
+  tasks:
+
+    - name: Install ethtool
+      ansible.builtin.apt:
+        name: ethtool
+        state: present
+
+    # --- Stable interface name ----------------------------------------------
+
+    - name: Create udev .link file to force stable interface name eno1
+      ansible.builtin.copy:
+        dest: /etc/systemd/network/10-eno1.link
+        mode: '0644'
+        content: |
+          # Rename the active Realtek NIC ({{ wol_nic_mac }}) to eno1 for stable naming
+          [Match]
+          MACAddress={{ wol_nic_mac }}
+
+          [Link]
+          Name=eno1
+          WakeOnLan=magic
+
+    # --- NetworkManager config (primary) ------------------------------------
+
+    - name: List NetworkManager ethernet connection profiles
+      ansible.builtin.command:
+        cmd: nmcli -g NAME,TYPE connection show
+      register: nm_conns
+      changed_when: false
+
+    - name: Build list of ethernet profile names
+      ansible.builtin.set_fact:
+        eth_profiles: "{{ nm_conns.stdout_lines | select('search', ':802-3-ethernet$') | map('split', ':') | map('first') | list }}"
+
+    - name: Enable WoL magic packet on each ethernet profile
+      ansible.builtin.command:
+        argv:
+          - nmcli
+          - connection
+          - modify
+          - "{{ item }}"
+          - 802-3-ethernet.wake-on-lan
+          - magic
+      loop: "{{ eth_profiles }}"
+      changed_when: false
+
+    # --- Hardware watchdog fallback -----------------------------------------
+
+    - name: Create WoL watchdog script
+      ansible.builtin.copy:
+        dest: /usr/local/sbin/wol-watch.sh
+        mode: '0755'
+        content: |
+          #!/bin/bash
+          # Re-arm hardware WoL (magic packet) on all physical NICs when not active.
+
+          for d in /sys/class/net/*/device
+          do
+            [ -d "$d" ] || continue
+            iface=$(basename "$(dirname "$d")")
+
+            case "$iface" in
+              lo|tornet*|vnet*|br*|docker0|veth*|virbr*|tun*|tap*) continue ;;
+            esac
+
+            [ "$(cat /sys/class/net/$iface/type 2>/dev/null)" = "1" ] || continue
+
+            wol=$(ethtool "$iface" 2>/dev/null | awk '$1 == "Wake-on:" {print $2}')
+            [ "$wol" = "g" ] && continue
+
+            ethtool -s "$iface" wol g 2>/dev/null
+            [ -f "$d/power/wakeup" ] && echo enabled > "$d/power/wakeup"
+          done
+
+    - name: Install WoL watchdog cron job
+      ansible.builtin.copy:
+        dest: /etc/cron.d/wol-set-netdev-flag
+        mode: '0644'
+        content: |
+          # WoL watchdog - re-arms magic packet every minute
+          @reboot	root	/usr/local/sbin/wol-watch.sh
+          * * * * *	root	/usr/local/sbin/wol-watch.sh
+
+    # --- Verification -------------------------------------------------------
+
+    - name: Show WoL status of all physical NICs
+      ansible.builtin.shell:
+        cmd: |
+          for d in /sys/class/net/*/device
+          do
+            [ -d "$d" ] || continue
+            iface=$(basename "$(dirname "$d")")
+            case "$iface" in
+              lo|tornet*|vnet*|br*|docker0|veth*|virbr*|tun*|tap*) continue ;;
+            esac
+            [ "$(cat /sys/class/net/$iface/type 2>/dev/null)" = "1" ] || continue
+            wol=$(ethtool "$iface" 2>/dev/null | awk '$1 == "Wake-on:" {print $2}')
+            printf '%s: %s\n' "$iface" "$wol"
+          done
+      register: wol_status
+      changed_when: false
+      check_mode: false
+
+    - name: Print WoL status
+      ansible.builtin.debug:
+        var: wol_status.stdout_lines

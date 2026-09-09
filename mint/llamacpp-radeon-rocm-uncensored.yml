@@ -1,4 +1,7 @@
 ---
+- name: Import shared llama.cpp base setup (build, user, dirs, API key, UFW)
+  ansible.builtin.import_playbook: llamacpp-radeon-rocm-install.yml
+
 - name: Setup & Update llama.cpp ROCm Server - Qwen3.8-27B Uncensored
   hosts: all
 
@@ -13,29 +16,35 @@
     service_name: "llama-server"
     rocm_path: "/opt/rocm"
 
-    # Qwen3.8-27B Uncensored Q3_K_M - 0bserverx Heretic abliteration (NON-GATED)
+    # Qwen3.8-27B Uncensored Q5_K_M - 0bserverx Heretic abliteration (NON-GATED)
     # 27B dense, 262K native context, refusal-removed (0-6% vs 64-99% base)
-    # VRAM: 15.7GB model + 1.7GB MTP + 0.9GB mmproj + 0.5GB KV(q4_0@32K) + 2GB = ~20.8GB
-    # Abliteration: Heretic (surgical, best capability retention) - same method as orcarouter
+    # Smartest readily-available quant that still fits BOTH GPUs (48 GiB) together with all other
+    # services. Real file sizes: Q5_K_M 17.9 GiB + MTP head 1.7 + mmproj 0.6 + KV(q4_0 @256K) 12.6
+    #   + overhead ~2 = ~34-35 GiB of 48 GiB. Worst-case single-GPU share ~17 GiB on GPU1; dynamic
+    #   KV means typical usage (14-50K chats) uses only ~3-6 GiB KV -> realistic llama VRAM ~23-26 GiB.
+    #   Fallback if parallel triple-peak OOMs: context 200704 (saves ~2.7 GiB) or Q4_K_M (saves ~2.5).
+    # Q4_K_M also fits; Q6_K/Q8_0 do not fit alongside the other services.
     # Source: 0bserverx (non-gated alternative to gated orcarouter model)
-    # Vision: preserved (mmproj bit-exact from base)
+    # Vision: preserved (mmproj Q8_0, bit-exact from base)
     # Reasoning: preserved (unlike 0xKitkat which locks thinking OFF)
-    model_url: "https://huggingface.co/0bserverx/Qwen3.8-27B-Heretic-Abliterated-Uncensored-GGUF/resolve/main/RVN-Q3_K_M.gguf"
-    model_file: "Qwen3.8-27B-Uncensored-Q3_K_M.gguf"
+    model_url: "https://huggingface.co/0bserverx/Qwen3.8-27B-Heretic-Abliterated-Uncensored-GGUF/resolve/main/RVN-Q5_K_M.gguf"
+    model_file: "Qwen3.8-27B-Uncensored-Q5_K_M.gguf"
     # MTP (Multi-Token Prediction) draft head for speculative decoding (2-3x faster)
-    # Works with any Qwen3.8-27B quant (same architecture)
-    mtp_url: "https://huggingface.co/ggml-org/Qwen3.8-27B-GGUF/resolve/main/mtp-Qwen3.8-27B-Q8_0.gguf"
-    mtp_file: "mtp-Qwen3.8-27B-Q8_0.gguf"
+    # Use the SLIM standalone head mtp-RVN.gguf (1.7 GiB) - NOT the huge RVN-Q5_K_M-mtp.gguf
+    #   (that one is the FULL model with an embedded head, would double VRAM as draft model).
+    mtp_url: "https://huggingface.co/0bserverx/Qwen3.8-27B-Heretic-Abliterated-Uncensored-GGUF/resolve/main/mtp-RVN.gguf"
+    mtp_file: "mtp-Qwen3.8-27B-Uncensored.gguf"
     # Vision projector (uncensored version, Q8_0)
     mmproj_file: "mmproj-Qwen3.8-27B-Uncensored-f16.gguf"
     mmproj_url: "https://huggingface.co/0bserverx/Qwen3.8-27B-Heretic-Abliterated-Uncensored-GGUF/resolve/main/mmproj-Qwen3.8-27B-Q8_0.gguf"
 
-    # VRAM budget (24GB): 15.7GB model + 1.7GB MTP + 0.9GB mmproj + KV(q4_0) + overhead
-    # KV cache on GPU (no --no-kv-offload): ~48KB/token at q4_0
-    # 128K: 15.7+1.7+0.9+6.3+2.0 = 26.6GB peak (vision+128K); text-only ~21.8GB - fits 24GB
-    # 200K would OOM with KV on GPU (KV ~9.6GB -> ~26GB+); use coding.yml (KV on CPU) for 200K
-    context_length: 131072
+    # VRAM budget (48GB, 2x RX 7900 XTX, layers split): Q5_K_M 17.9 + MTP 1.7 + mmproj 0.6
+    #   + KV(q4_0, ~48KB/token) + overhead. KV on GPU (no --no-kv-offload).
+    # 256K (native max): 17.9+1.7+0.6+12.6+2 = ~34.8GB -> fits in 48GB; KV is dynamic, so typical
+    #   usage is far below the 256K worst case. Quality/VRAM sweet spot for the full stack.
+    context_length: 262144
     cache_type: "q4_0"
+    # 2 parallel slots (one per user); slots share the unified KV pool up to context_length
 
     # Reasoning: preserved in orcarouter build (unlike 0xKitkat)
     # 1024 balances speed vs quality for general use
@@ -44,75 +53,6 @@
     ansible_remote_tmp: /opt/tmp/ansible_$$
 
   tasks:
-    - name: Update apt cache
-      ansible.builtin.apt:
-        update_cache: yes
-        cache_valid_time: 3600
-
-    - name: Install build dependencies
-      ansible.builtin.apt:
-        name:
-          - build-essential
-          - cmake
-          - git
-          - libcurl4-openssl-dev
-          - libomp-dev
-          - wget
-          - curl
-          - pkg-config
-          - pwgen
-          - ufw
-        state: present
-
-    - name: Ensure user has ROCm device access
-      ansible.builtin.user:
-        name: "{{ llama_user }}"
-        groups: video,render
-        append: yes
-
-    - name: Clone/Update llama.cpp repository
-      ansible.builtin.git:
-        repo: https://github.com/ggerganov/llama.cpp.git
-        dest: "{{ llama_dir }}"
-        version: master
-        force: no
-        update: yes
-      changed_when: false
-
-    - name: Check if llama-server binary exists
-      ansible.builtin.stat:
-        path: "{{ llama_dir }}/build/bin/llama-server"
-      register: llama_binary
-
-    - name: Rebuild llama.cpp with ROCm support
-      ansible.builtin.shell: |
-        rm -rf build/
-        cmake -B build \
-          -DGGML_HIP=ON \
-          -DGGML_HIP_ROCWMMA_FATTN=ON \
-          -DCMAKE_PREFIX_PATH={{ rocm_path }} \
-          -DAMDGPU_TARGETS=gfx1100 \
-          -DCMAKE_BUILD_TYPE=Release
-        cmake --build build -j$(nproc)
-      args:
-        chdir: "{{ llama_dir }}"
-      environment:
-        HIP_PATH: "{{ rocm_path }}"
-        PATH: "{{ rocm_path }}/bin:{{ rocm_path }}/llvm/bin:{{ ansible_env.PATH | default('/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin', true) }}"
-      register: build_result
-      changed_when: build_result.rc == 0
-      when: not llama_binary.stat.exists or force_rebuild | default(false)
-      notify: restart service
-
-    - name: Create llama directories
-      ansible.builtin.file:
-        path: "{{ item }}"
-        state: directory
-        mode: "0755"
-      loop:
-        - "{{ llama_dir }}"
-        - "{{ models_dir }}"
-
     - name: Check for existing GGUF model
       ansible.builtin.stat:
         path: "{{ models_dir }}/{{ model_file }}"
@@ -155,29 +95,6 @@
         force: no
       when: not mmproj_stat.stat.exists and mmproj_file | length > 0
 
-    # API key auth: generated once on the server, referenced by clients (OpenWebUI, opencode)
-    - name: Create llama API key directory
-      ansible.builtin.file:
-        path: /etc/llama-server
-        state: directory
-        owner: root
-        group: "{{ llama_user }}"
-        mode: "0750"
-
-    # Generate a random API key once; persists across model switches so clients keep working
-    - name: Generate llama API key (idempotent)
-      ansible.builtin.shell: |
-        [ -s /etc/llama-server/api-key ] || \
-        printf 'LLAMA_API_KEY=%s\n' "$(pwgen -s 64)" > /etc/llama-server/api-key
-      changed_when: false
-
-    - name: Secure llama API key file
-      ansible.builtin.file:
-        path: /etc/llama-server/api-key
-        owner: root
-        group: "{{ llama_user }}"
-        mode: "0640"
-
     - name: Deploy systemd service file
       ansible.builtin.copy:
         content: |
@@ -193,8 +110,7 @@
           # ROCm environment
           Environment=HSA_ENABLE_SDMA=0
           Environment=HSA_OVERRIDE_GFX_VERSION=11.0.0
-          Environment=ROCR_VISIBLE_DEVICES=0
-          Environment=HIP_VISIBLE_DEVICES=0
+          # Use both GPUs (2x RX 7900 XTX = 48 GB VRAM); llama.cpp splits layers automatically
           Environment=LD_LIBRARY_PATH={{ rocm_path }}/lib:{{ rocm_path }}/lib64:/usr/lib/x86_64-linux-gnu
           Environment=PATH={{ rocm_path }}/bin:{{ rocm_path }}/llvm/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
@@ -215,6 +131,8 @@
             --mmproj {{ models_dir }}/{{ mmproj_file }} \
             -c {{ context_length }} \
             -ngl 99 \
+            --split-mode layer \
+            -mg 0 \
             --kv-unified \
             -cram -1 \
             --cache-type-k {{ cache_type }} \
@@ -235,7 +153,7 @@
             --api-key ${LLAMA_API_KEY} \
             --port {{ server_port }} \
             --host 0.0.0.0 \
-             --parallel 4 \
+             --parallel 2 \
             -b 1024 \
             -ub 512 \
             -lv 2
@@ -263,18 +181,7 @@
         state: started
         daemon_reload: yes
 
-    - name: Allow llama port through UFW
-      community.general.ufw:
-        rule: allow
-        port: "{{ server_port }}"
-        proto: tcp
-      notify: reload ufw
-
   handlers:
-
-    - name: reload ufw
-      ansible.builtin.command: ufw reload
-
     - name: restart service
       ansible.builtin.systemd:
         name: "{{ service_name }}"

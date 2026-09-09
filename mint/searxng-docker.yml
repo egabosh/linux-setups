@@ -7,9 +7,9 @@
     ansible_remote_tmp: /opt/tmp/ansible_$$
 
   tasks:
-    - name: Create /home/docker/searxng.{{inventory_hostname}} dir
+    - name: Create /home/docker/searxng dir
       ansible.builtin.file:
-        path: /home/docker/searxng.{{inventory_hostname}}
+        path: /home/docker/searxng
         owner: root
         group: docker
         state: directory
@@ -17,7 +17,7 @@
 
     - name: Create searxng data dir
       ansible.builtin.file:
-        path: /home/docker/searxng.{{inventory_hostname}}/searxng-data
+        path: /home/docker/searxng/searxng-data
         owner: root
         group: docker
         state: directory
@@ -25,9 +25,9 @@
 
     - name: Generate searxng secret key
       ansible.builtin.shell: >
-        [ -s /home/docker/searxng.{{inventory_hostname}}/searxng_secret ] ||
+        [ -s /home/docker/searxng/searxng_secret ] ||
         detached_pid=$(
-          openssl rand -hex 32 > /home/docker/searxng.{{inventory_hostname}}/searxng_secret
+          openssl rand -hex 32 > /home/docker/searxng/searxng_secret
           echo $!);
         wait $detached_pid
       args:
@@ -36,12 +36,12 @@
 
     - name: Load searxng secret key
       ansible.builtin.slurp:
-        src: /home/docker/searxng.{{inventory_hostname}}/searxng_secret
+        src: /home/docker/searxng/searxng_secret
       register: searxng_secret
 
     - name: Write searxng limiter.toml (suppress missing config warning)
       ansible.builtin.copy:
-        dest: /home/docker/searxng.{{inventory_hostname}}/searxng-data/limiter.toml
+        dest: /home/docker/searxng/searxng-data/limiter.toml
         force: false
         owner: root
         group: docker
@@ -52,7 +52,7 @@
 
     - name: Write searxng settings.yml
       ansible.builtin.copy:
-        dest: /home/docker/searxng.{{inventory_hostname}}/searxng-data/settings.yml
+        dest: /home/docker/searxng/searxng-data/settings.yml
         owner: root
         group: docker
         mode: '0640'
@@ -60,7 +60,7 @@
           use_default_settings: true
 
           general:
-            instance_name: "SearXNG ai.{{inventory_hostname}}"
+            instance_name: "SearXNG ai"
             debug: false
 
           server:
@@ -98,7 +98,7 @@
 
     - name: SearXNG Docker Config
       ansible.builtin.blockinfile:
-        path: /home/docker/searxng.{{inventory_hostname}}/docker-compose.yml
+        path: /home/docker/searxng/docker-compose.yml
         create: yes
         mode: 0440
         owner: root
@@ -140,4 +140,4 @@
     - name: Restart searxng
       ansible.builtin.shell: docker compose up -d --force-recreate
       args:
-        chdir: /home/docker/searxng.{{inventory_hostname}}
+        chdir: /home/docker/searxng

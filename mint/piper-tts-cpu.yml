@@ -1,11 +1,11 @@
 ---
-- name: TTS OpenAI Proxy – Piper Ramona (CPU)
+- name: TTS OpenAI Proxy - Piper German (CPU, FOSS)
   hosts: all
   become: yes
   vars:
     tts_home: /opt/tts
     tts_venv: "{{ tts_home }}/venv"
-    tts_port: 8083
+    tts_port: 8084
     ansible_remote_tmp: /opt/tmp/ansible_$$
 
   environment:
@@ -47,17 +47,17 @@
         state: latest
       notify: restart tts-proxy
 
-    - name: Ramona voice (ONNX)
+    - name: Thorsten voice (ONNX, high quality, open voice)
       get_url:
-        url: "https://huggingface.co/rhasspy/piper-voices/resolve/main/de/de_DE/ramona/low/de_DE-ramona-low.onnx?download=true"
-        dest: "{{ tts_home }}/voices/de_DE-ramona-low.onnx"
+        url: "https://huggingface.co/rhasspy/piper-voices/resolve/main/de/de_DE/thorsten/high/de_DE-thorsten-high.onnx?download=true"
+        dest: "{{ tts_home }}/voices/de_DE-thorsten-high.onnx"
         force: no
       notify: restart tts-proxy
 
-    - name: Ramona voice (Config)
+    - name: Thorsten voice (Config)
       get_url:
-        url: "https://huggingface.co/rhasspy/piper-voices/resolve/main/de/de_DE/ramona/low/de_DE-ramona-low.onnx.json?download=true"
-        dest: "{{ tts_home }}/voices/de_DE-ramona-low.onnx.json"
+        url: "https://huggingface.co/rhasspy/piper-voices/resolve/main/de/de_DE/thorsten/high/de_DE-thorsten-high.onnx.json?download=true"
+        dest: "{{ tts_home }}/voices/de_DE-thorsten-high.onnx.json"
         force: no
       notify: restart tts-proxy
 
@@ -77,15 +77,33 @@
           PORT      = int(os.environ.get('TTS_PORT', '8083'))
           SPEED     = float(os.environ.get('TTS_SPEED', '1.0'))
           VOICE_DIR = os.environ.get('TTS_VOICE_DIR', '/opt/tts/voices')
-          VOICE     = os.environ.get('TTS_VOICE', 'de_DE-ramona-low')
+          VOICE     = os.environ.get('TTS_VOICE', 'de_DE-thorsten-high')
+          # Shared API key: same key as llama.cpp (file format LLAMA_API_KEY=...)
+          API_KEY_FILE = os.environ.get('API_KEY_FILE', '/etc/llama-server/api-key')
+
+          def _authorized_self(handler):
+              """Require Authorization: Bearer <shared llama.cpp key>."""
+              header = handler.headers.get('Authorization', '')
+              if not header.startswith('Bearer '):
+                  return False
+              token = header[7:].strip()
+              try:
+                  with open(API_KEY_FILE) as f:
+                      for line in f:
+                          line = line.strip()
+                          if line.startswith('LLAMA_API_KEY=') and line.split('=', 1)[1] == token:
+                              return True
+              except OSError:
+                  return False
+              return False
 
           VOICE_ALIASES = {
-              "alloy":  "de_DE-ramona-low",
-              "echo":   "de_DE-ramona-low",
-              "fable":  "de_DE-ramona-low",
-              "nova":   "de_DE-ramona-low",
-              "onyx":   "de_DE-ramona-low",
-              "shimmer":"de_DE-ramona-low",
+              "alloy":  "de_DE-thorsten-high",
+              "echo":   "de_DE-thorsten-high",
+              "fable":  "de_DE-thorsten-high",
+              "nova":   "de_DE-thorsten-high",
+              "onyx":   "de_DE-thorsten-high",
+              "shimmer":"de_DE-thorsten-high",
           }
 
           voice_path = os.path.join(VOICE_DIR, VOICE + '.onnx')
@@ -111,11 +129,17 @@
                   if '/health' in self.path:
                       self._json(200, {'status': 'ok', 'voice': VOICE, 'device': 'cpu'})
                   elif '/v1/models' in self.path:
+                      if not _authorized_self(self):
+                          self._json(401, {'error': 'Unauthorized'})
+                          return
                       self._json(200, {'data': [{'id': 'tts-1', 'object': 'model'}]})
                   else:
                       self._json(404, {'error': 'not found'})
 
               def do_POST(self):
+                  if not _authorized_self(self):
+                      self._json(401, {'error': 'Unauthorized'})
+                      return
                   if '/v1/audio/speech' in self.path or self.path == '/':
                       self._handle_tts()
                   else:
@@ -158,7 +182,7 @@
         dest: /etc/systemd/system/tts-proxy.service
         content: |
           [Unit]
-          Description=TTS OpenAI Proxy (Piper Ramona, Deutsch)
+          Description=TTS OpenAI Proxy (Piper Thorsten, Deutsch)
           After=network-online.target
           Wants=network-online.target
 
@@ -166,7 +190,7 @@
           Type=simple
           ExecStart={{ tts_venv }}/bin/python {{ tts_home }}/tts_openai_proxy.py
           Environment="TTS_PORT={{ tts_port }}"
-          Environment="TTS_VOICE=de_DE-ramona-low"
+          Environment="TTS_VOICE=de_DE-thorsten-high"
           Environment="TTS_SPEED=1.0"
           Restart=on-failure
           RestartSec=5

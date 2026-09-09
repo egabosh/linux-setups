@@ -1,0 +1,68 @@
+---
+# ComfyUI Radeon ROCm variant: shared base via import + ROCm torch + GPU service.
+# Requires radeon-rocm.yml to be run first (amdgpu-install + /dev/kfd).
+- name: ComfyUI with Radeon ROCm backend
+  ansible.builtin.import_playbook: comfyui-install.yml
+
+- name: ComfyUI Radeon ROCm backend
+  hosts: all
+
+  environment:
+    TMPDIR: /opt/tmp
+    PIP_CACHE_DIR: /opt/.pip-cache
+
+  tasks:
+    - name: Install ROCm torch (PyTorch ROCm 7.2 wheels, gfx1100)
+      ansible.builtin.pip:
+        name: torch
+        virtualenv: "{{ comfyui_dir }}/venv"
+        extra_args: "--index-url https://download.pytorch.org/whl/rocm7.2 --force-reinstall"
+
+    - name: Install ComfyUI Python dependencies in venv
+      ansible.builtin.pip:
+        requirements: "{{ comfyui_dir }}/requirements.txt"
+        virtualenv: "{{ comfyui_dir }}/venv"
+        chdir: "{{ comfyui_dir }}"
+        extra_args: "--index-url https://download.pytorch.org/whl/rocm7.2 --extra-index-url https://pypi.org/simple"
+
+    - name: Deploy ComfyUI systemd service (Radeon ROCm)
+      ansible.builtin.copy:
+        dest: /etc/systemd/system/comfyui.service
+        owner: root
+        group: root
+        mode: "0644"
+        content: |
+          [Unit]
+          Description=ComfyUI (Radeon ROCm)
+          After=network.target
+
+          [Service]
+          Type=simple
+          User={{ comfyui_user }}
+          Group={{ comfyui_user }}
+          WorkingDirectory={{ comfyui_dir }}
+          Environment=PATH=/opt/rocm/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+          Environment=LD_LIBRARY_PATH=/opt/rocm/lib:/opt/rocm/lib64
+          Environment=HSA_ENABLE_SDMA=0
+          Environment=HIP_VISIBLE_DEVICES=1
+          ExecStart={{ comfyui_dir }}/venv/bin/python {{ comfyui_dir }}/main.py --force-fp16 --listen 0.0.0.0 --port {{ comfyui_port }}
+          Restart=on-failure
+          RestartSec=10
+          TimeoutStartSec=300
+
+          [Install]
+          WantedBy=multi-user.target
+      notify: Restart ComfyUI
+
+    - name: Enable ComfyUI
+      ansible.builtin.systemd:
+        name: comfyui
+        enabled: yes
+        daemon_reload: yes
+
+  handlers:
+    - name: Restart ComfyUI
+      ansible.builtin.systemd:
+        name: comfyui
+        state: restarted
+        daemon_reload: yes

@@ -1,10 +1,15 @@
 ---
-# Whisper.cpp CPU variant: shared base via import + CPU build + whisper-server service.
-- name: Whisper.cpp with CPU backend
+# Whisper.cpp Radeon ROCm variant: shared base via import + HIP build + GPU service.
+# Requires radeon-rocm.yml to be run first (amdgpu-install, /dev/kfd, HIP dev headers).
+- name: Whisper.cpp with Radeon ROCm backend
   ansible.builtin.import_playbook: whisper-stt-install.yml
 
-- name: Whisper.cpp CPU backend
+- name: Whisper.cpp Radeon ROCm backend
   hosts: all
+
+  environment:
+    HIP_PATH: /opt/rocm
+    PATH: "/opt/rocm/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 
   tasks:
     - name: Check for existing whisper-server binary
@@ -12,7 +17,7 @@
         path: "{{ whisper_dir }}/build/bin/whisper-server"
       register: whisper_bin_st
 
-    - name: Rebuild whisper.cpp for CPU (only when binary missing or force_rebuild)
+    - name: Rebuild whisper.cpp for HIP (only when binary missing or force_rebuild)
       ansible.builtin.shell: |
         g_jobs=$(awk '/MemAvailable/ {printf "%d", $2/1024/1500}' /proc/meminfo)
         if [ -z "$g_jobs" ] || [ "$g_jobs" -lt 1 ]; then
@@ -22,19 +27,22 @@
           g_jobs="$(nproc)"
         fi
         rm -rf build/
-        cmake -B build -DCMAKE_BUILD_TYPE=Release
+        cmake -B build -DCMAKE_BUILD_TYPE=Release \
+          -DGGML_HIP=ON \
+          -DCMAKE_PREFIX_PATH=/opt/rocm \
+          -DAMDGPU_TARGETS=gfx1100
         cmake --build build -j"${g_jobs}" --target whisper-server
       args:
         chdir: "{{ whisper_dir }}"
       register: build_result
       changed_when: build_result.rc == 0
-      when: not whisper_bin_st.stat.exists or (force_rebuild | default(false) | bool)
+      when: not whisper_bin_st.stat.exists or force_rebuild | default(false)
 
-    - name: Deploy whisper-server systemd service (CPU)
+    - name: Deploy whisper-server systemd service (Radeon ROCm)
       ansible.builtin.copy:
         content: |
           [Unit]
-          Description=whisper.cpp CPU STT Server (Deutsch)
+          Description=whisper.cpp ROCm STT Server (Deutsch)
           After=network.target
 
           [Service]
@@ -47,10 +55,15 @@
           ProtectHome=read-only
           NoNewPrivileges=no
 
+          Environment=PATH=/opt/rocm/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+          Environment=LD_LIBRARY_PATH=/opt/rocm/lib:/opt/rocm/lib64
+          Environment=HSA_ENABLE_SDMA=0
+          Environment=HIP_VISIBLE_DEVICES=1
           ExecStart={{ whisper_dir }}/build/bin/whisper-server \
             -m {{ whisper_dir }}/models/{{ whisper_model }} \
             -l {{ whisper_lang }} \
-            -t {{ ansible_processor_vcpus // 2 }} \
+            -dev 0 \
+            -t 4 \
             --port {{ server_port }} \
             --host 0.0.0.0
 

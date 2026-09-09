@@ -3,13 +3,7 @@
   hosts: all
 
   vars:
-    amdgpu_url: >-
-      {{ 
-        'https://repo.radeon.com/amdgpu-install/latest/ubuntu/noble/' ~
-        (lookup('url', 'https://repo.radeon.com/amdgpu-install/latest/ubuntu/noble/', split_lines=False) 
-         | regex_findall('href="(amdgpu-install_[\d.]+-[^"]+\.deb)"') 
-         | first)
-      }}
+    amdgpu_repo_url: "https://repo.radeon.com/amdgpu-install/"
     ansible_remote_tmp: /opt/tmp/ansible_$$
 
   tasks:
@@ -36,9 +30,33 @@
           - zstd
           - ca-certificates
           - wget
+          - libatomic1
+          - libquadmath0
         state: present
 
     # AMDGPU + ROCm driver installation (based on AMD installer)
+    - name: Get latest amdgpu-install version
+      ansible.builtin.shell: |
+        curl -s {{ amdgpu_repo_url }} \
+          | grep -oE 'href="[0-9][0-9.]*/"' \
+          | tr -d 'href="/' \
+          | sort -V | tail -n1
+      register: amdgpu_latest_ver
+      changed_when: false
+
+    - name: Get latest amdgpu-install package name
+      ansible.builtin.shell: |
+        curl -s {{ amdgpu_repo_url }}{{ amdgpu_latest_ver.stdout }}/ubuntu/noble/ \
+          | grep -oE 'href="amdgpu-install_[^"]+_all\.deb"' \
+          | sed 's/href=//; s/"//g' \
+          | sort -V | tail -n1
+      register: amdgpu_deb_name
+      changed_when: false
+
+    - name: Construct amdgpu-install download URL
+      ansible.builtin.set_fact:
+        amdgpu_url: "{{ amdgpu_repo_url }}{{ amdgpu_latest_ver.stdout }}/ubuntu/noble/{{ amdgpu_deb_name.stdout }}"
+
     - name: Download amdgpu-install.deb
       ansible.builtin.get_url:
         url: "{{ amdgpu_url }}"
@@ -48,45 +66,74 @@
       changed_when: false
 
     - name: Install/Update amdgpu-install package
+      environment:
+        DEBIAN_FRONTEND: noninteractive
       ansible.builtin.apt:
         deb: "/opt/amdgpu-install.deb"
         state: present
         update_cache: yes
       register: amdgpu_install
 
-    - name: empty amdgpu-proprietary.list - needs to be there
-      ansible.builtin.copy:
-        content: ""
-        dest: /etc/apt/sources.list.d/amdgpu-proprietary.list
-
-    - name: Run amdgpu-install with graphics and ROCm usecases
+    - name: Run amdgpu-install with ROCm and graphics usecases
+      environment:
+        DEBIAN_FRONTEND: noninteractive
       ansible.builtin.command:
-        cmd: "amdgpu-install -y --usecase=graphics,rocm --vulkan=radv --opencl=rocr --accept-eula"
+        cmd: "amdgpu-install -y --usecase=rocm,graphics --gfxversion=gfx1100 --no-dkms"
       when: amdgpu_install.changed
 
-    - name: get latest ROCm-dir
+    # HIP dev headers (hip_runtime.h, hipblas, rocblas, hipblas-common) are NOT
+    # installed by --usecase=rocm, but llama.cpp's GGML_HIP build requires them.
+    # Install the versioned -dev packages (hipblas-common ships hipblas-commonConfig.cmake).
+    - name: Install HIP/hipBLAS/rocBLAS dev headers
+      environment:
+        DEBIAN_FRONTEND: noninteractive
       ansible.builtin.shell: |
-        ls -d /opt/rocm-* 2>/dev/null | sort -V | tail -n1
+        rel=$(dpkg-query -W -f='${Package}' 'amdrocm-base*' 2>/dev/null | sed 's/amdrocm-base//' | head -n1)
+        [ -n "$rel" ] || rel=10.0
+        apt-get install -y \
+          "amdrocm-runtime-dev${rel}" \
+          "amdrocm-blas-dev${rel}" \
+          "amdrocm-hipblas-common-dev${rel}"
+      changed_when: false
+      become: yes
+
+    - name: Check ROCm install dir location (ROCm 10 uses /opt/rocm directly)
+      ansible.builtin.shell: |
+        if [ -d /opt/rocm ]; then echo /opt/rocm; \
+        else ls -d /opt/rocm-* 2>/dev/null | sort -V | tail -n1; fi
       register: rocm_latest_dir
       changed_when: false
       failed_when: false
 
-    - name: create /opt/rocm symlink
+    - name: create /opt/rocm symlink (only if versioned dirs exist)
       ansible.builtin.file:
         src: "{{ rocm_latest_dir.stdout }}"
         dest: /opt/rocm
         state: link
         force: true
-      when: rocm_latest_dir.stdout | length > 0
+      when: rocm_latest_dir.stdout | length > 0 and rocm_latest_dir.stdout != '/opt/rocm'
 
+    - name: Configure GPU access via udev rules (ROCm 10 docs)
+      ansible.builtin.copy:
+        content: |
+          KERNEL=="kfd", GROUP="render", MODE="0666"
+          SUBSYSTEM=="drm", KERNEL=="renderD*", GROUP="render", MODE="0666"
+        dest: /etc/udev/rules.d/70-amdgpu.rules
+        owner: root
+        group: root
+        mode: "0644"
+      notify: reload udev
 
     # Generic GPU / ROCm helper tools
     - name: Install generic GPU/ROCm helper packages
       ansible.builtin.apt:
         name:
           - pciutils
-          - mesa-opencl-icd
           - clinfo
           - radeontop
         state: present
+
+  handlers:
+    - name: reload udev
+      ansible.builtin.command: udevadm control --reload-rules
 

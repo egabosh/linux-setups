@@ -1,4 +1,7 @@
 ---
+- name: Import shared llama.cpp base setup (build, user, dirs, API key, UFW)
+  ansible.builtin.import_playbook: llamacpp-radeon-rocm-install.yml
+
 - name: Setup & Update llama.cpp ROCm Server - Coding Model
   hosts: all
 
@@ -6,7 +9,6 @@
     TMPDIR: /opt/tmp
 
   vars:
-    # Server configuration
     llama_user: "llama"
     llama_dir: "/opt/llama.cpp"
     models_dir: "/opt/llama-models"
@@ -42,75 +44,6 @@
     ansible_remote_tmp: /opt/tmp/ansible_$$
 
   tasks:
-    - name: Update apt cache
-      ansible.builtin.apt:
-        update_cache: yes
-        cache_valid_time: 3600
-
-    - name: Install build dependencies
-      ansible.builtin.apt:
-        name:
-          - build-essential
-          - cmake
-          - git
-          - libcurl4-openssl-dev
-          - libomp-dev
-          - wget
-          - curl
-          - pkg-config
-          - pwgen
-          - ufw
-        state: present
-
-    - name: Ensure user has ROCm device access
-      ansible.builtin.user:
-        name: "{{ llama_user }}"
-        groups: video,render
-        append: yes
-
-    - name: Clone/Update llama.cpp repository
-      ansible.builtin.git:
-        repo: https://github.com/ggerganov/llama.cpp.git
-        dest: "{{ llama_dir }}"
-        version: master
-        force: no
-        update: yes
-      changed_when: false
-
-    - name: Check if llama-server binary exists
-      ansible.builtin.stat:
-        path: "{{ llama_dir }}/build/bin/llama-server"
-      register: llama_binary
-
-    - name: Rebuild llama.cpp with ROCm support
-      ansible.builtin.shell: |
-        rm -rf build/
-        cmake -B build \
-          -DGGML_HIP=ON \
-          -DGGML_HIP_ROCWMMA_FATTN=ON \
-          -DCMAKE_PREFIX_PATH={{ rocm_path }} \
-          -DAMDGPU_TARGETS=gfx1100 \
-          -DCMAKE_BUILD_TYPE=Release
-        cmake --build build -j$(nproc)
-      args:
-        chdir: "{{ llama_dir }}"
-      environment:
-        HIP_PATH: "{{ rocm_path }}"
-        PATH: "{{ rocm_path }}/bin:{{ rocm_path }}/llvm/bin:{{ ansible_env.PATH | default('/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin', true) }}"
-      register: build_result
-      changed_when: build_result.rc == 0
-      when: not llama_binary.stat.exists or force_rebuild | default(false)
-      notify: restart service
-
-    - name: Create llama directories
-      ansible.builtin.file:
-        path: "{{ item }}"
-        state: directory
-        mode: "0755"
-      loop:
-        - "{{ llama_dir }}"
-        - "{{ models_dir }}"
-
     - name: Check for existing GGUF model
       ansible.builtin.stat:
         path: "{{ models_dir }}/{{ model_file }}"
@@ -121,7 +54,6 @@
         url: "{{ model_url }}"
         dest: "{{ models_dir }}/{{ model_file }}"
         mode: "0644"
-        #owner: "{{ llama_user }}"
         timeout: 7200
         force: no
       when: not model_stat.stat.exists
@@ -140,29 +72,6 @@
         force: no
       when: not mtp_stat.stat.exists
 
-    # API key auth: generated once on the server, referenced by clients (OpenWebUI, opencode)
-    - name: Create llama API key directory
-      ansible.builtin.file:
-        path: /etc/llama-server
-        state: directory
-        owner: root
-        group: "{{ llama_user }}"
-        mode: "0750"
-
-    # Generate a random API key once; persists across model switches so clients keep working
-    - name: Generate llama API key (idempotent)
-      ansible.builtin.shell: |
-        [ -s /etc/llama-server/api-key ] || \
-        printf 'LLAMA_API_KEY=%s\n' "$(pwgen -s 64)" > /etc/llama-server/api-key
-      changed_when: false
-
-    - name: Secure llama API key file
-      ansible.builtin.file:
-        path: /etc/llama-server/api-key
-        owner: root
-        group: "{{ llama_user }}"
-        mode: "0640"
-
     - name: Deploy systemd service file
       ansible.builtin.copy:
         content: |
@@ -178,8 +87,7 @@
           # ROCm environment
           Environment=HSA_ENABLE_SDMA=0
           Environment=HSA_OVERRIDE_GFX_VERSION=11.0.0
-          Environment=ROCR_VISIBLE_DEVICES=0
-          Environment=HIP_VISIBLE_DEVICES=0
+          # Use both GPUs (2x RX 7900 XTX = 48 GB VRAM); llama.cpp splits layers automatically
           Environment=LD_LIBRARY_PATH={{ rocm_path }}/lib:{{ rocm_path }}/lib64:/usr/lib/x86_64-linux-gnu
           Environment=PATH={{ rocm_path }}/bin:{{ rocm_path }}/llvm/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
@@ -200,7 +108,8 @@
             --spec-draft-model {{ models_dir }}/{{ mtp_file }} \
             -c {{ context_length }} \
             -ngl 99 \
-            --no-kv-offload \
+            --split-mode layer \
+            -mg 0 \
             --kv-unified \
             -cram -1 \
             --cache-type-k {{ cache_type }} \
@@ -248,18 +157,7 @@
         state: started
         daemon_reload: yes
 
-    - name: Allow coding model port through UFW
-      community.general.ufw:
-        rule: allow
-        port: "{{ server_port }}"
-        proto: tcp
-      notify: reload ufw
-
   handlers:
-
-    - name: reload ufw
-      ansible.builtin.command: ufw reload
-
     - name: restart service
       ansible.builtin.systemd:
         name: "{{ service_name }}"
