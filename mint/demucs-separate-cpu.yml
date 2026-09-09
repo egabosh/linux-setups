@@ -1,0 +1,456 @@
+---
+# Demucs stem separation (vocals/drums/bass/etc. from mixed audio) - CPU-only, FOSS (MIT).
+# No GPU needed (torch CPU wheels). Model weights (htdemucs ~80 MB) are downloaded once
+# and cached in /home/llama/.cache/torch. Runs fine on the Ryzen 9 9950X.
+# The service reloads the model per request (subprocess) so no RAM stays pinned between
+# jobs - important on a box with limited free RAM. Jobs run one at a time (LOCK).
+# Port 8085. Same shared Bearer auth as llama.cpp/whisper/xtts (API key file).
+- name: Demucs stem separation (CPU, FOSS, port 8085)
+  hosts: all
+  become: yes
+
+  vars:
+    demucs_user: llama
+    demucs_home: /opt/demucs
+    demucs_venv: "{{ demucs_home }}/venv"
+    demucs_port: 8085
+    demucs_jobs: 1
+    omp_threads: 8
+    ansible_remote_tmp: /opt/tmp/ansible_$$
+
+  environment:
+    TMPDIR: /opt/tmp
+    PIP_CACHE_DIR: /opt/.pip-cache
+
+  tasks:
+    - name: Install system dependencies (ffmpeg decode, python venv)
+      ansible.builtin.apt:
+        name:
+          - ffmpeg
+          - python3-venv
+          - python3-pip
+          - libsndfile1
+          - git
+          - curl
+        state: present
+        update_cache: yes
+
+    - name: Demucs directories
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        owner: "{{ demucs_user }}"
+        group: "{{ demucs_user }}"
+      loop:
+        - "{{ demucs_home }}"
+        - "{{ demucs_home }}/work"
+        - "{{ demucs_home }}/warmup"
+        - /opt/tmp
+
+    - name: Create venv (system python3)
+      ansible.builtin.command:
+        cmd: "python3 -m venv {{ demucs_venv }}"
+        creates: "{{ demucs_venv }}/bin/python"
+
+    - name: Upgrade pip in venv
+      ansible.builtin.pip:
+        name: pip
+        state: latest
+        virtualenv: "{{ demucs_venv }}"
+
+    - name: Install CPU torch + torchaudio (CPU wheels, not the huge CUDA variant)
+      ansible.builtin.pip:
+        name:
+          - torch
+          - torchaudio
+        virtualenv: "{{ demucs_venv }}"
+        extra_args: "--index-url https://download.pytorch.org/whl/cpu"
+
+    - name: Install Demucs (FOSS, MIT) from PyPI
+      ansible.builtin.pip:
+        name:
+          - demucs
+          - soundfile
+        virtualenv: "{{ demucs_venv }}"
+
+    - name: Pre-cache htdemucs model weights (warm-up run, ~80 MB download)
+      ansible.builtin.shell: |
+        set -e
+        HUB="/home/{{ demucs_user }}/.cache/torch/hub/checkpoints"
+        if ls "$HUB"/htdemucs*.th >/dev/null 2>&1; then
+          echo "model already cached"
+          exit 0
+        fi
+        mkdir -p {{ demucs_home }}/warmup
+        {{ demucs_venv }}/bin/python -c "import soundfile as sf; sf.write('{{ demucs_home }}/warmup/silence.wav', [[0.0, 0.0]] * 44100, 44100, subtype='PCM_16')"
+        {{ demucs_venv }}/bin/demucs --device cpu -n htdemucs -o {{ demucs_home }}/warmup/out {{ demucs_home }}/warmup/silence.wav
+        rm -rf {{ demucs_home }}/warmup/out
+      become_user: "{{ demucs_user }}"
+      changed_when: false
+
+    - name: Chown demucs home to service user
+      ansible.builtin.file:
+        path: "{{ demucs_home }}"
+        owner: "{{ demucs_user }}"
+        group: "{{ demucs_user }}"
+        recurse: yes
+
+    - name: Demucs proxy script (REST API only)
+      ansible.builtin.copy:
+        dest: "{{ demucs_home }}/demucs_separate_proxy.py"
+        owner: "{{ demucs_user }}"
+        group: "{{ demucs_user }}"
+        mode: "0644"
+        content: |
+          #!/usr/bin/env python3
+          # Demucs stem-separation HTTP proxy (FOSS, CPU-only).
+          #
+          # Endpoints:
+          #   GET  /health               -> status (no auth)
+          #   GET  /v1/models            -> available models (Bearer)
+          #   POST /v1/audio/separation  -> multipart upload (Bearer)
+          #        fields: file (required), model, two_stems, format (zip|json)
+          #        default response: ZIP archive with all stem .wav files
+          #        format=json: JSON with base64-encoded stem wavs
+          #   POST /v1/audio/separation  -> JSON body (Bearer)
+          #        {"audio_b64","filename","model","two_stems"}
+          #        response: JSON with base64-encoded stem wavs
+          #
+          # Auth: shared Bearer key from /etc/llama-server/api-key (same as llama.cpp).
+          # One job at a time (threading.Lock) to protect RAM. Model is loaded per
+          # request in a separate demucs subprocess, so no RAM stays pinned between jobs.
+          import base64
+          import io
+          import json
+          import os
+          import re
+          import shutil
+          import subprocess
+          import sys
+          import threading
+          import uuid
+          import zipfile
+          from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+          from urllib.parse import parse_qs, urlparse
+
+          PORT = int(os.environ.get('DEMUCS_PORT', '8085'))
+          DEMUCS_BIN = os.environ.get('DEMUCS_BIN', '/opt/demucs/venv/bin/demucs')
+          FFMPEG_BIN = os.environ.get('FFMPEG_BIN', 'ffmpeg')
+          WORK = os.environ.get('DEMUCS_WORK', '/opt/demucs/work')
+          API_KEY_FILE = os.environ.get('API_KEY_FILE', '/etc/llama-server/api-key')
+          JOBS = int(os.environ.get('DEMUCS_JOBS', '1'))
+          OMP_THREADS = int(os.environ.get('OMP_NUM_THREADS', '8'))
+          MAX_UPLOAD = 200 * 1024 * 1024
+
+          # model name -> number of stems (4: drums/bass/other/vocals, 6: + guitar/piano)
+          MODELS = {
+              'htdemucs': 4,
+              'htdemucs_ft': 4,
+              'htdemucs_6s': 6,
+              'htdemucs_ft_6s': 6,
+              'mdx_extra': 4,
+          }
+          STEM_COMMON = ['vocals', 'drums', 'bass', 'other']
+          STEM_6 = ['vocals', 'drums', 'bass', 'guitar', 'piano', 'other']
+
+          LOCK = threading.Lock()
+
+          def stems_for(model, two_stems):
+              """Return stem names that two_stems may select for this model."""
+              all_stems = STEM_6 if MODELS.get(model, 4) == 6 else STEM_COMMON
+              if two_stems:
+                  if two_stems not in all_stems:
+                      raise ValueError('two_stems must be one of: %s' % ', '.join(all_stems))
+                  return [two_stems, 'no_' + two_stems]
+              return all_stems
+
+          def authorized(handler):
+              """Require Authorization: Bearer <shared llama.cpp key>."""
+              header = handler.headers.get('Authorization', '')
+              if not header.startswith('Bearer '):
+                  return False
+              token = header[7:].strip()
+              try:
+                  with open(API_KEY_FILE) as f:
+                      for line in f:
+                          line = line.strip()
+                          if line.startswith('LLAMA_API_KEY=') and line.split('=', 1)[1] == token:
+                              return True
+              except OSError:
+                  return False
+              return False
+
+          class DemucsHandler(BaseHTTPRequestHandler):
+
+              def log_message(self, fmt, *args):
+                  sys.stdout.write('[demucs] %s - %s\n' % (self.client_address[0], fmt % args))
+                  sys.stdout.flush()
+
+              # ---------------------------------------------------------- GET
+              def do_GET(self):
+                  path = urlparse(self.path).path.rstrip('/')
+                  if path == '/health':
+                      self._json(200, {
+                          'status': 'ok',
+                          'device': 'cpu',
+                          'models': list(MODELS),
+                          'workers': int(JOBS),
+                          'threads': int(OMP_THREADS),
+                          'auth_required': True,
+                      })
+                  elif path == '/v1/models':
+                      if not authorized(self):
+                          self._json(401, {'error': 'Unauthorized'})
+                          return
+                      self._json(200, {
+                          'data': [
+                              {'id': m, 'object': 'model', 'stems': MODELS[m]}
+                              for m in MODELS
+                          ]
+                      })
+                  else:
+                      self._json(404, {'error': 'not found'})
+
+              # --------------------------------------------------------- POST
+              def do_POST(self):
+                  path = urlparse(self.path).path.rstrip('/')
+                  if path not in ('/v1/audio/separation', ''):
+                      self._json(404, {'error': 'not found'})
+                      return
+                  if not authorized(self):
+                      self._json(401, {'error': 'Unauthorized'})
+                      return
+                  try:
+                      ctype = self.headers.get('Content-Type', '')
+                      q = parse_qs(urlparse(self.path).query)
+                      if ctype.startswith('application/json'):
+                          data = self._handle_json()
+                      else:
+                          data = self._handle_multipart(q)
+                  except ValueError as e:
+                      self._json(400, {'error': str(e)})
+                      return
+                  except Exception as e:
+                      import traceback
+                      traceback.print_exc()
+                      self._json(500, {'error': str(e)})
+                      return
+                  if data is None:
+                      return
+                  if data.get('fmt') == 'json':
+                      self._json(200, data['payload'])
+                      return
+                  payload = data['payload']
+                  self.send_response(200)
+                  self.send_header('Content-Type', 'application/zip')
+                  self.send_header('Content-Disposition',
+                                   'attachment; filename="%s_stems.zip"' % data.get('track', 'audio'))
+                  self.send_header('X-Stems', json.dumps(data.get('stems', [])))
+                  self.send_header('Content-Length', str(len(payload)))
+                  self.end_headers()
+                  self.wfile.write(payload)
+
+              def _handle_json(self):
+                  """Process application/json request with base64 audio."""
+                  length = int(self.headers.get('Content-Length', 0))
+                  body = json.loads(self.rfile.read(length) or b'{}')
+                  audio_b64 = body.get('audio_b64', '')
+                  if not audio_b64:
+                      raise ValueError('missing audio_b64')
+                  src_bytes = base64.b64decode(audio_b64)
+                  if len(src_bytes) > MAX_UPLOAD:
+                      raise ValueError('file too large')
+                  filename = body.get('filename', 'audio.wav')
+                  model = body.get('model', 'htdemucs')
+                  if model not in MODELS:
+                      raise ValueError('unknown model: %s' % model)
+                  two_stems = body.get('two_stems') or None
+                  result, stems, track = self._run_separation(model, two_stems, src_bytes, filename)
+                  payload = {
+                      'model': model,
+                      'two_stems': two_stems,
+                      'stems': {
+                          name: base64.b64encode(data).decode()
+                          for name, data in result.items()
+                      },
+                  }
+                  return {'fmt': 'json', 'payload': payload}
+
+              def _handle_multipart(self, q):
+                  """Process multipart/form-data upload (curl -F / g_stems)."""
+                  ctype = self.headers.get('Content-Type', '')
+                  if not ctype.startswith('multipart/form-data'):
+                      raise ValueError('expected multipart/form-data or application/json')
+                  length = int(self.headers.get('Content-Length', 0))
+                  if length > MAX_UPLOAD:
+                      raise ValueError('file too large (max 200 MB)')
+                  body = self.rfile.read(length)
+                  fields = _parse_multipart(ctype, body)
+                  if 'file' not in fields or fields['file'][0] != 'file':
+                      raise ValueError('missing file field')
+                  _, filename, src_bytes = fields['file']
+                  model = fields.get('model', 'htdemucs') or 'htdemucs'
+                  two_stems = fields.get('two_stems') or None
+                  fmt = q.get('format', [fields.get('format', 'zip')])[0] or 'zip'
+                  if model not in MODELS:
+                      raise ValueError('unknown model: %s' % model)
+                  result, stems, track = self._run_separation(model, two_stems, src_bytes, filename)
+                  if fmt == 'json':
+                      payload = {
+                          'model': model,
+                          'two_stems': two_stems,
+                          'stems': {
+                              name: base64.b64encode(data).decode()
+                              for name, data in result.items()
+                          },
+                      }
+                      return {'fmt': 'json', 'payload': payload}
+                  buf = io.BytesIO()
+                  with zipfile.ZipFile(buf, 'w', zipfile.ZIP_DEFLATED) as zf:
+                      for name, data in result.items():
+                          zf.writestr(name, data)
+                  return {'fmt': 'zip', 'payload': buf.getvalue(), 'stems': stems, 'track': track}
+
+              def _run_separation(self, model, two_stems, src_bytes, filename):
+                  """Convert to wav, run demucs subprocess, collect stems as bytes."""
+                  with LOCK:
+                      job = os.path.join(WORK, uuid.uuid4().hex)
+                      in_dir = os.path.join(job, 'in')
+                      out_dir = os.path.join(job, 'out')
+                      os.makedirs(in_dir)
+                      os.makedirs(out_dir)
+                      try:
+                          raw = os.path.join(in_dir, 'input' + os.path.splitext(filename)[1])
+                          with open(raw, 'wb') as f:
+                              f.write(src_bytes)
+                          wav = os.path.join(in_dir, 'input.wav')
+                          # normalize any audio format to stereo wav for soundfile/demucs
+                          subprocess.run(
+                              [FFMPEG_BIN, '-y', '-loglevel', 'error', '-i', raw,
+                               '-vn', '-acodec', 'pcm_s16le', '-ac', '2', wav],
+                              check=True)
+                          cmd = [DEMUCS_BIN, '--device', 'cpu', '-n', model,
+                                 '--jobs', str(JOBS), '-o', out_dir, wav]
+                          if two_stems:
+                              cmd.extend(['--two-stems', two_stems])
+                          env = dict(os.environ)
+                          env['OMP_NUM_THREADS'] = str(OMP_THREADS)
+                          subprocess.run(cmd, check=True, capture_output=True, env=env)
+                          # demucs writes <out>/<model>/<track>/*.wav
+                          track_dir = os.path.join(out_dir, model, 'input')
+                          stems = sorted(os.listdir(track_dir))
+                          result = {}
+                          for name in stems:
+                              with open(os.path.join(track_dir, name), 'rb') as f:
+                                  result[name] = f.read()
+                          return result, stems, 'input'
+                      finally:
+                          shutil.rmtree(job, ignore_errors=True)
+
+              # -------------------------------------------------------- utils
+              def _json(self, status, obj):
+                  body = json.dumps(obj).encode()
+                  self.send_response(status)
+                  self.send_header('Content-Type', 'application/json')
+                  self.send_header('Content-Length', str(len(body)))
+                  self.end_headers()
+                  self.wfile.write(body)
+
+          def _parse_multipart(ctype, body):
+              """Minimal multipart/form-data parser (no external deps).
+
+              Returns dict: field-name -> value, or ('file', filename, bytes).
+              """
+              boundary = ctype.split('boundary=', 1)[1].strip().strip('"')
+              delim = ('--' + boundary).encode()
+              fields = {}
+              for part in body.split(delim):
+                  part = part.strip(b'\r\n')
+                  if not part or part == b'--' or b'Content-Disposition' not in part:
+                      continue
+                  head, sep, payload = part.partition(b'\r\n\r\n')
+                  if not sep:
+                      continue
+                  head = head.decode('latin-1')
+                  name = None
+                  filename = None
+                  for line in head.split('\r\n'):
+                      if line.lower().startswith('content-disposition'):
+                          m = re.search(r'name="([^"]*)"', line, re.I)
+                          if m:
+                              name = m.group(1)
+                          m = re.search(r'filename="([^"]*)"', line, re.I)
+                          if m:
+                              filename = m.group(1)
+                  if name:
+                      if filename:
+                          fields[name] = ('file', filename, payload)
+                      else:
+                          fields[name] = payload.decode('utf-8', 'replace')
+              return fields
+
+          if __name__ == '__main__':
+              # clean stale job dirs from crashed runs
+              for entry in os.listdir(WORK):
+                  path = os.path.join(WORK, entry)
+                  if os.path.isdir(path):
+                      shutil.rmtree(path, ignore_errors=True)
+              print('Startup: cleaning stale jobs done')
+              server = ThreadingHTTPServer(('0.0.0.0', PORT), DemucsHandler)
+              print('demucs proxy on port %s (worker jobs=%s, omp=%s)' % (PORT, JOBS, OMP_THREADS))
+              try:
+                  server.serve_forever()
+              except KeyboardInterrupt:
+                  server.shutdown()
+
+    - name: Deploy systemd service
+      ansible.builtin.copy:
+        dest: /etc/systemd/system/demucs-separate.service
+        owner: root
+        group: root
+        mode: "0644"
+        content: |
+          [Unit]
+          Description=Demucs stem separation (FOSS, CPU)
+          After=network-online.target
+          Wants=network-online.target
+
+          [Service]
+          Type=simple
+          User={{ demucs_user }}
+          Group={{ demucs_user }}
+          WorkingDirectory={{ demucs_home }}
+          Environment=HOME=/home/{{ demucs_user }}
+          Environment=DEMUCS_PORT={{ demucs_port }}
+          Environment=DEMUCS_JOBS={{ demucs_jobs }}
+          Environment=OMP_NUM_THREADS={{ omp_threads }}
+          ExecStart={{ demucs_venv }}/bin/python {{ demucs_home }}/demucs_separate_proxy.py
+          Restart=on-failure
+          RestartSec=10
+          StandardOutput=journal
+          StandardError=journal
+          SyslogIdentifier=demucs-separate
+
+          [Install]
+          WantedBy=multi-user.target
+      notify: Restart Demucs separate
+
+    - name: Enable and start Demucs separate
+      ansible.builtin.systemd:
+        name: demucs-separate
+        enabled: yes
+        state: started
+        daemon_reload: yes
+
+    - name: Allow Demucs port {{ demucs_port }} in UFW
+      community.general.ufw:
+        rule: allow
+        port: "{{ demucs_port }}"
+        proto: tcp
+
+  handlers:
+    - name: Restart Demucs separate
+      ansible.builtin.systemd:
+        name: demucs-separate
+        state: restarted
+        daemon_reload: yes
