@@ -2,7 +2,7 @@
 - hosts: all
   gather_facts: false
   vars:
-    ai_mac: "8c:dc:d4:32:6d:ba"
+    ai_mac: "b0:82:e2:aa:c5:16"
     ai_host: "ai.lan"
     idle_timeout_minutes: 15
 
