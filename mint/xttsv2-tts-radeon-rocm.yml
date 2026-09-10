@@ -1,0 +1,46 @@
+---
+# XTTS-v2 on the Radeon RX 7900 XTX: pin ROCm torch pair and TTS_DEVICE=cuda.
+# Run after radeon-rocm.yml (ROCm runtime present) and xttsv2-tts-install.yml.
+# ROCm torch is from https://download.pytorch.org/whl/rocm7.2 (torch/audio 2.11.0,
+# the pair that matches gfx1100; newer torchaudio 2.12 crashes XTTS's STFT path).
+- import_playbook: xttsv2-tts-install.yml
+
+- name: XTTS-v2 switch to ROCm backend (GPU[1])
+  hosts: ai.lan
+  become: yes
+
+  vars:
+    xtts_user: llama
+    xtts_venv: /opt/tts2/venv
+    torch_ver: 2.11.0
+
+  tasks:
+    - name: Stop XTTS-v2 before touching the venv
+      ansible.builtin.systemd:
+        name: xtts-v2
+        state: stopped
+
+    - name: Reinstall ROCm torch pair (rocm7.2 index)
+      ansible.builtin.shell:
+        cmd: "su -s /bin/bash {{ xtts_user }} -c 'PATH={{ xtts_venv }}/bin:$PATH python -m pip install --index-url https://download.pytorch.org/whl/rocm7.2 --force-reinstall torch=={{ torch_ver }}+rocm7.2 torchaudio=={{ torch_ver }}+rocm7.2'"
+      register: tor
+      changed_when: "'Successfully installed' in tor.stdout"
+
+    - name: Write device env (ROCm, pinned to GPU[1])
+      ansible.builtin.copy:
+        dest: /etc/tts2/env
+        owner: root
+        group: root
+        mode: "0644"
+        content: |
+          TTS_DEVICE=cuda
+          LD_LIBRARY_PATH=/opt/rocm/lib
+          HSA_ENABLE_SDMA=0
+          HIP_VISIBLE_DEVICES=1
+
+    - name: Start XTTS-v2 on ROCm/cuda
+      ansible.builtin.systemd:
+        name: xtts-v2
+        state: restarted
+        enabled: yes
+        daemon_reload: yes
