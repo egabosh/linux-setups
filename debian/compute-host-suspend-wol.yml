@@ -1,0 +1,317 @@
+---
+- hosts: all
+  gather_facts: false
+  vars:
+    # Environment-specific defaults. Overridable via -e at run time; the values
+    # actually used are written to /usr/local/etc/compute_wol.conf on the target.
+    compute_mac: "b0:82:e2:aa:c5:16"
+    compute_host: "compute.lan"
+    # Network interface of compute in the WoL-reachable LAN (172.23.0.0/16);
+    # its "Wake-on: g" flag is re-armed by ethtool right before every suspend.
+    compute_if: "eno1"
+    idle_timeout_minutes: 15
+    # Do not suspend within this time after a WoL wake (save-box lock that the
+    # waking request may only be the start of a session).
+    grace_after_wol_seconds: 300
+    # Any GPU use % >= this on either GPU counts as "actively computing".
+    gpu_active_threshold: 25
+
+  tasks:
+
+    - name: Install wakeonlan
+      ansible.builtin.apt:
+        name: wakeonlan
+        state: present
+
+    - name: Write environment config for the wol helpers
+      ansible.builtin.copy:
+        dest: /usr/local/etc/compute_wol.conf
+        mode: '0644'
+        content: |
+          # Environment-specific values for wol-watch-tail.sh / wol-watch-idle.sh.
+          # MANAGED BY ANSIBLE - edits here are overwritten on the next run.
+          AI_MAC={{ compute_mac }}
+          AI_HOST={{ compute_host }}
+          AI_IF={{ compute_if }}
+          IDLE_TIMEOUT={{ idle_timeout_minutes * 60 }}
+          LOOP_INTERVAL=300
+          GRACE_AFTER_WOL={{ grace_after_wol_seconds }}
+          GPU_ACTIVE_THRESHOLD={{ gpu_active_threshold }}
+
+    - name: Remove obsolete AI WoL hosts list (patterns are derived at runtime)
+      ansible.builtin.file:
+        path: /usr/local/etc/ai-wol-hosts.txt
+        state: absent
+
+    - name: Remove obsolete ai_wol.conf (renamed to compute_wol.conf)
+      ansible.builtin.file:
+        path: /usr/local/etc/ai_wol.conf
+        state: absent
+
+    - name: Warn if SSH key auth fails
+      ansible.builtin.shell: |
+        ssh -o StrictHostKeyChecking=no -o BatchMode=yes -o ConnectTimeout=3 root@{{ compute_host }} "id" 2>/dev/null || \
+        echo "NEED_SSH_KEY"
+      register: ssh_check
+      changed_when: false
+
+
+    - name: Print SSH key setup instructions if needed
+      ansible.builtin.debug:
+        msg:
+          - "copy ssh-key to {{ compute_host }}:"
+          - "  ssh-copy-id root@{{ compute_host }}"
+          - ""
+          - "Then rerun playbook."
+      when: "'NEED_SSH_KEY' in ssh_check.stdout"
+
+    - name: Ensure ethtool is installed on the AI host (needed to arm the WoL flag)
+      ansible.builtin.shell: |
+        ssh -o StrictHostKeyChecking=no -o BatchMode=yes -o ConnectTimeout=3 root@{{ compute_host }} \
+          "command -v ethtool >/dev/null || apt-get install -y ethtool"
+      changed_when: false
+
+    - name: Create WoL tail script
+      ansible.builtin.copy:
+        dest: /usr/local/bin/wol-watch-tail.sh
+        mode: '0755'
+        content: |
+          #!/bin/bash
+          # Tail Traefik access.log, WoL on request to any AI endpoint FQDN.
+          # AI endpoint patterns are derived from this host's FQDN (no hostnames
+          # hardcoded); env-specific values come from /usr/local/etc/compute_wol.conf.
+          . /usr/local/etc/compute_wol.conf
+          LOG="/home/docker/traefik/log/access.log"
+          PINGFILE=/tmp/ai_last_ping
+          PING_INTERVAL=10
+
+          . /etc/bash/gaboshlib.include
+
+          # llm/ai/stt/tts.<fqdn> are the four AI endpoint domains
+          DOMAIN_RE=$(hostname -f 2>/dev/null | sed 's/\./\\./g')
+          PATTERN="llm\\.$DOMAIN_RE|ai\\.$DOMAIN_RE|stt\\.$DOMAIN_RE|tts\\.$DOMAIN_RE"
+
+          exec tail -F "$LOG" 2>/dev/null \
+            | grep -a --line-buffered -E '"RequestAddr":"('"$PATTERN"')"' \
+            | grep -v '"RequestPath":"/"' \
+            | while read -r line
+            do
+
+              echo "=====  check request"
+
+              # rate-limit ping to once per PING_INTERVAL seconds
+              if [ -f "$PINGFILE" ]
+              then
+                age=$(( $EPOCHSECONDS - $(cat "$PINGFILE") ))
+                [[ $age -lt $PING_INTERVAL ]] && continue
+              fi
+              echo $EPOCHSECONDS >"$PINGFILE"
+
+              if ping -c1 -W2 "$AI_HOST" &>/dev/null
+              then
+                g_echo_note "$AI_HOST pingable - no WoL"
+                PING_INTERVAL=10
+                continue
+              fi
+
+              PING_INTERVAL=2
+              host=$(echo "$line" | sed 's/.*"RequestAddr":"\([^"]*\)".*/\1/')
+              g_echo "WoL triggered by $host ($AI_HOST down)"
+              wakeonlan -i 255.255.255.255 "$AI_MAC" &>/dev/null
+              # remember the wake so the idle watcher grants a grace period
+              echo $EPOCHSECONDS > /tmp/compute_last_wol
+            done
+      notify:
+        - restart wol services
+
+    - name: Create wol-watch-tail systemd service
+      ansible.builtin.copy:
+        dest: /etc/systemd/system/wol-watch-tail.service
+        mode: '0644'
+        content: |
+          [Unit]
+          Description=WoL trigger – tail Traefik access.log
+          After=network.target
+          StartLimitIntervalSec=0
+
+          [Service]
+          Type=simple
+          ExecStart=/usr/local/bin/wol-watch-tail.sh
+          Restart=always
+          RestartSec=10
+          TimeoutStopSec=10
+          KillMode=mixed
+          KillSignal=SIGTERM
+          SendSIGHUP=no
+
+          [Install]
+          WantedBy=multi-user.target
+      notify:
+        - restart wol services
+
+    - name: Enable + start tail service
+      ansible.builtin.systemd:
+        name: wol-watch-tail
+        state: started
+        enabled: true
+        daemon_reload: true
+
+    - name: Create idle-check script
+      ansible.builtin.copy:
+        dest: /usr/local/bin/wol-watch-idle.sh
+        mode: '0755'
+        content: |
+          #!/bin/bash
+          # Suspend host when no request for >IDLE_TIMEOUT AND no active compute.
+          # Loop every 5 min. Values from /usr/local/etc/compute_wol.conf, AI endpoint
+          # patterns derived from this host's FQDN (no hostnames hardcoded).
+          . /usr/local/etc/compute_wol.conf
+          LOG="/home/docker/traefik/log/access.log"
+          LAST_WOL_FILE=/tmp/compute_last_wol
+
+          . /etc/bash/gaboshlib.include
+
+          SSHOPTS="-o StrictHostKeyChecking=no -o ConnectTimeout=5 -o ServerAliveInterval=3 -o ServerAliveCountMax=2 -o BatchMode=yes"
+
+          DOMAIN_RE=$(hostname -f 2>/dev/null | sed 's/\./\\./g')
+          PATTERN="llm\\.$DOMAIN_RE|ai\\.$DOMAIN_RE|stt\\.$DOMAIN_RE|tts\\.$DOMAIN_RE"
+
+          # returns 0 (true) if any GPU reports >= threshold % use
+          gpu_busy() {
+            ssh $SSHOPTS "$AI_HOST" "rocm-smi --showuse" 2>/dev/null \
+              | sed -n 's/.*GPU use (%): *\([0-9][0-9]*\).*/\1/p' \
+              | awk -v t="$GPU_ACTIVE_THRESHOLD" 'int($1) >= t {active=1} END{exit !active}'
+          }
+
+          while true
+          do
+            sleep $LOOP_INTERVAL
+
+            last=$(grep -a -E '"RequestAddr":"('"$PATTERN"')"' "$LOG" 2>/dev/null \
+              | grep -v '"RequestPath":"/"' \
+              | tail -1 \
+              | sed 's/.*"StartLocal":"\([^"]*\)".*/\1/')
+            if [ -n "$last" ]
+            then
+              last_epoch=$(date -d "$(echo "$last" | sed 's/T/ /; s/+.*//')" +%s 2>/dev/null)
+              now=$EPOCHSECONDS
+              idle=$(( now - last_epoch ))
+            else
+              idle=$(( IDLE_TIMEOUT + 1 ))
+            fi
+
+            [ "$idle" -lt "$IDLE_TIMEOUT" ] && { g_echo "IDLE $idle < IDLE_TIMEOUT $IDLE_TIMEOUT"; continue; }
+
+            ping -c1 -W2 "$AI_HOST" &>/dev/null || continue
+
+            # grace period after a WoL wake (the box may just have been booted up)
+            if [ -f "$LAST_WOL_FILE" ]
+            then
+              age=$(( $EPOCHSECONDS - $(cat "$LAST_WOL_FILE") ))
+              [ "$age" -lt "$GRACE_AFTER_WOL" ] \
+                && { g_echo_note "woke ${age}s ago (< ${GRACE_AFTER_WOL}s) - grace"; continue; }
+            fi
+
+            # active TCP connection to a service port on :8xxx
+            if ssh $SSHOPTS "$AI_HOST" ss -tnap | egrep -q '^ESTAB .*:8'
+            then
+              g_echo_note "ai seems to be still active"
+              continue
+            fi
+
+            # ffmpeg (transcode pipeline)
+            if ssh $SSHOPTS "$AI_HOST" ps ax | grep -v grep | grep -q 'ffmpeg'
+            then
+              g_echo_note "ffmpeg seems to be still active"
+              continue
+            fi
+
+            # GPU actively computing (llama/ComfyUI/XTTS/Whisper also run work
+            # between HTTP requests, so TCP/time-based checks are not enough)
+            if gpu_busy
+            then
+              g_echo_note "GPU busy (>= ${GPU_ACTIVE_THRESHOLD}%) - computing"
+              continue
+            fi
+
+            # manual override flag: local (traefik host) and remote (ai host)
+            if [[ -s /tmp/no-suspend ]]
+            then
+              g_echo_note "local /tmp/no-suspend exists and is not empty"
+              continue
+            fi
+
+            if ssh $SSHOPTS "$AI_HOST" '[[ -s /tmp/no-suspend ]]'
+            then
+              g_echo_note "remote /tmp/no-suspend exists and is not empty"
+              continue
+            fi
+
+            # interactive SSH session from the LAN
+            if [[ $(ssh $SSHOPTS "$AI_HOST" who | grep "172.23." | wc -l) -ge 1 ]]
+            then
+              g_echo_note "ssh-session seems to be still active"
+              continue
+            fi
+
+            # last-moment re-check: a request may have arrived during the checks
+            if gpu_busy
+            then
+              g_echo_note "GPU turned busy - last-minute bail"
+              continue
+            fi
+
+            g_echo_warn "$AI_HOST idle ${idle}s – suspending via SSH"
+            # arm the NIC "Wake-on: g" flag right before suspending; a suspend with
+            # an un-armed flag leaves the box unreachable until a manual power-cycle
+            # (WoL magic packet would be ignored by the NIC)
+            ssh $SSHOPTS root@"$AI_HOST" "ethtool -s $AI_IF wol g" &>/dev/null
+            ssh $SSHOPTS root@"$AI_HOST" "systemctl suspend" &>/dev/null
+            # remember the sleep so the next WoL grants a fresh grace period
+            echo $EPOCHSECONDS > "$LAST_WOL_FILE"
+          done
+      notify:
+        - restart wol services
+
+    - name: Create idle systemd service
+      ansible.builtin.copy:
+        dest: /etc/systemd/system/wol-watch-idle.service
+        mode: '0644'
+        content: |
+          [Unit]
+          Description=WoL idle suspend – check every 5min
+          After=network.target
+
+          [Service]
+          Type=simple
+          ExecStart=/usr/local/bin/wol-watch-idle.sh
+          Restart=always
+          RestartSec=10
+          TimeoutStopSec=10
+          KillMode=mixed
+          KillSignal=SIGTERM
+          SendSIGHUP=no
+
+          [Install]
+          WantedBy=multi-user.target
+      notify:
+        - restart wol services
+
+    - name: Enable + start idle service
+      ansible.builtin.systemd:
+        name: wol-watch-idle
+        state: started
+        enabled: true
+        daemon_reload: true
+
+  handlers:
+    - name: restart wol services
+      ansible.builtin.systemd:
+        daemon_reload: true
+        name: "{{ item }}"
+        state: restarted
+        enabled: true
+      loop:
+        - wol-watch-tail
+        - wol-watch-idle
+

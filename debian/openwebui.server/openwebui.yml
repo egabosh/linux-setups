@@ -2,14 +2,22 @@
 - name: open-webui
   hosts: all
   vars:
-    ai_host: "ai.lan"
+    compute_host: "compute.lan"
+    # Public URLs (OpenAI, ComfyUI, STT, TTS) derive from inventory_hostname at
+    # deploy time - run with the FQDN as inventory hostname (e.g. an inventory
+    # "<fqdn> ansible_host=<ip> ansible_port=33"). No FQDN is
+    # committed to the repo. Override each var via -e if the layout differs.
+    openwebui_comfyui_base_url: "https://comfyui.{{ inventory_hostname }}"
+    # Hairpin pin for the ComfyUI HTTPS route (same pattern as /etc/hosts pins).
+    openwebui_extra_hosts:
+      - "comfyui.{{ inventory_hostname }}:192.168.41.1"
   tasks:
 
-    # llama.cpp API key: generated once on ai.lan by the llamacpp playbooks
-    - name: Fetch llama API key from ai.lan
+    # llama.cpp API key: generated once on compute.lan by the llamacpp playbooks
+    - name: Fetch llama API key from compute.lan
       ansible.builtin.slurp:
         src: /etc/llama-server/api-key
-      delegate_to: ai.lan
+      delegate_to: compute.lan
       register: llama_api_key_b64
       no_log: true
 
@@ -64,6 +72,9 @@
             openwebui.{{inventory_hostname}}:
               image: ghcr.io/open-webui/open-webui
               restart: unless-stopped
+              # Public-DNS pinning for the ComfyUI HTTPS route (hairpin). Derived
+              # from inventory_hostname (see vars); override via -e if needed.
+              extra_hosts: {{ openwebui_extra_hosts }}
               environment:
                 # Global
                 - GLOBAL_LOG_LEVEL=WARNING
@@ -95,18 +106,18 @@
                 - OAUTH_MAP_EMAIL_TO_USERNAME=true
                 - AUTO_APPROVE_OAUTH_ACCOUNTS=true
                 - DEFAULT_USER_ROLE=user
-                # RAG / Document Processing (Tika runs as Docker container on ai.lan)
+                # RAG / Document Processing (Tika runs as Docker container on compute.lan)
                 - CONTENT_EXTRACTION_ENGINE=tika
-                - TIKA_SERVER_URL=http://ai.lan:9998
+                - TIKA_SERVER_URL=http://compute.lan:9998
                 - TIKA_SERVER_VERSION=4
                 - PDF_EXTRACT_IMAGES=true
                 - ENABLE_IMAGE_INTERPRETATION=true
                 - BYPASS_EMBEDDING_AND_RETRIEVAL=true
-                # Web Search (SearXNG runs as Docker container on ai.lan)
+                # Web Search (SearXNG runs as Docker container on compute.lan)
                 - ENABLE_WEB_SEARCH=true
                 - WEB_SEARCH_ENGINE=searxng
                 - WEB_SEARCH_RESULT_COUNT=3
-                - SEARXNG_QUERY_URL=http://{{ ai_host }}:8081/search?format=json&q=<query>
+                - SEARXNG_QUERY_URL=http://{{ compute_host }}:8081/search?format=json&q=<query>
                 - ENABLE_RAG_LOCAL_WEB_FETCH=false
                 - BYPASS_WEB_SEARCH_WEB_LOADER=true
                 # AI Model Defaults (llama.cpp via OpenAI-compatible API)
@@ -127,22 +138,22 @@
                 - OPENAI_API_REQUEST_TIMEOUT=180
                 - ENABLE_CONTEXT_COMPACTION=true
                 - CONTEXT_COMPACTION_TOKEN_THRESHOLD=200000
-                # Image Generation (ComfyUI)
+                # Image Generation (ComfyUI) - public HTTPS route via Traefik (see vars)
                 - ENABLE_IMAGE_GENERATION=true
                 - IMAGE_GENERATION_ENGINE=comfyui
                 - IMAGE_GENERATION_MODEL=sd15.safetensors
-                - COMFYUI_BASE_URL=http://{{ ai_host }}:8188
+                - COMFYUI_BASE_URL={{ openwebui_comfyui_base_url }}
                 - ENABLE_IMAGE_EDIT=true
                 - IMAGE_EDIT_ENGINE=comfyui
                 - IMAGE_EDIT_MODEL=sd15.safetensors
-                - IMAGES_EDIT_COMFYUI_BASE_URL=http://{{ ai_host }}:8188
-                # Speech-to-Text (Whisper)
-                - STT_WHISPER_API_BASE_URL=https://stt.defiant.dedyn.io/v1
+                - IMAGES_EDIT_COMFYUI_BASE_URL={{ openwebui_comfyui_base_url }}
+                # Speech-to-Text (Whisper) via Traefik HTTPS - derived from inventory_hostname
+                - STT_WHISPER_API_BASE_URL=https://stt.{{ inventory_hostname }}/v1
                 - STT_WHISPER_API_KEY={{ llama_api_key }}
                 - STT_WHISPER_MODEL=ggml-large-v3-turbo.bin
-                # Text-to-Speech (Kokoro)
+                # Text-to-Speech (openai-compatible XTTS proxy) via Traefik HTTPS
                 - AUDIO_TTS_ENGINE=openai
-                - AUDIO_TTS_OPENAI_API_BASE_URL=https://tts.defiant.dedyn.io/v1
+                - AUDIO_TTS_OPENAI_API_BASE_URL=https://tts.{{ inventory_hostname }}/v1
                 - AUDIO_TTS_MODEL=tts-1
                 - AUDIO_TTS_OPENAI_API_KEY={{ llama_api_key }}
                 # Other
@@ -405,7 +416,7 @@
       changed_when: '"restart" in db_config_result.stdout'
       notify: Restart openwebui
 
-    # Store the llama.cpp API key so OpenWebUI authenticates against ai.lan.
+    # Store the llama.cpp API key so OpenWebUI authenticates against compute.lan.
     # openai.api_keys is parallel to openai.api_base_urls (written by the task above).
     - name: Store llama API key in OpenWebUI DB (openai.api_keys)
       ansible.builtin.shell: |

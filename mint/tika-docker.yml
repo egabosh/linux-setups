@@ -1,5 +1,5 @@
 ---
-- name: Apache Tika server (Docker container on ai.lan)
+- name: Apache Tika server (Docker container on compute.lan)
   hosts: all
   become: yes
   vars:

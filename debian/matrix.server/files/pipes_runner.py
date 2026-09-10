@@ -17,7 +17,7 @@
 #     "rooms": [
 #       {
 #         "name": "Share",
-#         "alias": "#Share:matrix.defiant.dedyn.io",
+#         "alias": "#Share:<your-domain>",
 #         "data": "/data/Share",                  # dir with credentials.json + store/
 #         "fifo": "/fifos/matrix-room-Share.fifo",# container path of the fifo
 #         "forward_history": true

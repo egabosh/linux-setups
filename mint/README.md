@@ -29,7 +29,7 @@ bash mint.sh
 ```
 better reboot after first run to see more verbose boot progress and load changed Cinnamon design
 
-# AI services on ai.lan (2x RX 7900 XTX = 48 GiB VRAM, Ryzen 9 9950X)
+# AI services on compute.lan (2x RX 7900 XTX = 48 GiB VRAM, Ryzen 9 9950X)
 
 All services are deployed as Ansible playbooks from this `mint/` directory.
 GPU[0]/GPU[1] selection happens via `HIP_VISIBLE_DEVICES` (ROCm/HIP has NO automatic
@@ -40,11 +40,11 @@ uses both GPUs via `--split-mode layer`. Deployment order: `compute-node-install
 
 | Service (systemd) | Local port | Public (via Traefik on 172.23.0.222) | Auth | Model / draft head | Type |
 |-------------------|------------|--------------------------------------|------|--------------------|------|
-| llama-server | 8080 | `https://llm.defiant.dedyn.io` | Bearer | `Qwen3.8-27B-Uncensored-Q5_K_M.gguf` (17.9 GiB) + `mtp-Qwen3.8-27B-Uncensored.gguf` (mtp-RVN, 1.7 GiB) + `mmproj-Qwen3.8-27B-Uncensored-f16.gguf` (0.6 GiB) | Chat LLM, vision, uncensored, 262136 native context, `--parallel 2` |
-| comfyui | 8188 | (LAN only, no public route yet) | none (LAN) | `sd15.safetensors` (SD1.5 fp16) | Text-to-image (worksheet graphics) |
+| llama-server | 8080 | `https://llm.<public-domain>` | Bearer | `Qwen3.8-27B-Uncensored-Q5_K_M.gguf` (17.9 GiB) + `mtp-Qwen3.8-27B-Uncensored.gguf` (mtp-RVN, 1.7 GiB) + `mmproj-Qwen3.8-27B-Uncensored-f16.gguf` (0.6 GiB) | Chat LLM, vision, uncensored, 262136 native context, `--parallel 2` |
+| comfyui | 8188 | `https://comfyui.<public-domain>` | LAN/docker IPs only (`allowlocalipsonly`, external = 403) | `sd15.safetensors` (SD1.5 fp16) + `qwen_3_4b.safetensors`/`z_image_turbo_bf16.safetensors`/`ae.safetensors` (Z-Image-Turbo) | Text-to-image (worksheet graphics), HTTPS via Traefik; OpenWebUI talks to it over `https://comfyui.<public-domain>` (hairpin). No auth (RPC surface) -> restricted to local IPs |
 | whisper-server | 8091 | - | localhost only | `ggml-large-v3-turbo` (whisper.cpp) | Speech-to-text backend |
-| whisper-openai-proxy | 8082 | `https://stt.defiant.dedyn.io` | Bearer | - | OpenAI-compatible STT proxy (forwards to whisper-server 8091) |
-| xtts-v2 | 8084 | `https://tts.defiant.dedyn.io` | Bearer | Coqui XTTS-v2 (multi-speaker, native venv, no Docker) | Text-to-speech |
+| whisper-openai-proxy | 8082 | `https://stt.<public-domain>` | Bearer | - | OpenAI-compatible STT proxy (forwards to whisper-server 8091) |
+| xtts-v2 | 8084 | `https://tts.<public-domain>` | Bearer | Coqui XTTS-v2 (multi-speaker, native venv, no Docker) | Text-to-speech |
 | searxng-docker | 8081 | - | - | - | Meta search engine (host port 8081 -> container 8080) |
 | tika-docker | 9998 | - | - | Apache Tika | Content/Document metadata extraction |
 | piper-tts | (local) | - | - | Piper (CPU only) | Lightweight TTS |
@@ -59,17 +59,17 @@ uses both GPUs via `--split-mode layer`. Deployment order: `compute-node-install
 - One job at a time, model is loaded per request in a subprocess (no RAM pinned between jobs) - designed for the current low-RAM situation. Torch CPU wheels, ~80 MB model, RAM peak ~1-1.5 GB per job.
 
 ## Authentication (all three AI services use the SAME Bearer key)
-- All keys come from one file: `/etc/llama-server/api-key` on ai.lan (format `LLAMA_API_KEY=<64 hex>`, mode 0640 root:llama).
+- All keys come from one file: `/etc/llama-server/api-key` on compute.lan (format `LLAMA_API_KEY=<64 hex>`, mode 0640 root:llama).
 - llama.cpp validates natively (`--api-key`); whisper/xtts proxies check `Authorization: Bearer <key>` against the same file.
 - Clients (OpenWebUI and manually) must send `Authorization: Bearer <key>` - identical for llm/stt/tts.
-- Health endpoints stay open for monitoring: `https://tts.defiant.dedyn.io/health`, `https://llm.defiant.dedyn.io/health`.
+- Health endpoints stay open for monitoring: `https://tts.<public-domain>/health`, `https://llm.<public-domain>/health`.
 
 ## Traefik routing (host 172.23.0.222, ssh -p33)
-File providers in `/home/docker/traefik/providers/` (mirror: `debian/traefik.server/providers/`, synced via scp):
-- `llm.defiant.dedyn.io.yml` -> `http://172.23.0.225:8080`
-- `stt.defiant.dedyn.io.yml` -> `http://172.23.0.225:8082`
-- `tts.defiant.dedyn.io.yml` -> `http://172.23.0.225:8084`
-Traefik watches the directory (no container restart needed). Backends return 502 while ai.lan sleeps (WoL).
+File providers in `/home/docker/traefik/providers/` (mirror: `debian/traefik.server/providers/`, synced via scp, FQDNs stripped for privacy):
+- `llm.<public-domain>.yml` -> `http://172.23.0.225:8080`
+- `stt.<public-domain>.yml` -> `http://172.23.0.225:8082`
+- `tts.<public-domain>.yml` -> `http://172.23.0.225:8084`
+Traefik watches the directory (no container restart needed). Backends return 502 while compute.lan sleeps (WoL).
 
 Note: whisper-server intentionally uses 8091, not 8081 (8081 is taken by SearXNG).
 

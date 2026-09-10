@@ -17,11 +17,11 @@ searxng-docker.yml
 demucs-separate-cpu.yml"
 
 set -e
-for ai_playbook in $list
+for compute_playbook in $list
 do
-  g_echo "==== $ai_playbook"
-  scp $ai_playbook ai.lan:/root
-  ansible-playbook --inventory ai.lan, --limit ai.lan -e "ansible_python_interpreter=/usr/bin/python3"  $ai_playbook
+  g_echo "==== $compute_playbook"
+  scp $compute_playbook compute.lan:/root
+  ansible-playbook --inventory compute.lan, --limit compute.lan -e "ansible_python_interpreter=/usr/bin/python3"  $compute_playbook
 done
 
 

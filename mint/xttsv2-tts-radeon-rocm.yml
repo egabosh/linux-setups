@@ -6,7 +6,7 @@
 - import_playbook: xttsv2-tts-install.yml
 
 - name: XTTS-v2 switch to ROCm backend (GPU[1])
-  hosts: ai.lan
+  hosts: compute.lan
   become: yes
 
   vars:

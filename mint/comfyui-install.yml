@@ -8,6 +8,8 @@
     comfyui_user: llama
     comfyui_dir: /opt/comfyui
     comfyui_port: 8188
+    # Z-Image-Turbo (ComfyUI official template) model sources on HuggingFace
+    comfyui_zimage_base: https://huggingface.co/Comfy-Org/z_image_turbo/resolve/main/split_files
     ansible_remote_tmp: /opt/tmp/ansible_$$
 
   environment:
@@ -100,6 +102,65 @@
         timeout: 120
         force: no
       when: not comfyui_model_stat.stat.exists
+
+    # Large model downloads (20+ GB) while llama-server holds ~25 GB RSS on a 32 GB
+    # box caused global OOM -> amdgpu SMU/SDMA wedge -> hard freeze (2026-09-11).
+    # The stack MUST be stopped during downloads (see AGENTS "Heavy install rule"),
+    # and /tmp/no-suspend prevents the idle-suspend watcher from suspending mid-run.
+    - name: Warn if GPU stack is running (large downloads risk OOM -> wedge)
+      ansible.builtin.shell:
+        cmd: systemctl is-active llama-server comfyui 2>/dev/null | grep -q active && echo RUNNING || echo IDLE
+      changed_when: false
+      register: comfyui_stack_state
+      failed_when: false
+
+    - name: Halt if GPU stack is running during model downloads
+      ansible.builtin.fail:
+        msg: "{{ comfyui_stack_state.stdout }} - stop llama-server/comfyui first (OOM -> amdgpu wedge), e.g. systemctl stop llama-server comfyui whisper-server whisper-openai-proxy xtts-v2"
+      when: "comfyui_stack_state.stdout == 'RUNNING'"
+
+    - name: Prevent idle-suspend during long downloads
+      ansible.builtin.file:
+        path: /tmp/no-suspend
+        state: touch
+
+    - name: Ensure Z-Image-Turbo model dirs exist
+      ansible.builtin.file:
+        path: "{{ comfyui_dir }}/models/{{ item }}"
+        state: directory
+        mode: "0755"
+      loop:
+        - text_encoders
+        - diffusion_models
+        - vae
+      changed_when: false
+
+    # Z-Image-Turbo (ComfyUI official template workflow, 6B, 8 steps, needs
+    # qwen_3_4b text encoder + z_image_turbo_bf16 + ae VAE). wget -c resumes
+    # interrupted downloads; each task skips when the file is already present.
+    - name: Download Z-Image-Turbo text encoder (Qwen3-4B, 8 GB, resume-capable)
+      ansible.builtin.shell:
+        cmd: wget -c -q -O {{ comfyui_dir }}/models/text_encoders/qwen_3_4b.safetensors "{{ comfyui_zimage_base }}/text_encoders/qwen_3_4b.safetensors"
+      args:
+        creates: "{{ comfyui_dir }}/models/text_encoders/qwen_3_4b.safetensors"
+
+    - name: Download Z-Image-Turbo diffusion model (12.3 GB, resume-capable)
+      ansible.builtin.shell:
+        cmd: wget -c -q -O {{ comfyui_dir }}/models/diffusion_models/z_image_turbo_bf16.safetensors "{{ comfyui_zimage_base }}/diffusion_models/z_image_turbo_bf16.safetensors"
+      args:
+        creates: "{{ comfyui_dir }}/models/diffusion_models/z_image_turbo_bf16.safetensors"
+
+    - name: Download Z-Image-Turbo VAE (ae.safetensors, 0.3 GB, resume-capable)
+      ansible.builtin.shell:
+        cmd: wget -c -q -O {{ comfyui_dir }}/models/vae/ae.safetensors "{{ comfyui_zimage_base }}/vae/ae.safetensors"
+      args:
+        creates: "{{ comfyui_dir }}/models/vae/ae.safetensors"
+
+    # Downloads are done: clear the suspend guard again.
+    - name: Re-allow idle suspend after downloads
+      ansible.builtin.file:
+        path: /tmp/no-suspend
+        state: absent
 
     - name: Deploy ComfyUI workflow (API format)
       ansible.builtin.copy:

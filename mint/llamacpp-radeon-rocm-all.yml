@@ -99,7 +99,6 @@
 
           # ROCm environment
           Environment=HSA_ENABLE_SDMA=0
-          Environment=HSA_OVERRIDE_GFX_VERSION=11.0.0
           # Use both GPUs (2x RX 7900 XTX = 48 GB VRAM); llama.cpp splits layers automatically
           Environment=LD_LIBRARY_PATH={{ rocm_path }}/lib:{{ rocm_path }}/lib64:/usr/lib/x86_64-linux-gnu
           Environment=PATH={{ rocm_path }}/bin:{{ rocm_path }}/llvm/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin

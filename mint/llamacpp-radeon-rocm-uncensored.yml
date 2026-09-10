@@ -29,11 +29,12 @@
     # Reasoning: preserved (unlike 0xKitkat which locks thinking OFF)
     model_url: "https://huggingface.co/0bserverx/Qwen3.8-27B-Heretic-Abliterated-Uncensored-GGUF/resolve/main/RVN-Q5_K_M.gguf"
     model_file: "Qwen3.8-27B-Uncensored-Q5_K_M.gguf"
-    # MTP (Multi-Token Prediction) draft head for speculative decoding (2-3x faster)
-    # Use the SLIM standalone head mtp-RVN.gguf (1.7 GiB) - NOT the huge RVN-Q5_K_M-mtp.gguf
-    #   (that one is the FULL model with an embedded head, would double VRAM as draft model).
-    mtp_url: "https://huggingface.co/0bserverx/Qwen3.8-27B-Heretic-Abliterated-Uncensored-GGUF/resolve/main/mtp-RVN.gguf"
-    mtp_file: "mtp-Qwen3.8-27B-Uncensored.gguf"
+    # MTP (Multi-Token Prediction) draft head for speculative decoding (2-3x faster).
+    # Current llama.cpp requires token_embd.weight in the draft model, which the slim
+    # 0bserverx mtp-RVN head does NOT ship -> use the ggml-org head (same Qwen3.8 arch,
+    # works with any quant, incl. the uncensored weights). NOT the full RVN-...-mtp.gguf.
+    mtp_url: "https://huggingface.co/ggml-org/Qwen3.8-27B-GGUF/resolve/main/mtp-Qwen3.8-27B-Q8_0.gguf"
+    mtp_file: "mtp-Qwen3.8-27B-Q8_0.gguf"
     # Vision projector (uncensored version, Q8_0)
     mmproj_file: "mmproj-Qwen3.8-27B-Uncensored-f16.gguf"
     mmproj_url: "https://huggingface.co/0bserverx/Qwen3.8-27B-Heretic-Abliterated-Uncensored-GGUF/resolve/main/mmproj-Qwen3.8-27B-Q8_0.gguf"
@@ -107,10 +108,12 @@
           User=llama
           Group=llama
 
-          # ROCm environment
+          # ROCm environment.
+          # NOTE: HSA_OVERRIDE_GFX_VERSION must NOT be set - it makes hipGetDeviceCount()
+          # return 0 ('no ROCm-capable device is detected') on this ROCm, even for gfx1100.
           Environment=HSA_ENABLE_SDMA=0
-          Environment=HSA_OVERRIDE_GFX_VERSION=11.0.0
-          # Use both GPUs (2x RX 7900 XTX = 48 GB VRAM); llama.cpp splits layers automatically
+          # Use both GPUs (2x RX 7900 XTX = 48 GB VRAM); llama.cpp splits layers automatically.
+          # --device 0,1 restricts offloading to the two 7900 XTX (excludes the 512 MB iGPU).
           Environment=LD_LIBRARY_PATH={{ rocm_path }}/lib:{{ rocm_path }}/lib64:/usr/lib/x86_64-linux-gnu
           Environment=PATH={{ rocm_path }}/bin:{{ rocm_path }}/llvm/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
@@ -132,6 +135,7 @@
             -c {{ context_length }} \
             -ngl 99 \
             --split-mode layer \
+            --device ROCm0,ROCm1 \
             -mg 0 \
             --kv-unified \
             -cram -1 \
@@ -154,6 +158,7 @@
             --port {{ server_port }} \
             --host 0.0.0.0 \
              --parallel 2 \
+            --metrics \
             -b 1024 \
             -ub 512 \
             -lv 2

@@ -1,5 +1,5 @@
 ---
-- name: SearXNG metasearch (Docker container on ai.lan)
+- name: SearXNG metasearch (Docker container on compute.lan)
   hosts: all
   become: yes
   vars:

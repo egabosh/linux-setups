@@ -3,11 +3,11 @@
   hosts: all
   tasks:
 
-    # llama.cpp API key: generated once on ai.lan by the llamacpp playbooks
-    - name: Fetch llama API key from ai.lan
+    # llama.cpp API key: generated once on compute.lan by the llamacpp playbooks
+    - name: Fetch llama API key from compute.lan
       ansible.builtin.slurp:
         src: /etc/llama-server/api-key
-      delegate_to: ai.lan
+      delegate_to: compute.lan
       register: llama_api_key_b64
       no_log: true
 
@@ -152,7 +152,7 @@
                     "name": "llamacpp-default",
                     "reasoning": true,
                     "limit": {
-                      "context": 200704,
+                      "context": 262144,
                       "output": 8192
                     },
                     "parameters": {
