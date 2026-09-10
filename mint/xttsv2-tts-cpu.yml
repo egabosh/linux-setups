@@ -1,0 +1,41 @@
+---
+# XTTS-v2 on CPU: reinstall CPU torch pair and switch TTS_DEVICE=cpu.
+# Run after xttsv2-tts-install.yml (or use the ROCm variant for GPU).
+- import_playbook: xttsv2-tts-install.yml
+
+- name: XTTS-v2 switch to CPU backend
+  hosts: ai.lan
+  become: yes
+
+  vars:
+    xtts_user: llama
+    xtts_venv: /opt/tts2/venv
+    torch_ver: 2.11.0
+
+  tasks:
+    - name: Stop XTTS-v2 before touching the venv
+      ansible.builtin.systemd:
+        name: xtts-v2
+        state: stopped
+
+    - name: Reinstall CPU torch pair
+      ansible.builtin.shell:
+        cmd: "su -s /bin/bash {{ xtts_user }} -c 'PATH={{ xtts_venv }}/bin:$PATH python -m pip install --index-url https://download.pytorch.org/whl/cpu --force-reinstall torch=={{ torch_ver }}+cpu torchaudio=={{ torch_ver }}+cpu'"
+      register: tor
+      changed_when: "'Successfully installed' in tor.stdout"
+
+    - name: Write device env (CPU)
+      ansible.builtin.copy:
+        dest: /etc/tts2/env
+        owner: root
+        group: root
+        mode: "0644"
+        content: |
+          TTS_DEVICE=cpu
+
+    - name: Start XTTS-v2 on CPU
+      ansible.builtin.systemd:
+        name: xtts-v2
+        state: restarted
+        enabled: yes
+        daemon_reload: yes

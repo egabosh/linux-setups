@@ -1,0 +1,357 @@
+---
+# XTTS-v2 TTS (German) - shared install base.
+# WARNING: XTTS-v2 model weights are CPML (Coqui Public Model License 1.0) = NOT FOSS.
+#       Non-commercial use only. Kokoro-82M (mint/kokoro-tts-cpu.yml) is the FOSS
+#       alternative on the same port 8084. XTTS sounds more natural, hence kept.
+# Coqui TTS requires Python 3.11 (Mint ships 3.12): Python 3.11.9 is compiled into
+# /opt/pyenv via source. venv at /opt/tts2/venv, OpenAI-compatible proxy with shared
+# Bearer key at /opt/tts2/tts_xtts_proxy.py, service xtts-v2, port 8084.
+# Device is runtime-configurable via env TTS_DEVICE (cpu default, cuda for ROCm);
+# the -cpu / -radeon-rocm variants reinstall the matching torch pair and set it.
+- name: XTTS-v2 TTS install (shared base)
+  hosts: all
+  become: yes
+
+  vars:
+    xtts_user: llama
+    xtts_home: /opt/tts2
+    xtts_venv: "{{ xtts_home }}/venv"
+    pyenv_dir: /opt/pyenv
+    python_ver: 3.11.9
+    tts_port: 8084
+    torch_ver: 2.11.0
+    model_ref: "tts_models/multilingual/multi-dataset/xtts_v2"
+    model_marker: "/home/llama/.local/share/tts/tts_models--multilingual--multi-dataset--xtts_v2/model.pth"
+    # Kerstin dataset is CC0-1.0 (rhasspy), used as the voice-cloning reference.
+    ref_url: "https://raw.githubusercontent.com/rhasspy/dataset-voice-kerstin/master/audio/de_rhasspy-0004.webm"
+    ref_file: "{{ xtts_home }}/reference.wav"
+    ansible_remote_tmp: /opt/tmp/ansible_$$
+
+  environment:
+    TMPDIR: /opt/tmp
+
+  tasks:
+    - name: Install system dependencies (Python 3.11 build deps + audio tools)
+      ansible.builtin.apt:
+        name:
+          - build-essential
+          - libssl-dev
+          - zlib1g-dev
+          - libbz2-dev
+          - libreadline-dev
+          - libsqlite3-dev
+          - libffi-dev
+          - libncursesw5-dev
+          - xz-utils
+          - wget
+          - ffmpeg
+          - espeak-ng
+          - libsndfile1
+        state: present
+        update_cache: yes
+
+    - name: XTTS directories
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+      loop:
+        - "{{ xtts_home }}"
+        - /opt/tmp
+
+    - name: Check for existing Python {{ python_ver }} in {{ pyenv_dir }}
+      ansible.builtin.stat:
+        path: "{{ pyenv_dir }}/bin/python{{ python_ver[:-2] }}"
+      register: pyenv_stat
+
+    - name: Download Python {{ python_ver }} source
+      ansible.builtin.get_url:
+        url: "https://www.python.org/ftp/python/{{ python_ver }}/Python-{{ python_ver }}.tgz"
+        dest: "/opt/tmp/Python-{{ python_ver }}.tgz"
+        force: no
+      when: not pyenv_stat.stat.exists
+
+    - name: Extract Python {{ python_ver }} source
+      ansible.builtin.unarchive:
+        src: "/opt/tmp/Python-{{ python_ver }}.tgz"
+        dest: /opt/tmp
+        remote_src: yes
+      when: not pyenv_stat.stat.exists
+
+    - name: Build and install Python {{ python_ver }} into {{ pyenv_dir }}
+      ansible.builtin.command:
+        cmd: "./configure --prefix={{ pyenv_dir }}"
+        chdir: "/opt/tmp/Python-{{ python_ver }}"
+      when: not pyenv_stat.stat.exists
+
+    - name: Compile Python {{ python_ver }} (long, -j4 to respect 8 GB RAM)
+      ansible.builtin.shell:
+        cmd: "make -j4 && make install"
+        chdir: "/opt/tmp/Python-{{ python_ver }}"
+      async: 1800
+      poll: 15
+      when: not pyenv_stat.stat.exists
+
+    - name: Create venv with Python 3.11
+      ansible.builtin.command:
+        cmd: "{{ pyenv_dir }}/bin/python{{ python_ver[:-2] }} -m venv {{ xtts_venv }}"
+        creates: "{{ xtts_venv }}/bin/python"
+
+    - name: Upgrade pip in venv
+      ansible.builtin.pip:
+        name: pip
+        state: latest
+        virtualenv: "{{ xtts_venv }}"
+
+    - name: Install CPU torch first (so Coqui TTS does not pull CUDA wheels)
+      ansible.builtin.pip:
+        name:
+          - "torch=={{ torch_ver }}+cpu"
+          - "torchaudio=={{ torch_ver }}+cpu"
+        virtualenv: "{{ xtts_venv }}"
+        extra_args: "--index-url https://download.pytorch.org/whl/cpu --force-reinstall"
+
+    - name: Install Coqui TTS (MPL, weights CPML - non-commercial)
+      ansible.builtin.pip:
+        name: TTS==0.22.0
+        virtualenv: "{{ xtts_venv }}"
+
+    - name: XTTS model download script (license auto-accept via COQUI_TOS_AGREED)
+      ansible.builtin.copy:
+        dest: "{{ xtts_home }}/download_xtts.sh"
+        owner: root
+        group: root
+        mode: "0755"
+        content: |
+          #!/bin/bash
+          # Download XTTS-v2 weights into the llama home cache. CPML license is
+          # accepted via COQUI_TOS_AGREED=1 (Coqui's official headless mechanism).
+          set -e
+          export HOME=/home/llama
+          export PATH={{ xtts_venv }}/bin:/usr/bin:/bin
+          export COQUI_TOS_AGREED=1
+          export HF_HOME=/home/llama/.cache/huggingface
+          cd {{ xtts_home }}
+          python - <<'PY'
+          from TTS.api import TTS
+          tts = TTS("{{ model_ref }}")
+          tts.to("cpu")
+          print("XTTS-v2 ready")
+          PY
+
+    - name: Download XTTS-v2 model (1.4 GB, license auto-accepted, as llama)
+      ansible.builtin.shell:
+        cmd: "su -s /bin/bash {{ xtts_user }} -c '{{ xtts_home }}/download_xtts.sh'"
+      args:
+        creates: "{{ model_marker }}"
+      async: 3600
+      poll: 15
+      changed_when: false
+
+    - name: Voice cloning reference (Kerstin, CC0-1.0) - download
+      ansible.builtin.get_url:
+        url: "{{ ref_url }}"
+        dest: "{{ xtts_home }}/reference.webm"
+        force: no
+      register: ref_dl
+
+    - name: Convert reference webm to 22.05 kHz mono WAV for XTTS cloning
+      ansible.builtin.shell:
+        cmd: "ffmpeg -y -loglevel error -i {{ xtts_home }}/reference.webm -ac 1 -ar 22050 -t 15 {{ ref_file }}"
+      args:
+        creates: "{{ ref_file }}"
+      changed_when: false
+
+    - name: Remove raw reference webm
+      ansible.builtin.file:
+        path: "{{ xtts_home }}/reference.webm"
+        state: absent
+
+    - name: Chown runtime/home to service user
+      ansible.builtin.file:
+        path: "{{ item }}"
+        owner: "{{ xtts_user }}"
+        group: "{{ xtts_user }}"
+        recurse: yes
+      loop:
+        - "{{ xtts_home }}"
+        - /home/llama/.local/share/tts
+
+    - name: Device env directory
+      ansible.builtin.file:
+        path: /etc/tts2
+        state: directory
+
+    - name: XTTS proxy script (OpenAI-compatible, shared Bearer key)
+      ansible.builtin.copy:
+        dest: "{{ xtts_home }}/tts_xtts_proxy.py"
+        owner: "{{ xtts_user }}"
+        group: "{{ xtts_user }}"
+        mode: "0644"
+        content: |
+          import json, io, os, sys, tempfile, threading
+          from http.server import HTTPServer, BaseHTTPRequestHandler
+
+          PORT       = int(os.environ.get('TTS_PORT', '{{ tts_port }}'))
+          TTS_DEVICE = os.environ.get('TTS_DEVICE', 'cpu')
+          REFERENCE  = "{{ ref_file }}"
+          SAMPLE_RATE = 22050
+          # Same shared key as llama.cpp (file format LLAMA_API_KEY=...)
+          API_KEY_FILE = os.environ.get('API_KEY_FILE', '/etc/llama-server/api-key')
+
+          def _authorized_self(handler):
+              """Require Authorization: Bearer <shared llama.cpp key>."""
+              header = handler.headers.get('Authorization', '')
+              if not header.startswith('Bearer '):
+                  return False
+              token = header[7:].strip()
+              try:
+                  with open(API_KEY_FILE) as f:
+                      for line in f:
+                          line = line.strip()
+                          if line.startswith('LLAMA_API_KEY=') and line.split('=', 1)[1] == token:
+                              return True
+              except OSError:
+                  return False
+              return False
+
+          print('Loading XTTS-v2...', flush=True)
+          from TTS.api import TTS
+          tts = TTS("{{ model_ref }}")
+          if TTS_DEVICE == 'cuda':
+              tts.to('cuda')
+          else:
+              tts.to('cpu')
+          _lock = threading.Lock()
+          print(f'XTTS-v2 ready on port {PORT} device {TTS_DEVICE}', flush=True)
+
+          class TTSHandler(BaseHTTPRequestHandler):
+              def _synthesize(self, text, speed):
+                  # XTTS clones the fixed CC0 reference voice; OpenAI voice names are ignored.
+                  with _lock:
+                      fd, tmp = tempfile.mkstemp(suffix='.wav', dir='{{ xtts_home }}')
+                      os.close(fd)
+                      try:
+                          tts.tts_to_file(
+                              text=text,
+                              file_path=tmp,
+                              speaker_wav=REFERENCE,
+                              language='de',
+                              speed=speed,
+                          )
+                          with open(tmp, 'rb') as f:
+                              return f.read()
+                      finally:
+                          os.unlink(tmp)
+
+              def do_GET(self):
+                  if '/health' in self.path:
+                      self._json(200, {'status': 'ok', 'voices': ['kerstin'],
+                                       'device': TTS_DEVICE, 'license': 'CPML non-commercial'})
+                  elif '/v1/models' in self.path:
+                      if not _authorized_self(self):
+                          self._json(401, {'error': 'Unauthorized'})
+                          return
+                      self._json(200, {'data': [{'id': 'xtts-v2', 'object': 'model'}]})
+                  else:
+                      self._json(404, {'error': 'not found'})
+
+              def do_POST(self):
+                  if not _authorized_self(self):
+                      self._json(401, {'error': 'Unauthorized'})
+                      return
+                  if '/v1/audio/speech' in self.path or self.path == '/':
+                      self._handle_tts()
+                  else:
+                      self._json(404, {'error': 'not found'})
+
+              def _json(self, code, obj):
+                  self.send_response(code)
+                  self.send_header('Content-Type', 'application/json')
+                  self.end_headers()
+                  self.wfile.write(json.dumps(obj).encode())
+
+              def _handle_tts(self):
+                  try:
+                      length = int(self.headers.get('Content-Length', 0))
+                      body = json.loads(self.rfile.read(length))
+                      text = body.get('input') or body.get('text', '')
+                      if not text:
+                          self._json(400, {'error': 'no input text'})
+                          return
+                      # XTTS is slow (esp. CPU) - cap input length to keep requests sane.
+                      text = text[:600]
+                      speed = float(body.get('speed', 1.0))
+                      speed = max(0.6, min(1.6, speed))
+                      data = self._synthesize(text, speed)
+                      self.send_response(200)
+                      self.send_header('Content-Type', 'audio/wav')
+                      self.send_header('Content-Length', str(len(data)))
+                      self.end_headers()
+                      self.wfile.write(data)
+                  except Exception as e:
+                      import traceback
+                      traceback.print_exc()
+                      self._json(500, {'error': str(e)})
+
+          if __name__ == '__main__':
+              HTTPServer(('0.0.0.0', PORT), TTSHandler).serve_forever()
+
+    - name: Free port {{ tts_port }} by stopping Kokoro TTS (FOSS fallback stays installed)
+      ansible.builtin.systemd:
+        name: kokoro-tts
+        state: stopped
+        enabled: no
+      ignore_errors: yes
+
+    - name: Deploy systemd service (device env via /etc/tts2/env)
+      ansible.builtin.copy:
+        dest: /etc/systemd/system/xtts-v2.service
+        owner: root
+        group: root
+        mode: "0644"
+        content: |
+          [Unit]
+          Description=XTTS-v2 TTS (German, CPML weights - non-commercial)
+          After=network-online.target
+          Wants=network-online.target
+
+          [Service]
+          Type=simple
+          User={{ xtts_user }}
+          Group={{ xtts_user }}
+          WorkingDirectory={{ xtts_home }}
+          EnvironmentFile=-/etc/tts2/env
+          Environment=PATH={{ xtts_venv }}/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+          Environment=PORT={{ tts_port }}
+          Environment=TTS_DEVICE=cpu
+          Environment=COQUI_TOS_AGREED=1
+          ExecStart={{ xtts_venv }}/bin/python {{ xtts_home }}/tts_xtts_proxy.py
+          Restart=on-failure
+          RestartSec=10
+          StandardOutput=journal
+          StandardError=journal
+          SyslogIdentifier=xtts-v2
+
+          [Install]
+          WantedBy=multi-user.target
+      notify: Restart XTTS-v2
+
+    - name: Enable and start XTTS-v2 (CPU until a variant switches the device)
+      ansible.builtin.systemd:
+        name: xtts-v2
+        enabled: yes
+        state: started
+        daemon_reload: yes
+
+    - name: Allow XTTS port {{ tts_port }} in UFW
+      community.general.ufw:
+        rule: allow
+        port: "{{ tts_port }}"
+        proto: tcp
+
+  handlers:
+    - name: Restart XTTS-v2
+      ansible.builtin.systemd:
+        name: xtts-v2
+        state: restarted
+        daemon_reload: yes
