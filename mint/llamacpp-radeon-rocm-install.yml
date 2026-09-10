@@ -90,7 +90,7 @@
         PATH: "{{ rocm_path }}/bin:{{ rocm_path }}/llvm/bin:{{ ansible_env.PATH | default('/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin', true) }}"
       register: build_result
       changed_when: build_result.rc == 0
-      when: not llama_binary.stat.exists or force_rebuild | default(false)
+      when: not llama_binary.stat.exists or (force_rebuild | default(false) | bool)
 
     # API key auth: generated once on the server, referenced by clients (OpenWebUI, opencode)
     - name: Create llama API key directory

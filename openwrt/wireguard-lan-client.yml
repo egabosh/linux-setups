@@ -62,7 +62,7 @@
         echo "[Interface]
         PrivateKey = $(uci get network.wg_lan_{{ client_name }}.private_key)
         Address = fdaa:a192:b168:cd44::{{ client_num }}/128, 192.168.44.{{ client_num }}/32
-        DNS = 172.23.0.220,defiant.dedyn.io
+        DNS = 172.23.0.220
         MTU = 1450
 
         [Peer]

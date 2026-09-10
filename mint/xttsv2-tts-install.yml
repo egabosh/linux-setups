@@ -115,6 +115,11 @@
         name: TTS==0.22.0
         virtualenv: "{{ xtts_venv }}"
 
+    - name: Pin transformers (TTS 0.22 needs BeamSearchScorer, removed in newer releases)
+      ansible.builtin.pip:
+        name: transformers==4.33.0
+        virtualenv: "{{ xtts_venv }}"
+
     - name: XTTS model download script (license auto-accept via COQUI_TOS_AGREED)
       ansible.builtin.copy:
         dest: "{{ xtts_home }}/download_xtts.sh"
@@ -190,6 +195,32 @@
         content: |
           import json, io, os, sys, tempfile, threading
           from http.server import HTTPServer, BaseHTTPRequestHandler
+
+          # Coqui TTS 0.22 checkpoints embed pickled class instances (XttsConfig).
+          # PyTorch >= 2.6 defaults torch.load to weights_only=True and rejects them,
+          # which crashes startup (UnpicklingError). The official HuggingFace
+          # checkpoint is trusted, so restore the legacy pickle deserialization
+          # for this process only.
+          import torch
+          _orig_load = torch.load
+          def _load(*args, **kwargs):
+              kwargs.setdefault('weights_only', False)
+              return _orig_load(*args, **kwargs)
+          torch.load = _load
+
+          # torchaudio 2.11 defaults to the torchcodec backend; its wheel is built
+          # against CUDA and needs libnvtrc.so.13 (absent on ROCm -> import crash).
+          # Decode the fixed reference WAV via soundfile instead, so no CUDA lib
+          # is required. XTTS only ever loads our own ./reference.wav here.
+          import torchaudio
+          try:
+              import soundfile as sf
+              def _ta_load(path):
+                  data, sr = sf.read(path, dtype='float32', always_2d=True)
+                  return torch.from_numpy(data).t().contiguous(), sr
+              torchaudio.load = _ta_load
+          except ImportError:
+              pass
 
           PORT       = int(os.environ.get('TTS_PORT', '{{ tts_port }}'))
           TTS_DEVICE = os.environ.get('TTS_DEVICE', 'cpu')

@@ -4,6 +4,13 @@
 
   vars:
     amdgpu_repo_url: "https://repo.radeon.com/amdgpu-install/"
+    # PINNED release (ROCm 7.2.4, driver 6.16): the ONLY stack proven stable for
+    # multi-GPU llama.cpp on 2x 7900 XTX. ROCm 10.x userspace breaks multi-GPU
+    # (hipMemcpyAsync segfault + SDMA engine hang) - tracked upstream as
+    # https://github.com/ROCm/rocm-systems/issues/4817. Do NOT bump to "latest".
+    # amdgpu_release_dir maps to driver 6.16.x; the deb name encodes ROCm 7.2.4.
+    amdgpu_release_dir: "30.30.4"
+    amdgpu_deb_name: "amdgpu-install_7.2.4.70204-1_all.deb"
     ansible_remote_tmp: /opt/tmp/ansible_$$
 
   tasks:
@@ -34,28 +41,10 @@
           - libquadmath0
         state: present
 
-    # AMDGPU + ROCm driver installation (based on AMD installer)
-    - name: Get latest amdgpu-install version
-      ansible.builtin.shell: |
-        curl -s {{ amdgpu_repo_url }} \
-          | grep -oE 'href="[0-9][0-9.]*/"' \
-          | tr -d 'href="/' \
-          | sort -V | tail -n1
-      register: amdgpu_latest_ver
-      changed_when: false
-
-    - name: Get latest amdgpu-install package name
-      ansible.builtin.shell: |
-        curl -s {{ amdgpu_repo_url }}{{ amdgpu_latest_ver.stdout }}/ubuntu/noble/ \
-          | grep -oE 'href="amdgpu-install_[^"]+_all\.deb"' \
-          | sed 's/href=//; s/"//g' \
-          | sort -V | tail -n1
-      register: amdgpu_deb_name
-      changed_when: false
-
-    - name: Construct amdgpu-install download URL
+    # AMDGPU + ROCm driver installation (pinned to ROCm 7.2.4)
+    - name: Construct pinned amdgpu-install download URL (ROCm 7.2.4)
       ansible.builtin.set_fact:
-        amdgpu_url: "{{ amdgpu_repo_url }}{{ amdgpu_latest_ver.stdout }}/ubuntu/noble/{{ amdgpu_deb_name.stdout }}"
+        amdgpu_url: "{{ amdgpu_repo_url }}{{ amdgpu_release_dir }}/ubuntu/noble/{{ amdgpu_deb_name }}"
 
     - name: Download amdgpu-install.deb
       ansible.builtin.get_url:
@@ -78,26 +67,19 @@
       environment:
         DEBIAN_FRONTEND: noninteractive
       ansible.builtin.command:
-        cmd: "amdgpu-install -y --usecase=rocm,graphics --gfxversion=gfx1100 --no-dkms"
+        # NOTE: the ROCm 7.2 installer has no --gfxversion flag (gfx1100 is in the
+        # default target list). With --no-dkms the in-tree amdgpu driver is used,
+        # which is the proven-good combination with the 7.2.4 userspace runtime.
+        cmd: "amdgpu-install -y --usecase=rocm,graphics --no-dkms"
       when: amdgpu_install.changed
 
-    # HIP dev headers (hip_runtime.h, hipblas, rocblas, hipblas-common) are NOT
-    # installed by --usecase=rocm, but llama.cpp's GGML_HIP build requires them.
-    # Install the versioned -dev packages (hipblas-common ships hipblas-commonConfig.cmake).
-    - name: Install HIP/hipBLAS/rocBLAS dev headers
-      environment:
-        DEBIAN_FRONTEND: noninteractive
-      ansible.builtin.shell: |
-        rel=$(dpkg-query -W -f='${Package}' 'amdrocm-base*' 2>/dev/null | sed 's/amdrocm-base//' | head -n1)
-        [ -n "$rel" ] || rel=10.0
-        apt-get install -y \
-          "amdrocm-runtime-dev${rel}" \
-          "amdrocm-blas-dev${rel}" \
-          "amdrocm-hipblas-common-dev${rel}"
-      changed_when: false
-      become: yes
+    # HIP/hipBLAS dev headers: NOT needed as a separate step on ROCm 7.2.
+    # The 7.2 --usecase=rocm installs everything llama.cpp's GGML_HIP build needs
+    # (hip_runtime.h, hipblas, rocblas) - verified on compute.lan (llama.cpp builds clean
+    # against the 7.2.4 install). The amdrocm-*-dev10.x packages were only required
+    # as a workaround for ROCm 10.x and are deliberately dropped here.
 
-    - name: Check ROCm install dir location (ROCm 10 uses /opt/rocm directly)
+    - name: Check ROCm install dir location (ROCm 7.2 uses a versioned dir)
       ansible.builtin.shell: |
         if [ -d /opt/rocm ]; then echo /opt/rocm; \
         else ls -d /opt/rocm-* 2>/dev/null | sort -V | tail -n1; fi
@@ -113,7 +95,7 @@
         force: true
       when: rocm_latest_dir.stdout | length > 0 and rocm_latest_dir.stdout != '/opt/rocm'
 
-    - name: Configure GPU access via udev rules (ROCm 10 docs)
+    - name: Configure GPU access via udev rules
       ansible.builtin.copy:
         content: |
           KERNEL=="kfd", GROUP="render", MODE="0666"

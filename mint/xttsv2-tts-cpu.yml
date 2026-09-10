@@ -4,7 +4,7 @@
 - import_playbook: xttsv2-tts-install.yml
 
 - name: XTTS-v2 switch to CPU backend
-  hosts: ai.lan
+  hosts: compute.lan
   become: yes
 
   vars:

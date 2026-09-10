@@ -1,5 +1,5 @@
 ---
-# WoL (Wake-on-LAN) for ai.lan - robust NM config + cron watchdog fallback
+# WoL (Wake-on-LAN) for compute.lan - robust NM config + cron watchdog fallback
 #
 # Primary: NetworkManager sets 802-3-ethernet.wake-on-lan=magic on all ethernet
 # profiles, so NM re-arms the NIC for magic packets whenever a connection is
@@ -13,12 +13,13 @@
 # ErP Ready = Disabled), so the OS settings below are sufficient for S3/S5.
 #
 # Usage:
-#   ansible-playbook -i ai.lan, mint/wake-on-lan.yml
+#   ansible-playbook -i compute.lan, mint/wake-on-lan.yml
 
 - hosts: all
   gather_facts: false
   vars:
     wol_nic_mac: "b0:82:e2:aa:c5:16"
+    power_user: user
   tasks:
 
     - name: Install ethtool
@@ -101,6 +102,102 @@
           # WoL watchdog - re-arms magic packet every minute
           @reboot	root	/usr/local/sbin/wol-watch.sh
           * * * * *	root	/usr/local/sbin/wol-watch.sh
+
+    # --- Suspend-safe GPU services (pre/post sleep hook) ----------------------
+
+    # The dual-GPU stack (llama 256K + ComfyUI/XTTS/Whisper) holds tens of GB of
+    # VRAM. On suspend, amdgpu wants to swap that VRAM to system RAM, which is
+    # already under pressure -> page allocation failures -> SMU/gfxoff wedge ->
+    # the whole box hangs ("device lost from bus"). So stop the GPU services
+    # before sleep and restart them after resume. Auto-suspend stays enabled.
+
+    - name: Install suspend pre/post hook to stop/start GPU services
+      ansible.builtin.copy:
+        dest: /usr/lib/systemd/system-sleep/compute-gpu-services.sh
+        mode: '0755'
+        content: |
+          #!/bin/bash
+          # Stop GPU-dependent services before suspend, restart them after resume.
+          # Called by systemd: $1=pre|post, $2=suspend|hibernate|hybrid-sleep.
+
+          SERVICES=(llama-server comfyui whisper-server whisper-openai-proxy xtts-v2)
+
+          case "$1$2" in
+            pre*suspend|pre*hibernate|pre*hybrid-sleep)
+              # Stop the stack so amdgpu can drop VRAM without swapping tens of
+              # GB into an already pressured system RAM (crash source).
+              for svc in "${SERVICES[@]}"; do
+                systemctl stop "$svc" 2>/dev/null
+              done
+              sync
+              ;;
+            post*suspend|post*hibernate|post*hybrid-sleep)
+              # Restart the stack after resume (model reload adds a few seconds
+              # to the first request).
+              for svc in "${SERVICES[@]}"; do
+                systemctl start "$svc" 2>/dev/null
+              done
+              ;;
+          esac
+
+    - name: Remove obsolete ai-gpu-services.sh hook (renamed to compute-gpu-services.sh)
+      ansible.builtin.file:
+        path: /usr/lib/systemd/system-sleep/ai-gpu-services.sh
+        state: absent
+
+    # --- Crash-loop prevention: disable Cinnamon idle auto-suspend -----------
+
+    # If the desktop is idle, Cinnamon re-suspends a few minutes after every
+    # resume (no fresh input events). Each such suspend hits the GPU mid-use
+    # (llama-server is restarting and reloading >17 GB into VRAM), which wedges
+    # amdgpu (SMU/gfxoff "No response" -> "device lost from bus") and hard-hangs
+    # the box. Manual or scheduled suspend stays allowed and is safe, because
+    # the compute-gpu-services.sh hook above stops all GPU services first.
+
+    - name: Read current Cinnamon idle suspend action for the desktop user
+      ansible.builtin.shell:
+        cmd: "su -s /bin/bash {{ power_user }} -c 'dbus-run-session -- gsettings get org.cinnamon.settings-daemon.plugins.power sleep-inactive-ac-type'"
+      register: cin_idle_action
+      changed_when: false
+
+    - name: Disable idle auto-suspend (repeated idle suspend crashes amdgpu)
+      ansible.builtin.shell:
+        cmd: "su -s /bin/bash {{ power_user }} -c 'dbus-run-session -- gsettings set org.cinnamon.settings-daemon.plugins.power sleep-inactive-ac-type nothing'"
+      when: "cin_idle_action.stdout | default('') | trim != \"'nothing'\""
+
+    # --- Memory-pressure resilience: 32 GiB swap file -------------------------
+
+    # Any heavy host-RAM/IO job (pip Build, big apt) while llama holds ~21 GiB
+    # RSS put the kernel under memory pressure. With ROCm/KFD active (llama on
+    # both GPUs) this stalls SDMA/SMU on GPU 0 -> "SMU: No response" -> ring
+    # timeout -> "device lost from bus" -> hard hang (observed 2026-09-10).
+    # The 32 GiB swap file gives the kernel room to reclaim instead of
+    # stalling the GPU paths (the stock 2 GiB /swapfile is far too small).
+
+    - name: Ensure 32 GiB swap file exists, is enabled and persisted
+      ansible.builtin.shell: |
+        set -e
+        WANT=$((32*1024*1024*1024))
+        if [ -f /var/swap.img ] && [ "$(stat -c %s /var/swap.img)" = "$WANT" ]; then
+          :
+        else
+          swapoff /var/swap.img 2>/dev/null || true
+          rm -f /var/swap.img
+          fallocate -l 32G /var/swap.img
+          chmod 600 /var/swap.img
+          mkswap /var/swap.img
+          echo resized
+        fi
+        if ! grep -q '^/var/swap.img' /etc/fstab; then
+          echo '/var/swap.img none swap sw 0 0' >> /etc/fstab
+          echo fstab-added
+        fi
+        if ! swapon --show | grep -q '^/var/swap.img'; then
+          swapon /var/swap.img
+          echo enabled
+        fi
+      register: swap_res
+      changed_when: swap_res.stdout != ""
 
     # --- Verification -------------------------------------------------------
 

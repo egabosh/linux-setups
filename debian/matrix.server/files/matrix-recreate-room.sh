@@ -2,7 +2,7 @@
 
 # Recreate a broken Matrix room under the same alias (E2EE by default).
 # Usage: matrix-recreate-room.sh <ALIAS> [userid1 userid2 ...]
-#   ALIAS     short alias without server part, e.g. defiant.dedyn.io
+#   ALIAS     short alias without server part, e.g. your.domain
 #   userids   full Matrix user IDs to join, e.g. @olli:matrix.host
 # Steps:
 #   1. resolve old room id via directory alias
