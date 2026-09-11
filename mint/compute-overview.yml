@@ -1,0 +1,99 @@
+---
+# compute-overview: LAN dashboard for compute.lan showing CPU/RAM load, GPU
+# use/VRAM/temp, service states, active TCP connections per service and running
+# ffmpeg processes. Script: compute-overview/overview.py. Runs on port 8086
+# (port 80/443 are taken by the local traefik container). Firewall: LAN subnets
+# only (same allow-list as the other LAN services).
+- name: Install compute-overview dashboard
+  hosts: compute.lan
+
+  vars:
+    overview_port: 8086
+    overview_dir: /opt/compute-overview
+
+  tasks:
+    - name: Create dashboard directory
+      ansible.builtin.file:
+        path: "{{ overview_dir }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: Deploy the dashboard script
+      ansible.builtin.copy:
+        src: compute-overview/overview.py
+        dest: "{{ overview_dir }}/overview.py"
+        owner: root
+        group: root
+        mode: "0755"
+      notify: Restart compute-overview
+
+    - name: Install the systemd unit (binds {{ overview_port }})
+      ansible.builtin.copy:
+        dest: /etc/systemd/system/compute-overview.service
+        owner: root
+        group: root
+        mode: "0644"
+        content: |
+          [Unit]
+          Description=compute.lan overview dashboard (LAN only)
+          After=network-online.target
+
+          [Service]
+          Type=simple
+          ExecStart=/usr/bin/python3 {{ overview_dir }}/overview.py
+          Environment=PORT_OPTION={{ overview_port }}
+          Restart=always
+          RestartSec=3
+
+          [Install]
+          WantedBy=multi-user.target
+      notify: Restart compute-overview
+
+    - name: Reload systemd, enable and start the service
+      ansible.builtin.systemd:
+        name: compute-overview
+        state: started
+        enabled: yes
+        daemon_reload: yes
+
+    - name: Open firewall for the dashboard on LAN subnets only
+      community.general.ufw:
+        rule: allow
+        port: "{{ overview_port }}"
+        proto: tcp
+        from_ip: "{{ item }}"
+      loop:
+        - 10.0.0.0/8
+        - 172.16.0.0/12
+        - 192.168.0.0/16
+
+    - name: Wait until the dashboard answers
+      ansible.builtin.wait_for:
+        port: "{{ overview_port }}"
+        host: 127.0.0.1
+        timeout: 30
+
+    - name: Verify the JSON API delivers CPU/GPU/ffmpeg data
+      ansible.builtin.uri:
+        url: "http://127.0.0.1:{{ overview_port }}/api"
+        return_content: yes
+      register: api
+      failed_when:
+        - '"cpu" not in api.content'
+        - '"gpus" not in api.content'
+        - '"ffmpeg" not in api.content'
+
+    - name: Verify the HTML page is served
+      ansible.builtin.uri:
+        url: "http://127.0.0.1:{{ overview_port }}/"
+        return_content: yes
+      register: page
+      failed_when: "'compute.lan Overview' not in page.content"
+
+  handlers:
+    - name: Restart compute-overview
+      ansible.builtin.systemd:
+        name: compute-overview
+        state: restarted

@@ -144,12 +144,12 @@
                 "options": {
                   "baseURL": "https://llm.{{inventory_hostname}}/v1",
                   "apiKey": "{{ llama_api_key }}",
-                  "timeout": 600000,
+                  "timeout": 3600000,
                   "chunkTimeout": 1800000
                 },
                 "models": {
-                  "llamacpp-default": {
-                    "name": "llamacpp-default",
+                  "qwen3.8-27b-uncensored": {
+                    "name": "qwen3.8-27b-uncensored",
                     "reasoning": true,
                     "limit": {
                       "context": 262144,
@@ -164,7 +164,7 @@
                 }
               }
             },
-            "model": "ai/llamacpp-default",
+            "model": "ai/qwen3.8-27b-uncensored",
             "shell": "/bin/bash",
             "instructions": ["AGENTS.md"],
             "compaction": {
