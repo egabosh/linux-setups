@@ -48,9 +48,10 @@
     cache_type: "q4_0"
     # 2 parallel slots (one per user); slots share the unified KV pool up to context_length
 
-    # Reasoning: preserved in orcarouter build (unlike 0xKitkat)
-    # 1024 balances speed vs quality for general use
-    reasoning_budget: 1024
+    # Reasoning: budget 2048 = deeper thinking for opencode coding sessions than 1024,
+    # still a hard cap so simple requests answer quickly. --no-reasoning-preserve keeps
+    # old thinking traces OUT of the rolling context (slower context growth at 256K).
+    reasoning_budget: 2048
 
     ansible_remote_tmp: /opt/tmp/ansible_$$
 
@@ -139,14 +140,18 @@
             --device ROCm0,ROCm1 \
             -mg 0 \
             --kv-unified \
-            -cram -1 \
+            # cache-ram: cap the CPU compute-buffer cache at 4 GiB. -1 (unlimited)
+            # grows without bound as new buffer sizes appear (observed 26 GB RSS ->
+            # OOM kills on the 32 GB box, 2026-09-11). 4 GiB still covers all batch
+            # sizes used here.
+            -cram 4096 \
             --cache-type-k {{ cache_type }} \
             --cache-type-v {{ cache_type }} \
             --flash-attn on \
             --jinja \
             --reasoning on \
             --reasoning-budget {{ reasoning_budget }} \
-            --chat-template-kwargs '{"preserve_thinking": true}' \
+            --no-reasoning-preserve \
             --spec-type draft-mtp \
             -ngld 99 \
             --n-predict 32768 \
