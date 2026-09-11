@@ -62,6 +62,7 @@ _GPU_CACHE = {"ts": 0.0, "data": None}
 _PROC_CACHE = {"ts": 0.0, "data": None}
 _SHOWPIDS_CACHE = {"ts": 0.0, "data": None}
 _GPU_PDEV = None
+_LLAMA_KEY = None  # cached shared Bearer key (None = not loaded yet)
 
 
 def shell(cmd, timeout=6):
@@ -242,10 +243,36 @@ def ffmpeg_procs():
     return procs
 
 
+def _llama_key():
+    """Shared llama.cpp Bearer key (LLAMA_API_KEY=...) from /etc, cached once.
+
+    Returns '' when the file is missing/unreadable so callers degrade to an
+    unauthenticated best-effort probe instead of crashing.
+    """
+    global _LLAMA_KEY
+    if _LLAMA_KEY is None:
+        key = ""
+        try:
+            with open("/etc/llama-server/api-key") as f:
+                for line in f:
+                    line = line.strip()
+                    if line.startswith("LLAMA_API_KEY="):
+                        key = line.split("=", 1)[1].strip()
+                        break
+        except OSError:
+            pass
+        _LLAMA_KEY = key
+    return _LLAMA_KEY
+
+
 def llama_slots():
     """Active llama.cpp generation slots (best effort)."""
     try:
-        with urllib.request.urlopen("http://127.0.0.1:8080/slots", timeout=2) as r:
+        req = urllib.request.Request("http://127.0.0.1:8080/slots")
+        key = _llama_key()
+        if key:
+            req.add_header("Authorization", "Bearer " + key)
+        with urllib.request.urlopen(req, timeout=2) as r:
             data = json.loads(r.read().decode("utf-8", "replace"))
         return [{"id": s.get("id", "-"), "state": s.get("state", "-"),
                  "n_past": s.get("n_past", 0),
