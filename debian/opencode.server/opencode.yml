@@ -151,6 +151,11 @@
                   "qwen3.8-27b-uncensored": {
                     "name": "qwen3.8-27b-uncensored",
                     "reasoning": true,
+                    "attachment": true,
+                    "modalities": {
+                      "input": ["text", "image", "video", "pdf"],
+                      "output": ["text"]
+                    },
                     "limit": {
                       "context": 262144,
                       "output": 8192
