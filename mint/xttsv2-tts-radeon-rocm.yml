@@ -36,6 +36,10 @@
           TTS_DEVICE=cuda
           LD_LIBRARY_PATH=/opt/rocm/lib
           HSA_ENABLE_SDMA=0
+          # ROCr AsyncEventsLoop busy-poll spins ~1 core while the model is
+          # resident (ROCm#6522, same as comfyui); HSA_TOOLS_DISABLE_REGISTER=1
+          # stops it (kept in sync with comfyui-radeon-rocm.yml).
+          HSA_TOOLS_DISABLE_REGISTER=1
           HIP_VISIBLE_DEVICES=1
 
     - name: Start XTTS-v2 on ROCm/cuda

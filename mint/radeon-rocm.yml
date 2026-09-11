@@ -106,6 +106,21 @@
         mode: "0644"
       notify: reload udev
 
+    # SMU-resume-wedge countermeasure (Incident 5, 2026-09-11): disable gfxoff so a
+    # MES/KFD hiccup on resume cannot escalate into the 'SMU: No response' +
+    # 'Failed to disable gfxoff' hard-freeze loop. Bit 15 (PP_GFXOFF_MASK) cleared.
+    # Applied live 2026-09-11. NOT runtime-writable - needs a reboot to take effect.
+    # Prior value on the box was 0xfff7bfff; after reboot verify
+    #   cat /sys/module/amdgpu/parameters/ppfeaturemask  ->  0xffff7fff
+    - name: Disable amdgpu gfxoff (resume-wedge countermeasure, reboot required)
+      ansible.builtin.copy:
+        dest: /etc/modprobe.d/amdgpu.conf
+        owner: root
+        group: root
+        mode: "0644"
+        content: |
+          options amdgpu ppfeaturemask=0xffff7fff
+
     # Generic GPU / ROCm helper tools
     - name: Install generic GPU/ROCm helper packages
       ansible.builtin.apt:

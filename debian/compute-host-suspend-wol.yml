@@ -226,6 +226,16 @@
               continue
             fi
 
+            # opencode: a running opencode session writes/updates its state files
+            # in /home/docker/opencode.$(hostname)/opencode-data. Any file modified
+            # in the last 15 min means a job may be alive - do NOT suspend, even if
+            # it is between requests (an idle-waiting job shows no HTTP/GPU activity).
+            if find "/home/docker/opencode.$(hostname)/opencode-data/" -mmin "-15" | grep -q .
+            then
+              g_echo_note "opencode data updated within last 15 min - active session"
+              continue
+            fi
+
             # GPU actively computing (llama/ComfyUI/XTTS/Whisper also run work
             # between HTTP requests, so TCP/time-based checks are not enough)
             if gpu_busy
@@ -234,16 +244,19 @@
               continue
             fi
 
-            # manual override flag: local (traefik host) and remote (ai host)
+            # manual override flag: local (traefik host) and remote (ai host).
+            # Non-EMPTY check (-s): the flag must be created WITH a time-stamp
+            # ('date >> /tmp/no-suspend'), so a forgotten leftover is recognizable
+            # by its date - and an empty file is ignored on purpose.
             if [[ -s /tmp/no-suspend ]]
             then
-              g_echo_note "local /tmp/no-suspend exists and is not empty"
+              g_echo_note "local /tmp/no-suspend exists and is non-empty"
               continue
             fi
 
             if ssh $SSHOPTS "$AI_HOST" '[[ -s /tmp/no-suspend ]]'
             then
-              g_echo_note "remote /tmp/no-suspend exists and is not empty"
+              g_echo_note "remote /tmp/no-suspend exists and is non-empty"
               continue
             fi
 

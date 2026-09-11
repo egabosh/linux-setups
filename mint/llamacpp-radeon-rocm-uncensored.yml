@@ -13,6 +13,7 @@
     llama_dir: "/opt/llama.cpp"
     models_dir: "/opt/llama-models"
     server_port: 8080
+    model_alias: "qwen3.8-27b-uncensored"
     service_name: "llama-server"
     rocm_path: "/opt/rocm"
 
@@ -155,6 +156,7 @@
             --presence-penalty 1.5 \
             --repeat-penalty 1.0 \
             --api-key ${LLAMA_API_KEY} \
+            --alias {{ model_alias }} \
             --port {{ server_port }} \
             --host 0.0.0.0 \
              --parallel 2 \

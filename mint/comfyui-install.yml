@@ -8,8 +8,14 @@
     comfyui_user: llama
     comfyui_dir: /opt/comfyui
     comfyui_port: 8188
-    # Z-Image-Turbo (ComfyUI official template) model sources on HuggingFace
+    # Z-Image-Turbo (ComfyUI official template) model sources on HuggingFace.
+    # DEFAULT = quantized set (int8_convrot + fp8 TE): the bf16 full set needs
+    # ~20 GB W peak RAM *on top* of llama-server (~25 GB) and OOM-kills comfyui
+    # on the 32 GB box (observed 2026-09-11) - toggle comfyui_zimage_bf16 only
+    # on boxes with enough RAM. ae VAE always required.
     comfyui_zimage_base: https://huggingface.co/Comfy-Org/z_image_turbo/resolve/main/split_files
+    comfyui_zimage_quant: true
+    comfyui_zimage_bf16: false
     ansible_remote_tmp: /opt/tmp/ansible_$$
 
   environment:
@@ -119,10 +125,11 @@
         msg: "{{ comfyui_stack_state.stdout }} - stop llama-server/comfyui first (OOM -> amdgpu wedge), e.g. systemctl stop llama-server comfyui whisper-server whisper-openai-proxy xtts-v2"
       when: "comfyui_stack_state.stdout == 'RUNNING'"
 
-    - name: Prevent idle-suspend during long downloads
-      ansible.builtin.file:
-        path: /tmp/no-suspend
-        state: touch
+    - name: Prevent idle-suspend during long downloads (non-empty, time-stamped -
+        the watcher checks -s only, AND a time-stamp documents when the flag was
+        set, so a forgotten leftover /tmp/no-suspend is recognizable by its date)
+      ansible.builtin.shell:
+        cmd: date >> /tmp/no-suspend
 
     - name: Ensure Z-Image-Turbo model dirs exist
       ansible.builtin.file:
@@ -135,20 +142,38 @@
         - vae
       changed_when: false
 
-    # Z-Image-Turbo (ComfyUI official template workflow, 6B, 8 steps, needs
-    # qwen_3_4b text encoder + z_image_turbo_bf16 + ae VAE). wget -c resumes
+    # Z-Image-Turbo (ComfyUI official template workflow, 6B, 8-9 steps, needs a
+    # qwen_3_4b text encoder + a diffusion model + the ae VAE). wget -c resumes
     # interrupted downloads; each task skips when the file is already present.
-    - name: Download Z-Image-Turbo text encoder (Qwen3-4B, 8 GB, resume-capable)
+    # The quantized int8_convrot + fp8 TE pair is the SAFE default on 32 GB RAM
+    # (bf16 full set OOM-kills comfyui while llama-server runs - see AGENTS).
+    - name: Download Z-Image-Turbo quantized diffusion model (int8_convrot, 6.2 GB, resume-capable)
       ansible.builtin.shell:
-        cmd: wget -c -q -O {{ comfyui_dir }}/models/text_encoders/qwen_3_4b.safetensors "{{ comfyui_zimage_base }}/text_encoders/qwen_3_4b.safetensors"
+        cmd: wget -c -q -O {{ comfyui_dir }}/models/diffusion_models/z_image_turbo_int8_convrot.safetensors "{{ comfyui_zimage_base }}/diffusion_models/z_image_turbo_int8_convrot.safetensors"
       args:
-        creates: "{{ comfyui_dir }}/models/text_encoders/qwen_3_4b.safetensors"
+        creates: "{{ comfyui_dir }}/models/diffusion_models/z_image_turbo_int8_convrot.safetensors"
+      when: comfyui_zimage_quant | bool
 
-    - name: Download Z-Image-Turbo diffusion model (12.3 GB, resume-capable)
+    - name: Download Z-Image-Turbo quantized text encoder (qwen_3_4b fp8, 5.6 GB, resume-capable)
+      ansible.builtin.shell:
+        cmd: wget -c -q -O {{ comfyui_dir }}/models/text_encoders/qwen_3_4b_fp8_mixed.safetensors "{{ comfyui_zimage_base }}/text_encoders/qwen_3_4b_fp8_mixed.safetensors"
+      args:
+        creates: "{{ comfyui_dir }}/models/text_encoders/qwen_3_4b_fp8_mixed.safetensors"
+      when: comfyui_zimage_quant | bool
+
+    - name: Download Z-Image-Turbo bf16 diffusion model (12.3 GB, resume-capable - RAM-heavy)
       ansible.builtin.shell:
         cmd: wget -c -q -O {{ comfyui_dir }}/models/diffusion_models/z_image_turbo_bf16.safetensors "{{ comfyui_zimage_base }}/diffusion_models/z_image_turbo_bf16.safetensors"
       args:
         creates: "{{ comfyui_dir }}/models/diffusion_models/z_image_turbo_bf16.safetensors"
+      when: comfyui_zimage_bf16 | bool
+
+    - name: Download Z-Image-Turbo bf16 text encoder (qwen_3_4b, 8 GB, resume-capable - RAM-heavy)
+      ansible.builtin.shell:
+        cmd: wget -c -q -O {{ comfyui_dir }}/models/text_encoders/qwen_3_4b.safetensors "{{ comfyui_zimage_base }}/text_encoders/qwen_3_4b.safetensors"
+      args:
+        creates: "{{ comfyui_dir }}/models/text_encoders/qwen_3_4b.safetensors"
+      when: comfyui_zimage_bf16 | bool
 
     - name: Download Z-Image-Turbo VAE (ae.safetensors, 0.3 GB, resume-capable)
       ansible.builtin.shell:

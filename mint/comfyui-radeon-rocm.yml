@@ -44,7 +44,16 @@
           Environment=PATH=/opt/rocm/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
           Environment=LD_LIBRARY_PATH=/opt/rocm/lib:/opt/rocm/lib64
           Environment=HSA_ENABLE_SDMA=0
-          Environment=HIP_VISIBLE_DEVICES=1
+          # ROCr AsyncEventsLoop spins a whole core at 100% idle on this ROCm
+          # 7.2.4 (hsaKmtWaitOnMultipleObjects busy-poll, see ROCm#6522). The
+          # documented workaround HSA_TOOLS_DISABLE_REGISTER=1 stops the spin
+          # (verified 2026-09-11; comfyui idles at ~0% CPU, GPU context intact).
+          Environment=HSA_TOOLS_DISABLE_REGISTER=1
+          # GPU[0]: XTTS+Whisper are pinned to GPU[1] and llama holds MORE VRAM on
+          # GPU[1] (~18 GiB) than GPU[0] (~15 GiB) measured 2026-09-11 -> GPU[0]
+          # has ~9 GiB free vs ~5.8 on GPU[1]. ComfyUI (~6 GiB peak, more with
+          # Z-Image) fits only on GPU[0].
+          Environment=HIP_VISIBLE_DEVICES=0
           ExecStart={{ comfyui_dir }}/venv/bin/python {{ comfyui_dir }}/main.py --force-fp16 --listen 0.0.0.0 --port {{ comfyui_port }}
           Restart=on-failure
           RestartSec=10
