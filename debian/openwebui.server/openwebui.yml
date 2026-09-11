@@ -133,7 +133,12 @@
                 - ENABLE_MESSAGE_RATING=false
                 - ENABLE_FOLLOW_UP_GENERATION=false
                 - DEFAULT_CONTEXT_LENGTH=262144
-                - DEFAULT_MODEL_PARAMS={"function_calling":"native","max_tokens":32768}
+                # chat_template_kwargs.enable_thinking=false: OpenWebUI users get fast
+                # no-thinking answers by default (opencode talks to llama.cpp directly and
+                # keeps thinking ON via the server default). The OpenWebUI UI reasoning_effort
+                # controls cannot re-enable thinking: llama.cpp only maps "none" to
+                # enable_thinking=false, never anything to true.
+                - DEFAULT_MODEL_PARAMS={"function_calling":"native","max_tokens":32768,"chat_template_kwargs":{"enable_thinking":false}}
                 - DEFAULT_PROMPT_SUGGESTIONS=[]
                 - OPENAI_API_REQUEST_TIMEOUT=180
                 - ENABLE_CONTEXT_COMPACTION=true
@@ -399,6 +404,15 @@
         upsert("images.edit.comfyui.nodes", edit_nodes)
 
         upsert("ui.prompt_suggestions", [])
+
+        # Close analog: env var DEFAULT_MODEL_PARAMS seeds only a FRESH install;
+        # the DB row models.default_params takes precedence afterwards, so upsert
+        # it deterministically (live DB was max_tokens:8192, env says 32768).
+        upsert("models.default_params", {
+            "function_calling": "native",
+            "max_tokens": 32768,
+            "chat_template_kwargs": {"enable_thinking": False},
+        })
 
         needs_restart = False
         if "openai.enable" not in existing:
