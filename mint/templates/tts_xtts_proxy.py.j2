@@ -1,4 +1,4 @@
-import json, io, os, sys, tempfile, threading, time
+import json, io, os, re, sys, tempfile, threading, time, struct, wave
 from http.server import HTTPServer, BaseHTTPRequestHandler
 
 # Coqui TTS 0.22 checkpoints embed pickled class instances (XttsConfig).
@@ -29,8 +29,9 @@ except ImportError:
 
 PORT       = int(os.environ.get('TTS_PORT', '{{ tts_port }}'))
 TTS_DEVICE = os.environ.get('TTS_DEVICE', 'cpu')
+TTS_MAX_CHARS = int(os.environ.get('TTS_MAX_CHARS', '{{ tts_max_chars }}'))
 REFERENCE  = "{{ ref_file }}"
-SAMPLE_RATE = 22050
+SAMPLE_RATE = 24000
 # Same shared key as llama.cpp (file format LLAMA_API_KEY=...)
 API_KEY_FILE = os.environ.get('API_KEY_FILE', '/etc/llama-server/api-key')
 
@@ -106,24 +107,77 @@ print(f'XTTS-v2 ready on port {PORT} device {TTS_DEVICE} (lazy load)',
       flush=True)
 
 class TTSHandler(BaseHTTPRequestHandler):
+    def _synth_chunk(self, text, speed):
+        """Synthesize one chunk and return 24000 Hz mono int16 PCM bytes."""
+        tts = _ensure_tts()
+        fd, tmp = tempfile.mkstemp(suffix='.wav', dir='{{ xtts_home }}')
+        os.close(fd)
+        try:
+            tts.tts_to_file(
+                text=text,
+                file_path=tmp,
+                speaker_wav=REFERENCE,
+                language='de',
+                speed=speed,
+            )
+            with wave.open(tmp, 'rb') as w:
+                frames = w.readframes(w.getnframes())
+                params = w.getparams()
+            sr, ch, sw = params.framerate, params.nchannels, params.sampwidth
+            if sr != SAMPLE_RATE or ch != 1 or sw != 2:
+                return None  # unexpected format, caller hits the empty-pcm guard
+            return frames
+        finally:
+            os.unlink(tmp)
+
+    @staticmethod
+    def _chunk_sentences(text, max_len):
+        """Split text into chunks on sentence boundaries, each <= max_len.
+
+        XTTS processes at most about 250 input tokens per forward pass and
+        silently drops the rest of over-long sentences, so a giant single
+        request is not reliable. Keep whole sentences together (<= max_len)
+        and cut only on whitespace as a fallback for one huge sentence.
+        """
+        sentences = re.split(r'(?<=[.!?…])\s+', text)
+        chunks, cur = [], ''
+        for sent in sentences:
+            if len(cur) + len(sent) + 1 <= max_len:
+                cur = (cur + ' ' + sent).strip()
+                continue
+            if cur:
+                chunks.append(cur)
+            # single sentence longer than the cap: hard-cut word-wise
+            while len(sent) > max_len:
+                cut = sent.rfind(' ', 0, max_len)
+                if cut <= 0:
+                    cut = max_len
+                chunks.append(sent[:cut])
+                sent = sent[cut:].lstrip()
+            cur = sent
+        if cur:
+            chunks.append(cur)
+        return chunks
+
     def _synthesize(self, text, speed):
         # XTTS clones the fixed CC0 reference voice; OpenAI voice names are ignored.
         with _lock:
-            tts = _ensure_tts()
-            fd, tmp = tempfile.mkstemp(suffix='.wav', dir='{{ xtts_home }}')
-            os.close(fd)
-            try:
-                tts.tts_to_file(
-                    text=text,
-                    file_path=tmp,
-                    speaker_wav=REFERENCE,
-                    language='de',
-                    speed=speed,
-                )
-                with open(tmp, 'rb') as f:
-                    return f.read()
-            finally:
-                os.unlink(tmp)
+            chunks = self._chunk_sentences(text, 500)
+            pcm_parts = []
+            for chunk in chunks:
+                data = self._synth_chunk(chunk, speed)
+                if data:
+                    pcm_parts.append(data)
+            if not pcm_parts:
+                raise RuntimeError('synthesis produced no audio')
+            audio = b''.join(pcm_parts)
+            buf = io.BytesIO()
+            with wave.open(buf, 'wb') as w:
+                w.setnchannels(1)
+                w.setsampwidth(2)
+                w.setframerate(SAMPLE_RATE)
+                w.writeframes(audio)
+            return buf.getvalue()
 
     def do_GET(self):
         if '/health' in self.path:
@@ -160,8 +214,9 @@ class TTSHandler(BaseHTTPRequestHandler):
             if not text:
                 self._json(400, {'error': 'no input text'})
                 return
-            # XTTS is slow (esp. CPU) - cap input length to keep requests sane.
-            text = text[:600]
+            # Cap input length only as a crude safety net (real splitting happens
+            # in _chunk_sentences); value comes from TTS_MAX_CHARS env/ansible var.
+            text = text[:TTS_MAX_CHARS]
             speed = float(body.get('speed', 1.0))
             speed = max(0.6, min(1.6, speed))
             data = self._synthesize(text, speed)

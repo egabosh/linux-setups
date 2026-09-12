@@ -25,6 +25,9 @@
     # Kerstin dataset is CC0-1.0 (rhasspy), used as the voice-cloning reference.
     ref_url: "https://raw.githubusercontent.com/rhasspy/dataset-voice-kerstin/master/audio/de_rhasspy-0004.webm"
     ref_file: "{{ xtts_home }}/reference.wav"
+    # Max input chars for one /v1/audio/speech request (proxy chunks sentences).
+    # 100k chars ~= 2.5h of German audio; enough for whole chapters.
+    tts_max_chars: 100000
     ansible_remote_tmp: /opt/tmp/ansible_$$
 
   environment:
