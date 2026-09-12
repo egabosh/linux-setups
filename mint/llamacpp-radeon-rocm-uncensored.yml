@@ -168,7 +168,10 @@
             --metrics \
             -b 1024 \
             -ub 512 \
-            -lv 2
+            # -lv 3 (INFO): the overview dashboard reads the per-request log
+            # lines ("processing task"/"prompt processing") from journald to
+            # show when the last requests arrived.
+            -lv 3
 
           Restart=on-failure
           RestartSec=10
