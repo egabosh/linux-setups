@@ -340,11 +340,11 @@
           cat $g_tmp/hosts | grep -v tcp | cut -d '`' -f2 | sort -u | while read host
           do
             find -mmin -5 /tmp/$host >/dev/null 2>&1 | grep -q $host && continue
+            echo $host | egrep -q "^llm\.|^tts\.|^stt\." && continue
             if ! wget --dns-timeout=120 -t5 --waitretry=120 --connect-timeout=300 --read-timeout=15 http://${host} >${g_tmp}/traefik-wget-check -O /dev/null 2>&1 
             then
               if ! egrep -q "401 Unauthorized|403 Forbidden|415 Unsupported Media Type" ${g_tmp}/traefik-wget-check
               then
-                echo $host | egrep "^llm\." && egrep -q "502 Bad Gateway" ${g_tmp}/traefik-wget-check && continue
                 g_echo_error "Error while connecting ${host} with wget:
           
           $(cat ${g_tmp}/traefik-wget-check)"
@@ -353,7 +353,6 @@
               fi
               if egrep -q "502 Bad Gateway" ${g_tmp}/traefik-wget-check
               then
-                echo $host | egrep "^llm\." && continue
                 if [ -s "${g_tmp}/$host-502" ] && find "${g_tmp}/$host-502" | grep "$host-502" -mmin +15
                 then
                   g_echo_error "Error while connecting ${host} with wget:
