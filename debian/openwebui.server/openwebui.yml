@@ -13,12 +13,20 @@
       - "comfyui.{{ inventory_hostname }}:192.168.41.1"
   tasks:
 
-    # llama.cpp API key: generated once on compute.lan by the llamacpp playbooks
+    # llama.cpp API key: generated once on compute.lan by the llamacpp playbooks.
+    # Use explicit SSH connection vars: with the localhost inventory the delegate
+    # would otherwise inherit ansible_connection=local and read the stale local
+    # /etc/llama-server/api-key copy on this host instead of compute.lan.
     - name: Fetch llama API key from compute.lan
       ansible.builtin.slurp:
         src: /etc/llama-server/api-key
       delegate_to: compute.lan
       register: llama_api_key_b64
+      vars:
+        ansible_connection: ssh
+        ansible_host: compute.lan
+        ansible_user: root
+        ansible_port: 22
       no_log: true
 
     - name: Parse llama API key
