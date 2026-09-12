@@ -3,12 +3,20 @@
   hosts: all
   tasks:
 
-    # llama.cpp API key: generated once on compute.lan by the llamacpp playbooks
+    # llama.cpp API key: generated once on compute.lan by the llamacpp playbooks.
+    # Explicit SSH connection vars (see openwebui.server/openwebui.yml): inheriting
+    # ansible_connection=local from the localhost inventory would read the stale
+    # local key copy on the deploy host instead of compute.lan.
     - name: Fetch llama API key from compute.lan
       ansible.builtin.slurp:
         src: /etc/llama-server/api-key
       delegate_to: compute.lan
       register: llama_api_key_b64
+      vars:
+        ansible_connection: ssh
+        ansible_host: compute.lan
+        ansible_user: root
+        ansible_port: 22
       no_log: true
 
     - name: Parse llama API key
