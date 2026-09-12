@@ -294,6 +294,93 @@ def comfy_queue():
         return {"running": "-", "pending": "-"}
 
 
+def suspend_events():
+    """Suspend/resume history from /var/log/compute-sleep.log (managed by the
+    compute-gpu-services.sh system-sleep hook), newest first.
+
+    As a fallback for the current boot (when the log file has no entries yet),
+    the kernel dmesg PM entries are included. Their monotonic timestamps are
+    converted to wall-clock using /proc/uptime.
+    """
+    now = time.time()
+    try:
+        uptime = float(open("/proc/uptime").read().split()[0])
+    except Exception:
+        uptime = 0.0
+
+    seen = {}   # (wall_sec_rounded, kind) -> entry   (dedup log vs dmesg)
+    rows = []
+
+    def _add(wall_str, phase, mode):
+        key = (wall_str[:16], phase)  # minute + phase
+        if key in seen:
+            return
+        seen[key] = True
+        rows.append({"ts": wall_str, "phase": phase, "mode": mode})
+
+    # 1) from the persistent sleep-hook log file
+    try:
+        with open("/var/log/compute-sleep.log") as f:
+            for line in f:
+                p = line.split()
+                if len(p) < 3:
+                    continue
+                _add(" ".join(p[:2]), p[2], p[3] if len(p) > 3 else "-")
+    except OSError:
+        pass
+
+    # 2) fallback: dmesg PM suspend entry / exit  (relative monotonic -> wall clock)
+    if uptime > 0:
+        out = shell("dmesg 2>/dev/null")
+        for line in out.splitlines():
+            m = re.match(r"\[([0-9]+\.[0-9]+)\]\s+PM: suspend (entry|exit)", line)
+            if not m:
+                continue
+            rel = float(m.group(1))
+            wall = now - uptime + rel
+            if wall < 0:
+                continue
+            phase = "pre" if m.group(2) == "entry" else "post"
+            mode = "deep"
+            ts = time.strftime("%Y-%m-%d %H:%M:%S %Z", time.localtime(wall))
+            _add(ts, phase, mode)
+
+    rows.sort(key=lambda e: e["ts"], reverse=True)
+    return rows[:20]
+
+
+def llama_requests():
+    """Last llama.cpp request arrivals from journald INFO log lines.
+
+    Requires llama-server to run with -lv 3 (INFO) so each request produces a
+    'processing task'/'prompt processing' slot line with a journal timestamp.
+    Only the most recent entries are read (journald reads are cheap).
+    """
+
+    def run(cmd, timeout=8):
+        try:
+            r = subprocess.run(cmd, shell=True, capture_output=True,
+                               text=True, timeout=timeout)
+            return r.stdout
+        except Exception:
+            return ""
+
+    # -o short-iso: timestamps; grep the slot INFO lines that fire once per task
+    out = run("journalctl -u llama-server -o short-iso --no-pager "
+              "-n 4000 2>/dev/null | grep -aE 'processing task|prompt processing' | tail -20")
+    rows = []
+    for line in out.splitlines():
+        m = re.match(r"(\S{20,})\s+\S+\s+llama-server\[\d+\]:\s+(.*)", line)
+        if not m:
+            continue
+        ts = m.group(1)
+        if " " not in ts:
+            ts = ts.replace("T", " ")
+        rows.append({"ts": ts, "what": m.group(2).strip()[:90]})
+    rows.reverse()
+    return rows[:20]
+
+
 def gpu_pdev_map():
     """PCI id (drm-pdev) -> GPU index for VRAM attribution via fdinfo."""
     global _GPU_PDEV
@@ -521,6 +608,8 @@ def collect():
         "procs": top_procs(),
         "gpu_pids": gpu_pids(),
         "temps": dict(temps(), gpu=[g.get("temp") for g in gpu_stats()]),
+        "suspend": suspend_events(),
+        "llama_requests": llama_requests(),
     }
 
 
@@ -628,6 +717,16 @@ PAGE = """<!doctype html>
 <h2>llama.cpp Slots</h2>
 <table id="slots"><thead><tr><th>#</th><th>State</th><th>Tokens</th>
 <th>Task</th></tr></thead><tbody></tbody></table>
+
+<h2>Suspend / Resume (Letzte Ereignisse)</h2>
+<div class="sub">aus /var/log/compute-sleep.log vom systemd Sleep-Hook (pre=suspend eingeleitet, post=wieder wach)</div>
+<table id="sleep"><thead><tr><th>Zeit</th><th>Phase</th><th>Modus</th>
+</tr></thead><tbody></tbody></table>
+
+<h2>Letzte llama.cpp-Anfragen</h2>
+<div class="sub">aus journald (llama-server -lv 3: 'processing task'/'prompt processing' Slot-Logs)</div>
+<table id="llreq"><thead><tr><th>Zeit</th><th>Task</th>
+</tr></thead><tbody></tbody></table>
 
 <h2>Aktive Verbindungen</h2>
 <table id="conn"><thead><tr><th>Dienst</th><th>State</th><th>Lokal</th>
@@ -794,6 +893,35 @@ function load(){
         "</td><td>"+s.n_past+"</td><td>"+s.task_id+"</td>";
       sb.appendChild(tr);
     });
+
+    const ep=el("sleep").querySelector("tbody");
+    ep.innerHTML="";
+    (d.suspend||[]).forEach(e=>{
+      const tr=document.createElement("tr");
+      const cls=e.phase==="post"?"ok":"top";
+      tr.innerHTML="<td>"+e.ts+"</td><td class='"+cls+"'>"+e.phase+
+        "</td><td>"+e.mode+"</td>";
+      ep.appendChild(tr);
+    });
+    if(!(d.suspend||[]).length){
+      const tr=document.createElement("tr");
+      tr.innerHTML="<td colspan='3' class='idle'>noch keine Ereignisse</td>";
+      ep.appendChild(tr);
+    }
+
+    const qb=el("llreq").querySelector("tbody");
+    qb.innerHTML="";
+    (d.llama_requests||[]).forEach(r=>{
+      const tr=document.createElement("tr");
+      tr.innerHTML="<td>"+r.ts+"</td><td><span class='cmd'>"+r.what+
+        "</span></td>";
+      qb.appendChild(tr);
+    });
+    if(!(d.llama_requests||[]).length){
+      const tr=document.createElement("tr");
+      tr.innerHTML="<td colspan='2' class='idle'>noch keine Anfragen erfasst</td>";
+      qb.appendChild(tr);
+    }
 
     const cb=el("conn").querySelector("tbody");
     cb.innerHTML="";

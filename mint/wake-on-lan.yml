@@ -119,11 +119,14 @@
           #!/bin/bash
           # Stop GPU-dependent services before suspend, restart them after resume.
           # Called by systemd: $1=pre|post, $2=suspend|hibernate|hybrid-sleep.
+          # The overview dashboard shows the last events from this log.
 
           SERVICES=(llama-server comfyui whisper-server whisper-openai-proxy xtts-v2)
+          SLEEP_LOG=/var/log/compute-sleep.log
 
           case "$1$2" in
             pre*suspend|pre*hibernate|pre*hybrid-sleep)
+              echo "$(date '+%Y-%m-%d %H:%M:%S %Z') pre $2" >> "$SLEEP_LOG"
               # Stop the stack so amdgpu can drop VRAM without swapping tens of
               # GB into an already pressured system RAM (crash source).
               for svc in "${SERVICES[@]}"; do
@@ -137,6 +140,7 @@
               for svc in "${SERVICES[@]}"; do
                 systemctl start "$svc" 2>/dev/null
               done
+              echo "$(date '+%Y-%m-%d %H:%M:%S %Z') post $2" >> "$SLEEP_LOG"
               ;;
           esac
 
