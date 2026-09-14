@@ -1,4 +1,5 @@
 import json, io, os, re, sys, tempfile, threading, time, struct, wave
+import numpy as np
 from http.server import HTTPServer, BaseHTTPRequestHandler
 
 # Coqui TTS 0.22 checkpoints embed pickled class instances (XttsConfig).
@@ -30,8 +31,23 @@ except ImportError:
 PORT       = int(os.environ.get('TTS_PORT', '{{ tts_port }}'))
 TTS_DEVICE = os.environ.get('TTS_DEVICE', 'cpu')
 TTS_MAX_CHARS = int(os.environ.get('TTS_MAX_CHARS', '{{ tts_max_chars }}'))
+# GPT decoder sampling knobs. Lower temperature + stronger penalties reduce the
+# classic XTTS multilingual drift (random bursts of a wrong language such as
+# Chinese in the middle of a German text). Values are the Coqui defaults used
+# by the community for stable single-language synthesis.
+TTS_TEMPERATURE = float(os.environ.get('TTS_TEMPERATURE', '0.5'))
+TTS_TOP_K = int(os.environ.get('TTS_TOP_K', '40'))
+TTS_TOP_P = float(os.environ.get('TTS_TOP_P', '0.8'))
+TTS_LENGTH_PENALTY = float(os.environ.get('TTS_LENGTH_PENALTY', '1.0'))
+TTS_REPETITION_PENALTY = float(os.environ.get('TTS_REPETITION_PENALTY', '4.0'))
 REFERENCE  = "{{ ref_file }}"
 SAMPLE_RATE = 24000
+# Max chars per XTTS forward pass. XTTS asserts text_tokens < gpt_max_text_tokens
+# (402 on xtts_v2). German tokenizes ~1.8 chars/token, so ~650 chars (~365 tokens)
+# stays safely under 402 while keeping the chunk count (and per-chunk overhead)
+# low. Measured: long-text RTF drops from ~2.15 (500-char chunks) to ~1.65
+# (700-char), but 700 chars ~= 393 tokens leaves too little headroom.
+TTS_CHUNK_CHARS = int(os.environ.get('TTS_CHUNK_CHARS', '650'))
 # Same shared key as llama.cpp (file format LLAMA_API_KEY=...)
 API_KEY_FILE = os.environ.get('API_KEY_FILE', '/etc/llama-server/api-key')
 
@@ -63,10 +79,14 @@ TTS_IDLE_TIMEOUT = float(os.environ.get('TTS_IDLE_TIMEOUT', '600'))
 _lock = threading.Lock()
 _tts = None
 _last_use = 0.0
+# XTTS conditions on the fixed reference voice. get_conditioning_latents()
+# analyzes reference.wav (WavLM + GPT encoder) - expensive and identical for
+# every chunk, so compute it once per model load and reuse it.
+_cond = None  # (gpt_cond_latent, speaker_embedding)
 
 def _ensure_tts():
     """Load the XTTS model on first use; caller must hold _lock."""
-    global _tts, _last_use
+    global _tts, _last_use, _cond
     if _tts is None:
         print('Loading XTTS-v2...', flush=True)
         from TTS.api import TTS
@@ -76,7 +96,11 @@ def _ensure_tts():
         else:
             tts.to('cpu')
         _tts = tts
-        print(f'XTTS-v2 loaded on {TTS_DEVICE}', flush=True)
+        # Compute the voice conditioning latents once from the reference clip.
+        # Subsequent requests reuse them, skipping WavLM/GPT reference analysis.
+        _cond = _tts.synthesizer.tts_model.get_conditioning_latents(audio_path=REFERENCE)
+        print(f'XTTS-v2 loaded on {TTS_DEVICE}, conditioning latents ready',
+              flush=True)
     _last_use = time.time()
     return _tts
 
@@ -108,27 +132,30 @@ print(f'XTTS-v2 ready on port {PORT} device {TTS_DEVICE} (lazy load)',
 
 class TTSHandler(BaseHTTPRequestHandler):
     def _synth_chunk(self, text, speed):
-        """Synthesize one chunk and return 24000 Hz mono int16 PCM bytes."""
+        """Synthesize one chunk and return 24000 Hz mono int16 PCM bytes.
+
+        Calls Xtts.inference directly with the precomputed conditioning
+        latents instead of TTS.tts_to_file: the Coqui high-level path
+        re-runs get_conditioning_latents() for every chunk, which is the
+        dominant cost for long texts. speed is applied as a latent length
+        scale inside the model (matches what tts_to_file did).
+        """
         tts = _ensure_tts()
-        fd, tmp = tempfile.mkstemp(suffix='.wav', dir='{{ xtts_home }}')
-        os.close(fd)
-        try:
-            tts.tts_to_file(
-                text=text,
-                file_path=tmp,
-                speaker_wav=REFERENCE,
-                language='de',
-                speed=speed,
-            )
-            with wave.open(tmp, 'rb') as w:
-                frames = w.readframes(w.getnframes())
-                params = w.getparams()
-            sr, ch, sw = params.framerate, params.nchannels, params.sampwidth
-            if sr != SAMPLE_RATE or ch != 1 or sw != 2:
-                return None  # unexpected format, caller hits the empty-pcm guard
-            return frames
-        finally:
-            os.unlink(tmp)
+        wav = tts.synthesizer.tts_model.inference(
+            text=text,
+            language='de',
+            gpt_cond_latent=_cond[0],
+            speaker_embedding=_cond[1],
+            temperature=TTS_TEMPERATURE,
+            top_k=TTS_TOP_K,
+            top_p=TTS_TOP_P,
+            length_penalty=TTS_LENGTH_PENALTY,
+            repetition_penalty=TTS_REPETITION_PENALTY,
+            speed=speed,
+        )['wav']
+        # XTTS inference returns float32 samples in [-1, 1] at 24000 Hz.
+        pcm = np.clip(wav * 32767.0, -32768, 32767).astype('<i2')
+        return pcm.tobytes()
 
     @staticmethod
     def _chunk_sentences(text, max_len):
@@ -162,7 +189,7 @@ class TTSHandler(BaseHTTPRequestHandler):
     def _synthesize(self, text, speed):
         # XTTS clones the fixed CC0 reference voice; OpenAI voice names are ignored.
         with _lock:
-            chunks = self._chunk_sentences(text, 500)
+            chunks = self._chunk_sentences(text, TTS_CHUNK_CHARS)
             pcm_parts = []
             for chunk in chunks:
                 data = self._synth_chunk(chunk, speed)
