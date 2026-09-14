@@ -41,6 +41,18 @@
           # stops it (kept in sync with comfyui-radeon-rocm.yml).
           HSA_TOOLS_DISABLE_REGISTER=1
           HIP_VISIBLE_DEVICES=1
+          # Stable single-language sampling: lower temperature / higher
+          # repetition penalty than the Coqui defaults reduce the classic
+          # XTTS multilingual drift (random bursts of a foreign language in
+          # otherwise German speech). See tts_xtts_proxy.py.j2.
+          TTS_TEMPERATURE=0.5
+          TTS_TOP_K=40
+          TTS_TOP_P=0.8
+          TTS_LENGTH_PENALTY=1.0
+          TTS_REPETITION_PENALTY=4.0
+          # 650 chars/chunk ~= 365 tokens (safe under the 402-token assert),
+          # fewer chunks than 500 -> less per-chunk overhead for long texts.
+          TTS_CHUNK_CHARS=650
 
     - name: Start XTTS-v2 on ROCm/cuda
       ansible.builtin.systemd:
