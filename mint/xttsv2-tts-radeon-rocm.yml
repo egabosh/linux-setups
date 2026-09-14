@@ -13,6 +13,12 @@
     xtts_user: llama
     xtts_venv: /opt/tts2/venv
     torch_ver: 2.11.0
+    # Idle-exit: the process os._exit(0)s after this many s without a request
+    # (a resident Coqui model spins GPU[1] at 100% gpu_busy_percent; only a
+    # process exit releases the KFD context on gfx1100). Poll is short so the
+    # GPU is freed promptly after the timeout.
+    xtts_idle_timeout: 90
+    xtts_idle_poll: 5
 
   tasks:
     - name: Stop XTTS-v2 before touching the venv
@@ -53,10 +59,27 @@
           # 650 chars/chunk ~= 365 tokens (safe under the 402-token assert),
           # fewer chunks than 500 -> less per-chunk overhead for long texts.
           TTS_CHUNK_CHARS=650
+          # Idle-exit: model unloads + process exits after TTS_IDLE_TIMEOUT s
+          # of no use; poll TTS_IDLE_POLL s so GPU[1] busy drops promptly.
+          TTS_IDLE_TIMEOUT={{ xtts_idle_timeout }}
+          TTS_IDLE_POLL={{ xtts_idle_poll }}
+
+    - name: Remove manual systemd override (idle config now lives in /etc/tts2/env)
+      ansible.builtin.file:
+        path: /etc/systemd/system/xtts-v2.service.d/zz-idle.conf
+        state: absent
+      notify: Restart XTTS-v2
 
     - name: Start XTTS-v2 on ROCm/cuda
       ansible.builtin.systemd:
         name: xtts-v2
         state: restarted
         enabled: yes
+        daemon_reload: yes
+
+  handlers:
+    - name: Restart XTTS-v2
+      ansible.builtin.systemd:
+        name: xtts-v2
+        state: restarted
         daemon_reload: yes
