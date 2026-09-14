@@ -141,16 +141,15 @@
                 - ENABLE_MESSAGE_RATING=false
                 - ENABLE_FOLLOW_UP_GENERATION=false
                 - DEFAULT_CONTEXT_LENGTH=262144
-                # chat_template_kwargs.enable_thinking=true + reasoning_budget_tokens=256:
-                # OpenWebUI users get light reasoning by default (short thinking trace,
-                # then the answer). The budget caps the thinking phase hard per request -
-                # measured: 256 tokens ~0.5 KB of reasoning, answer always follows.
-                # opencode talks to llama.cpp directly and keeps its own higher budget
-                # (server default 2048), unaffected by this. Note: the OpenWebUI UI
+                # chat_template_kwargs.enable_thinking=true + reasoning_budget_tokens=1024:
+                # OpenWebUI users get solid reasoning by default (thinking trace ~1-2 KB,
+                # then the answer). 1024 matches the all-rounder server default; 256 was
+                # too shallow for good answers. opencode talks to llama.cpp directly and
+                # keeps its own higher budget (server default 2048), unaffected by this. Note: the OpenWebUI UI
                 # reasoning_effort controls cannot fully disable/enable thinking either;
                 # only "none" maps to enable_thinking=false, anything else is passed
                 # through to the template as-is.
-                - DEFAULT_MODEL_PARAMS={"function_calling":"native","max_tokens":32768,"reasoning_budget_tokens":256,"chat_template_kwargs":{"enable_thinking":true}}
+                - DEFAULT_MODEL_PARAMS={"function_calling":"native","max_tokens":32768,"reasoning_budget_tokens":1024,"chat_template_kwargs":{"enable_thinking":true}}
                 - DEFAULT_PROMPT_SUGGESTIONS=[]
                 - OPENAI_API_REQUEST_TIMEOUT=180
                 - ENABLE_CONTEXT_COMPACTION=true
@@ -422,13 +421,12 @@
         # Close analog: env var DEFAULT_MODEL_PARAMS seeds only a FRESH install;
         # the DB row models.default_params takes precedence afterwards, so upsert
         # it deterministically (live DB was max_tokens:8192, env says 32768).
-        # enable_thinking=true re-enables thinking for OpenWebUI (was disabled
-        # 2026-09-12), but capped hard at 256 reasoning tokens so users get a
-        # short thinking trace instead of endless self-talk.
+        # enable_thinking=true re-enables thinking for OpenWebUI, budget 1024
+        # (= all-rounder default; 256 was too shallow).
         upsert("models.default_params", {
             "function_calling": "native",
             "max_tokens": 32768,
-            "reasoning_budget_tokens": 256,
+            "reasoning_budget_tokens": 1024,
             "chat_template_kwargs": {"enable_thinking": True},
         })
 
