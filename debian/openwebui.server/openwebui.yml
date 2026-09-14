@@ -407,13 +407,14 @@
                 (key, json.dumps(value) if not isinstance(value, str) else value, now),
             )
 
-        upsert("COMFYUI_WORKFLOW_NODES", gen_nodes)
-        upsert("image_generation.comfyui.workflow", json.dumps(WF))
+        # The config.value column is JSON and OpenWebUI deserializes it on read.
+        # ComfyUIWorkflow.workflow is typed `str` (parsed again via json.loads in
+        # comfyui.py), so the workflow must be stored as a JSON string INSIDE the
+        # JSON column (double-encoded); nodes stay plain JSON arrays.
+        upsert("image_generation.comfyui.workflow", json.dumps(json.dumps(WF)))
         upsert("image_generation.comfyui.nodes", gen_nodes)
 
-        upsert("IMAGES_EDIT_COMFYUI_WORKFLOW_NODES", edit_nodes)
-        upsert("IMAGES_EDIT_COMFYUI_WORKFLOW", json.dumps(EDIT_WF))
-        upsert("images.edit.comfyui.workflow", json.dumps(EDIT_WF))
+        upsert("images.edit.comfyui.workflow", json.dumps(json.dumps(EDIT_WF)))
         upsert("images.edit.comfyui.nodes", edit_nodes)
 
         upsert("ui.prompt_suggestions", [])
