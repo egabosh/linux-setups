@@ -104,16 +104,20 @@ def _ensure_tts():
     _last_use = time.time()
     return _tts
 
+TTS_IDLE_POLL = float(os.environ.get('TTS_IDLE_POLL', '5'))
+
 def _idle_unloader():
     """Exit the process after TTS_IDLE_TIMEOUT s without use.
 
     A simple model unload (empty_cache) does NOT release the KFD context
     on gfx1100, leaving gpu_busy_percent at 100%. Exiting + systemd
-    restart gives a clean HIP context with 0% busy.
+    restart gives a clean HIP context with 0% busy. Poll every
+    TTS_IDLE_POLL s (default 5, not 60) so the GPU is freed promptly
+    after the timeout.
     """
     while True:
         try:
-            time.sleep(60)
+            time.sleep(TTS_IDLE_POLL)
             with _lock:
                 if _tts is not None and time.time() - _last_use > TTS_IDLE_TIMEOUT:
                     print('XTTS-v2 idle, unloading + exiting (frees GPU[1])',
