@@ -31,15 +31,15 @@ except ImportError:
 PORT       = int(os.environ.get('TTS_PORT', '{{ tts_port }}'))
 TTS_DEVICE = os.environ.get('TTS_DEVICE', 'cpu')
 TTS_MAX_CHARS = int(os.environ.get('TTS_MAX_CHARS', '{{ tts_max_chars }}'))
-# GPT decoder sampling knobs. Lower temperature + stronger penalties reduce the
-# classic XTTS multilingual drift (random bursts of a wrong language such as
-# Chinese in the middle of a German text). Values are the Coqui defaults used
-# by the community for stable single-language synthesis.
-TTS_TEMPERATURE = float(os.environ.get('TTS_TEMPERATURE', '0.5'))
-TTS_TOP_K = int(os.environ.get('TTS_TOP_K', '40'))
-TTS_TOP_P = float(os.environ.get('TTS_TOP_P', '0.8'))
+# GPT decoder sampling knobs. Coqui XTTS community defaults deliver the most
+# natural German voice. Stronger anti-drift tuning (temp 0.5, repetition
+# penalty 4.0) fixes random wrong-language bursts but sounds robotic - if
+# drift returns, raise repetition_penalty to 2.5 first.
+TTS_TEMPERATURE = float(os.environ.get('TTS_TEMPERATURE', '0.65'))
+TTS_TOP_K = int(os.environ.get('TTS_TOP_K', '50'))
+TTS_TOP_P = float(os.environ.get('TTS_TOP_P', '0.85'))
 TTS_LENGTH_PENALTY = float(os.environ.get('TTS_LENGTH_PENALTY', '1.0'))
-TTS_REPETITION_PENALTY = float(os.environ.get('TTS_REPETITION_PENALTY', '4.0'))
+TTS_REPETITION_PENALTY = float(os.environ.get('TTS_REPETITION_PENALTY', '2.0'))
 REFERENCE  = "{{ ref_file }}"
 SAMPLE_RATE = 24000
 # Max chars per XTTS forward pass. XTTS asserts text_tokens < gpt_max_text_tokens
