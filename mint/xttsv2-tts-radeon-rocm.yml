@@ -47,15 +47,16 @@
           # stops it (kept in sync with comfyui-radeon-rocm.yml).
           HSA_TOOLS_DISABLE_REGISTER=1
           HIP_VISIBLE_DEVICES=1
-          # Stable single-language sampling: lower temperature / higher
-          # repetition penalty than the Coqui defaults reduce the classic
-          # XTTS multilingual drift (random bursts of a foreign language in
-          # otherwise German speech). See tts_xtts_proxy.py.j2.
-          TTS_TEMPERATURE=0.5
-          TTS_TOP_K=40
-          TTS_TOP_P=0.8
+          # Coqui XTTS defaults: the aggressive anti-drift tuning from
+          # 2026-09-14 (temp 0.5 / rep_penalty 4.0) sounded robotic and
+          # artificial - reverted to the community-natural defaults. If
+          # multilingual drift returns, raise repetition_penalty to 2.5
+          # first (least quality impact), then lower temperature.
+          TTS_TEMPERATURE=0.65
+          TTS_TOP_K=50
+          TTS_TOP_P=0.85
           TTS_LENGTH_PENALTY=1.0
-          TTS_REPETITION_PENALTY=4.0
+          TTS_REPETITION_PENALTY=2.0
           # 650 chars/chunk ~= 365 tokens (safe under the 402-token assert),
           # fewer chunks than 500 -> less per-chunk overhead for long texts.
           TTS_CHUNK_CHARS=650

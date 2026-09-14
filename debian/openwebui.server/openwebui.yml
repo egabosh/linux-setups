@@ -168,9 +168,11 @@
                 - STT_WHISPER_API_BASE_URL=https://stt.{{ inventory_hostname }}/v1
                 - STT_WHISPER_API_KEY={{ llama_api_key }}
                 - STT_WHISPER_MODEL=ggml-large-v3-turbo.bin
-                # Text-to-Speech (openai-compatible XTTS proxy) via Traefik HTTPS
+                # Text-to-Speech via Traefik HTTPS: fast ad-hoc read-aloud uses
+                # the Piper proxy (tts-fast.*), the HQ XTTS engine stays on
+                # tts.* (text2speech.sh / g_tts use that one).
                 - AUDIO_TTS_ENGINE=openai
-                - AUDIO_TTS_OPENAI_API_BASE_URL=https://tts.{{ inventory_hostname }}/v1
+                - AUDIO_TTS_OPENAI_API_BASE_URL=https://tts-fast.{{ inventory_hostname }}/v1
                 - AUDIO_TTS_MODEL=tts-1
                 - AUDIO_TTS_OPENAI_API_KEY={{ llama_api_key }}
                 # Other
@@ -470,18 +472,22 @@
     # TTS reads its config from the DB (audio.tts.openai...), NOT from the env
     # vars (those are only the initial defaults). The DB rows used to point at
     # a dead ai.lan:8083, which broke the built-in "Vorlesen" (read-aloud).
-    # Force the DB to the public Traefik route + shared key so it survives deploys.
+    # Force the DB to the public Traefik route (Piper tts-fast for instant
+    # ad-hoc playback) + shared key so it survives deploys. NOTE: the config
+    # table stores value as JSON (NOT NULL) and OpenWebUI reads it with
+    # json.loads, so string values MUST be JSon-quoted (\"...\") - plain
+    # text breaks the read-aloud with a JSONDecodeError.
     - name: Store TTS engine config in OpenWebUI DB (audio.tts.openai.*)
       ansible.builtin.shell: |
         DB=/home/docker/openwebui.{{ inventory_hostname }}/openwebui-data/webui.db
         sqlite3 "$DB" "
           INSERT INTO config (key, value, updated_at) VALUES
-            ('audio.tts.openai.api_base_url', 'https://tts.{{inventory_hostname}}/v1', strftime('%s','now')*1000),
-            ('audio.tts.openai.api_key', '{{ llama_api_key }}', strftime('%s','now')*1000),
+            ('audio.tts.openai.api_base_url', '\"https://tts-fast.{{ inventory_hostname }}/v1\"', strftime('%s','now')*1000),
+            ('audio.tts.openai.api_key', '\"{{ llama_api_key }}\"', strftime('%s','now')*1000),
             ('audio.tts.openai.params', '{}', strftime('%s','now')*1000),
-            ('audio.tts.engine', 'openai', strftime('%s','now')*1000),
-            ('audio.tts.model', 'tts-1', strftime('%s','now')*1000),
-            ('audio.tts.voice', 'alloy', strftime('%s','now')*1000)
+            ('audio.tts.engine', '\"openai\"', strftime('%s','now')*1000),
+            ('audio.tts.model', '\"tts-1\"', strftime('%s','now')*1000),
+            ('audio.tts.voice', '\"alloy\"', strftime('%s','now')*1000)
           ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at;"
         echo changed
       register: tts_db_result
