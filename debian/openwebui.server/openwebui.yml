@@ -136,7 +136,7 @@
                 - BYPASS_MODEL_ACCESS_CONTROL=true
                 - DEFAULT_MODEL_METADATA={"capabilities":{"vision":true,"web_search":true,"image_generation":true,"builtin_tools":true}}
                 #- DEFAULT_MODEL_PARAMS={"function_calling":"native"}
-                - DEFAULT_USER_SYSTEM_PROMPT=Antworte IMMER ausschließlich auf Deutsch oder Englisch. Schreibe niemals in einer anderen Sprache außer es ist ausdrücklich erwünscht. Sei präzise und halte Antworten kurz, es sei denn, der Nutzer wünscht detaillierte Erklärungen.
+                - DEFAULT_USER_SYSTEM_PROMPT=Antworte IMMER ausschließlich auf Deutsch oder Englisch. Schreibe niemals in einer anderen Sprache außer es ist ausdrücklich erwünscht. Sei präzise und halte Antworten kurz, es sei denn, der Nutzer wünscht detaillierte Erklärungen. Wenn der Nutzer ein Bild, eine Grafik oder ein Foto wünscht, rufe das generate_image Tool direkt auf ohne nachzufragen.
                 - DEFAULT_MODEL=llamacpp-default
                 - ENABLE_MESSAGE_RATING=false
                 - ENABLE_FOLLOW_UP_GENERATION=false
@@ -155,6 +155,8 @@
                 - ENABLE_CONTEXT_COMPACTION=true
                 - CONTEXT_COMPACTION_TOKEN_THRESHOLD=200000
                 # Image Generation (ComfyUI) - public HTTPS route via Traefik (see vars)
+                # Safety net: limit tool-call loops to 5 iterations (default 256)
+                - CHAT_RESPONSE_MAX_TOOL_CALL_ITERATIONS=5
                 - ENABLE_IMAGE_GENERATION=true
                 - IMAGE_GENERATION_ENGINE=comfyui
                 - IMAGE_GENERATION_MODEL=sd15.safetensors
@@ -324,15 +326,29 @@
         content: "{{ openwebui_api_key.stdout | default('ERROR') }}"
         mode: '0400'
 
-    # patch: https://github.com/open-webui/open-webui/blob/main/backend/open_webui/utils/images/comfyui.py#L482
-    # upstream passes payload.negative_prompt (Optional[str] = None) directly to ComfyUI
-    # causing 400 when None → replace with empty string fallback
-    # Applied via docker exec to survive container rebuilds; idempotent (check first).
-    - name: Patch comfyui.py inside container (negative_prompt None fix)
+    # patch: https://github.com/open-webui/open-webui/blob/main/backend/open_webui/utils/images/comfyui.py
+    # Issue 1: ComfyUIEditImageForm missing negative_prompt attr (edit workflow has negative_prompt node)
+    # Issue 2: upstream passes payload.negative_prompt directly to ComfyUI → 400 when None
+    # Applied via docker exec to survive container rebuilds; idempotent.
+    - name: Patch comfyui.py inside container (negative_prompt fixes)
       ansible.builtin.shell: |
         set -e
         CID=$(docker compose ps -q 2>/dev/null | head -1)
         [ -z "$CID" ] && exit 0
+        # 1) add negative_prompt field to ComfyUIEditImageForm if missing
+        docker exec "$CID" python3 -c "
+        with open('/app/backend/open_webui/utils/images/comfyui.py') as f:
+            src = f.read()
+        if 'class ComfyUIEditImageForm' in src and 'negative_prompt: Optional[str] = None' not in src:
+            import re
+            src = re.sub(
+                r'(class ComfyUIEditImageForm.*?n: Optional\[int\] = None)',
+                r'\1\n    negative_prompt: Optional[str] = None',
+                src, count=1, flags=re.DOTALL)
+            with open('/app/backend/open_webui/utils/images/comfyui.py', 'w') as f:
+                f.write(src)
+        "
+        # 2) null-safe fallback on the assignment line
         if docker exec "$CID" grep -q "payload.negative_prompt is not None" \
           /app/backend/open_webui/utils/images/comfyui.py 2>/dev/null; then
           exit 0
@@ -373,8 +389,10 @@
             "6": {"class_type": "CLIPTextEncode", "inputs": {"clip": ["4", 1], "text": "NEGATIVE_PROMPT"}},
             "7": {"class_type": "CLIPTextEncode", "inputs": {"clip": ["4", 1], "text": "PROMPT"}},
             "8": {"class_type": "SaveImage", "inputs": {"filename_prefix": "ComfyUI", "images": ["5", 0]}},
-            "10": {"class_type": "VAEEncode", "inputs": {"samples": ["11", 0], "vae": ["4", 2]}},
+            "10": {"class_type": "VAEEncode", "inputs": {"pixels": ["12", 0], "vae": ["4", 2]}},
             "11": {"class_type": "LoadImage", "inputs": {"image": ""}},
+            "12": {"class_type": "ImageScaleToTotalPixels", "inputs":
+                {"upscale_method": "lanczos", "megapixels": 0.33, "resolution_steps": 64, "image": ["11", 0]}},
         }
         gen_nodes = [
             {"type": "model",           "node_ids": ["4"], "key": "ckpt_name"},
