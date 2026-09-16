@@ -11,6 +11,9 @@
     # Hairpin pin for the ComfyUI HTTPS route (same pattern as /etc/hosts pins).
     openwebui_extra_hosts:
       - "comfyui.{{ inventory_hostname }}:192.168.41.1"
+    # Always respond in German or English only. Call generate_image / edit_image
+    # directly without asking; for edits keep the rest of the image unmodified.
+    openwebui_system_prompt: "Antworte IMMER ausschließlich auf Deutsch oder Englisch. Schreibe niemals in einer anderen Sprache außer es ist ausdrücklich erwünscht. Sei präzise und halte Antworten kurz, es sei denn, der Nutzer wünscht detaillierte Erklärungen. Wenn der Nutzer ein Bild, eine Grafik oder ein Foto wünscht, rufe das generate_image Tool direkt auf ohne nachzufragen. Wenn der Nutzer ein bereits vorhandenes/hocheladenes Bild bearbeiten will (z.B. ein Objekt entfernen oder verändern), rufe das edit_image Tool direkt auf, übernehme die Datei-Referenz des bestehenden Bildes und formuliere den Prompt so, dass nur die gewünschte Änderung beschrieben wird und der Rest des Bildes unverändert bleibt (\"behalte das Bild ansonsten exakt bei, nur [Änderung]\")."
   tasks:
 
     # llama.cpp API key: generated once on compute.lan by the llamacpp playbooks.
@@ -136,7 +139,7 @@
                 - BYPASS_MODEL_ACCESS_CONTROL=true
                 - DEFAULT_MODEL_METADATA={"capabilities":{"vision":true,"web_search":true,"image_generation":true,"builtin_tools":true}}
                 #- DEFAULT_MODEL_PARAMS={"function_calling":"native"}
-                - DEFAULT_USER_SYSTEM_PROMPT=Antworte IMMER ausschließlich auf Deutsch oder Englisch. Schreibe niemals in einer anderen Sprache außer es ist ausdrücklich erwünscht. Sei präzise und halte Antworten kurz, es sei denn, der Nutzer wünscht detaillierte Erklärungen. Wenn der Nutzer ein Bild, eine Grafik oder ein Foto wünscht, rufe das generate_image Tool direkt auf ohne nachzufragen.
+                - DEFAULT_USER_SYSTEM_PROMPT={{ openwebui_system_prompt }}
                 - DEFAULT_MODEL=llamacpp-default
                 - ENABLE_MESSAGE_RATING=false
                 - ENABLE_FOLLOW_UP_GENERATION=false
@@ -353,9 +356,9 @@
         }
         EDIT_WF = {
             "3": {"class_type": "KSampler", "inputs": {
-                "cfg": 8, "denoise": 0.7, "latent_image": ["10", 0], "model": ["4", 0],
+                "cfg": 8, "denoise": 0.45, "latent_image": ["10", 0], "model": ["4", 0],
                 "negative": ["6", 0], "positive": ["7", 0], "sampler_name": "euler",
-                "scheduler": "normal", "seed": 42, "steps": 20}},
+                "scheduler": "normal", "seed": 42, "steps": 25}},
             "4": {"class_type": "CheckpointLoaderSimple", "inputs": {"ckpt_name": "sd15.safetensors"}},
             "5": {"class_type": "VAEDecode", "inputs": {"samples": ["3", 0], "vae": ["4", 2]}},
             "6": {"class_type": "CLIPTextEncode", "inputs": {"clip": ["4", 1], "text": "NEGATIVE_PROMPT"}},
@@ -408,6 +411,9 @@
         upsert("images.edit.comfyui.nodes", edit_nodes)
 
         upsert("ui.prompt_suggestions", [])
+
+        # DB value wins over env, so mirror the env DEFAULT_USER_SYSTEM_PROMPT.
+        upsert("ui.default_user_system_prompt", json.dumps({{ openwebui_system_prompt | to_json }}))
 
         # Close analog: env var DEFAULT_MODEL_PARAMS seeds only a FRESH install;
         # the DB row models.default_params takes precedence afterwards, so upsert
