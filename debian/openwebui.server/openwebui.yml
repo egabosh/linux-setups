@@ -326,39 +326,11 @@
         content: "{{ openwebui_api_key.stdout | default('ERROR') }}"
         mode: '0400'
 
-    # patch: https://github.com/open-webui/open-webui/blob/main/backend/open_webui/utils/images/comfyui.py
-    # Issue 1: ComfyUIEditImageForm missing negative_prompt attr (edit workflow has negative_prompt node)
-    # Issue 2: upstream passes payload.negative_prompt directly to ComfyUI → 400 when None
-    # Applied via docker exec to survive container rebuilds; idempotent.
-    - name: Patch comfyui.py inside container (negative_prompt fixes)
-      ansible.builtin.shell: |
-        set -e
-        CID=$(docker compose ps -q 2>/dev/null | head -1)
-        [ -z "$CID" ] && exit 0
-        # 1) add negative_prompt field to ComfyUIEditImageForm if missing
-        docker exec "$CID" python3 -c "
-        with open('/app/backend/open_webui/utils/images/comfyui.py') as f:
-            src = f.read()
-        if 'class ComfyUIEditImageForm' in src and 'negative_prompt: Optional[str] = None' not in src:
-            import re
-            src = re.sub(
-                r'(class ComfyUIEditImageForm.*?n: Optional\[int\] = None)',
-                r'\1\n    negative_prompt: Optional[str] = None',
-                src, count=1, flags=re.DOTALL)
-            with open('/app/backend/open_webui/utils/images/comfyui.py', 'w') as f:
-                f.write(src)
-        "
-        # 2) null-safe fallback on the assignment line
-        if docker exec "$CID" grep -q "payload.negative_prompt is not None" \
-          /app/backend/open_webui/utils/images/comfyui.py 2>/dev/null; then
-          exit 0
-        fi
-        docker exec "$CID" sed -i \
-          's|\(workflow\[node_id\]\[.inputs.\]\[node.key if node.key else .text.\]\s*=\s*\)payload\.negative_prompt$|\1payload.negative_prompt if payload.negative_prompt is not None else ""|' \
-          /app/backend/open_webui/utils/images/comfyui.py
-      args:
-        chdir: /home/docker/openwebui.{{ inventory_hostname }}
-      changed_when: false
+    - name: Deploy patch_images_uuid.py to host
+      ansible.builtin.copy:
+        src: patch_images_uuid.py
+        dest: "/home/docker/openwebui.{{ inventory_hostname }}/patch_images_uuid.py"
+        mode: '0600'
 
     - name: Set ComfyUI workflows in DB (key-value schema)
       ansible.builtin.shell: |
@@ -514,6 +486,51 @@
 
     - name: Flush handlers - restart OpenWebUI to pick up DB config
       ansible.builtin.meta: flush_handlers
+
+    # --- In-container patches (must run AFTER final container recreate) ---
+    # Patch 1: ComfyUIEditImageForm missing negative_prompt attr + null-safe assignment.
+    - name: Patch comfyui.py inside container (negative_prompt fixes)
+      ansible.builtin.shell: |
+        set -e
+        CID=$(docker compose ps -q 2>/dev/null | head -1)
+        [ -z "$CID" ] && exit 0
+        docker exec "$CID" python3 -c "
+        import re
+        with open('/app/backend/open_webui/utils/images/comfyui.py') as f:
+            src = f.read()
+        # Guard scoped to the EditImageForm class only (CreateImageForm has the field already).
+        m = re.search(r'class ComfyUIEditImageForm.*?class ', src, flags=re.DOTALL)
+        edit_form = m.group(0) if m else ''
+        if 'class ComfyUIEditImageForm' in src and 'negative_prompt: Optional[str] = None' not in edit_form:
+            src = re.sub(
+                r'(class ComfyUIEditImageForm.*?n: Optional\[int\] = None)',
+                r'\1\n    negative_prompt: Optional[str] = None',
+                src, count=1, flags=re.DOTALL)
+            with open('/app/backend/open_webui/utils/images/comfyui.py', 'w') as f:
+                f.write(src)
+        "
+        if docker exec "$CID" grep -q "payload.negative_prompt is not None" \
+          /app/backend/open_webui/utils/images/comfyui.py 2>/dev/null; then
+          exit 0
+        fi
+        docker exec "$CID" sed -i \
+          's|\(workflow\[node_id\]\[.inputs.\]\[node.key if node.key else .text.\]\s*=\s*\)payload\.negative_prompt$|\1payload.negative_prompt if payload.negative_prompt is not None else ""|' \
+          /app/backend/open_webui/utils/images/comfyui.py
+      args:
+        chdir: /home/docker/openwebui.{{ inventory_hostname }}
+      changed_when: false
+
+    # Patch 2: model hallucinates URLs with real local file UUIDs → resolve locally.
+    - name: Patch images.py inside container (resolve local file UUIDs)
+      ansible.builtin.shell: |
+        set -e
+        CID=$(docker compose ps -q 2>/dev/null | head -1)
+        [ -z "$CID" ] && exit 0
+        docker cp "/home/docker/openwebui.{{ inventory_hostname }}/patch_images_uuid.py" "$CID":/tmp/patch_images_uuid.py
+        docker exec "$CID" python3 /tmp/patch_images_uuid.py
+      args:
+        chdir: /home/docker/openwebui.{{ inventory_hostname }}
+      changed_when: false
 
   handlers:
 
