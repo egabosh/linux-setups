@@ -371,8 +371,8 @@
             "10": {"class_type": "VAEEncodeForInpaint", "inputs": {"pixels": ["12", 0], "vae": ["4", 2], "mask": ["20", 0], "grow_mask_by": 12}},
             "11": {"class_type": "LoadImage", "inputs": {"image": ""}},
             "12": {"class_type": "ImageScaleToTotalPixels", "inputs":
-                {"upscale_method": "lanczos", "megapixels": 0.33, "resolution_steps": 64, "image": ["11", 0]}},
-            "20": {"class_type": "CLIPSeg", "inputs": {"image": ["12", 0], "text": "PROMPT", "threshold": 0.3, "blur": 7, "dilation_factor": 6}},
+                {"upscale_method": "lanczos", "megapixels": 0.5, "resolution_steps": 64, "image": ["11", 0]}},
+            "20": {"class_type": "CLIPSeg", "inputs": {"image": ["12", 0], "text": "PROMPT", "threshold": 0.3, "blur": 4, "dilation_factor": 5}},
         }
         gen_nodes = [
             {"type": "model",           "node_ids": ["4"], "key": "ckpt_name"},

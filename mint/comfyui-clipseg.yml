@@ -111,6 +111,18 @@
           mask_normalized = (tensor_smoothed - tensor_smoothed.min()) / (tensor_smoothed.max() - tensor_smoothed.min()).clamp(min=1e-7)
       notify: Restart ComfyUI
 
+    # Fix 3: the normalization (x-min)/(max-min) rescales the ENTIRE mask to
+    # [0,1], turning soft low-confidence similarity regions into solid mask.
+    # This makes the mask cover the whole image (everything gets "slightly
+    # changed"). Remove it so the mask retains raw sigmoid confidence values;
+    # cv2.dilate and VAEEncodeForInpaint both work on [0,1] float masks.
+    - name: Patch CLIPSeg node - remove mask normalization (keep raw sigmoid)
+      ansible.builtin.replace:
+        path: "{{ comfyui_dir }}/custom_nodes/ComfyUI-CLIPSeg/custom_nodes/clipseg.py"
+        regexp: 'mask_normalized = \(tensor_smoothed - tensor_smoothed\.min\(\)\) / \(tensor_smoothed\.max\(\) - tensor_smoothed\.min\(\)\)\.clamp\(min=1e-7\)'
+        replace: 'mask_normalized = tensor_smoothed'
+      notify: Restart ComfyUI
+
     - name: Set ownership on ComfyUI directory
       ansible.builtin.file:
         path: "{{ comfyui_dir }}"
