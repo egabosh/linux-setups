@@ -114,13 +114,14 @@
     # Fix 3: the normalization (x-min)/(max-min) rescales the ENTIRE mask to
     # [0,1], turning soft low-confidence similarity regions into solid mask.
     # This makes the mask cover the whole image (everything gets "slightly
-    # changed"). Remove it so the mask retains raw sigmoid confidence values;
-    # cv2.dilate and VAEEncodeForInpaint both work on [0,1] float masks.
-    - name: Patch CLIPSeg node - remove mask normalization (keep raw sigmoid)
+    # changed"). Raw sigmoid values (0.1-0.5) are too weak for VAEEncodeForInpaint
+    # which uses mask intensity directly. Solution: hard binary threshold to
+    # produce a clean 0/1 mask - only the masked area gets regenerated.
+    - name: Patch CLIPSeg node - binary mask (hard threshold instead of normalization)
       ansible.builtin.replace:
         path: "{{ comfyui_dir }}/custom_nodes/ComfyUI-CLIPSeg/custom_nodes/clipseg.py"
         regexp: 'mask_normalized = \(tensor_smoothed - tensor_smoothed\.min\(\)\) / \(tensor_smoothed\.max\(\) - tensor_smoothed\.min\(\)\)\.clamp\(min=1e-7\)'
-        replace: 'mask_normalized = tensor_smoothed'
+        replace: 'mask_normalized = (tensor_smoothed > 0.1).float()'
       notify: Restart ComfyUI
 
     - name: Set ownership on ComfyUI directory
