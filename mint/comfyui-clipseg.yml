@@ -1,0 +1,126 @@
+---
+# ComfyUI-CLIPSeg: text-driven image segmentation for inpainting workflows.
+# Standalone - run AFTER comfyui-install.yml + comfyui-radeon-rocm.yml.
+# The CLIPSeg node outputs (MASK, heatmap IMAGE, b/w IMAGE) and uses the
+# HuggingFace model CIDAS/clipseg-rd64-refined (mirror of the removed
+# biegert original: https://github.com/chaoqun789/ComfyUI-CLIPSeg).
+# IMPORTANT: the mirror node has TWO bugs against modern transformers/numpy:
+# - sigmoid output is 4D [1,1,H,W] but all downstream code expects 2D [H,W]
+# - division-by-zero when CLIPSeg produces an empty mask (max-min == 0)
+# Both are patched by the replace tasks below after cloning.
+- name: Install ComfyUI-CLIPSeg custom node
+  hosts: all
+
+  vars:
+    comfyui_user: llama
+    comfyui_dir: /opt/comfyui
+
+  environment:
+    TMPDIR: /opt/tmp
+    PIP_CACHE_DIR: /opt/.pip-cache
+
+  tasks:
+    # Restarting comfyui requires the service to be active; do not hard-require
+    # a stopped GPU stack here - CLIPSeg adds NO large model downloads that
+    # would OOM the box (the ~200 MB CLIPSeg model is cached below).
+
+    - name: Clone ComfyUI-CLIPSeg custom node
+      ansible.builtin.git:
+        repo: https://github.com/chaoqun789/ComfyUI-CLIPSeg.git
+        dest: "{{ comfyui_dir }}/custom_nodes/ComfyUI-CLIPSeg"
+        version: main
+        force: yes
+        update: yes
+      become: yes
+      become_user: "{{ comfyui_user }}"
+      notify: Restart ComfyUI
+
+    # The mirror ships no __init__.py (its README copies clipseg.py straight
+    # into custom_nodes/). ComfyUI needs an __init__.py in the node dir that
+    # registers the classes, so deploy one that wraps the shipped clipseg.py.
+    - name: Deploy __init__.py for ComfyUI-CLIPSeg node
+      ansible.builtin.copy:
+        dest: "{{ comfyui_dir }}/custom_nodes/ComfyUI-CLIPSeg/__init__.py"
+        owner: "{{ comfyui_user }}"
+        group: "{{ comfyui_user }}"
+        mode: "0644"
+        content: |
+          # Load the CLIPSeg custom nodes from the shipped clipseg.py (the repo
+          # keeps it in a nested custom_nodes/ subdir). ComfyUI registers node
+          # modules under their full path, so a plain relative import fails here
+          # (the folder name also has a hyphen).
+          import importlib
+          import os
+          import sys
+
+          sys.path.insert(
+              0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "custom_nodes")
+          )
+          mod = importlib.import_module("clipseg")
+          NODE_CLASS_MAPPINGS = mod.NODE_CLASS_MAPPINGS
+
+          __all__ = ["NODE_CLASS_MAPPINGS"]
+      notify: Restart ComfyUI
+
+    # Deliberately NOT installing the mirror's requirements.txt - it pins
+    # matplotlib==3.7.1 and numpy==1.24.2 whose source builds fail on py3.12
+    # AND would downgrade the venv's numpy 2.x below what torch 2.14 needs.
+    # ComfyUI's venv already ships torch/transformers/PIL/scipy; the node imports
+    # cv2 and matplotlib on its own. cv2 must stay OpenCV 4.x - the node calls
+    # cv2.dilate() on a 3D mask which OpenCV 5.0 rejects (dims<=2 assertion).
+    - name: Install ComfyUI-CLIPSeg runtime deps (cv2<5, matplotlib)
+      ansible.builtin.pip:
+        name:
+          - "opencv-python-headless<5"
+          - matplotlib
+        virtualenv: "{{ comfyui_dir }}/venv"
+        extra_args: "--extra-index-url https://download.pytorch.org/whl/rocm7.2 --extra-index-url https://pypi.org/simple"
+
+    # Pre-download the CLIPSeg model (~200 MB) so the first ComfyUI inference
+    # doesn't stall waiting for HuggingFace cache.
+    - name: Pre-download CLIPSeg model (cached for first inference)
+      ansible.builtin.shell:
+        cmd: |
+          {{ comfyui_dir }}/venv/bin/python -c "
+          from transformers import CLIPSegForImageSegmentation, CLIPSegProcessor
+          CLIPSegProcessor.from_pretrained('CIDAS/clipseg-rd64-refined')
+          CLIPSegForImageSegmentation.from_pretrained('CIDAS/clipseg-rd64-refined')
+          print('CLIPSeg model cached successfully')
+          "
+      become: yes
+      become_user: "{{ comfyui_user }}"
+      register: clipseg_download
+      changed_when: false
+
+    # Fix 1: CLIPSeg outputs [1,1,H,W] but downstream code (cv2.dilate,
+    # gaussian_filter, colormap) all expect [H,W]. Squeeze the batch/channel dims.
+    - name: Patch CLIPSeg node - squeeze sigmoid output to 2D
+      ansible.builtin.replace:
+        path: "{{ comfyui_dir }}/custom_nodes/ComfyUI-CLIPSeg/custom_nodes/clipseg.py"
+        regexp: 'tensor = torch\.sigmoid\(outputs\[0\]\)\s+# get the mask'
+        replace: 'tensor = torch.sigmoid(outputs[0]).squeeze()  # squeeze batch/channel dims'
+      notify: Restart ComfyUI
+
+    # Fix 2: when nothing matches the prompt, the mask is all-zero ->
+    # (max-min) == 0 -> NaN propagation -> opencv errors downstream.
+    - name: Patch CLIPSeg node - guard division-by-zero in mask normalization
+      ansible.builtin.replace:
+        path: "{{ comfyui_dir }}/custom_nodes/ComfyUI-CLIPSeg/custom_nodes/clipseg.py"
+        regexp: 'mask_normalized = \(tensor_smoothed - tensor_smoothed\.min\(\)\) / \(tensor_smoothed\.max\(\) - tensor_smoothed\.min\(\)\)'
+        replace: >-
+          mask_normalized = (tensor_smoothed - tensor_smoothed.min()) / (tensor_smoothed.max() - tensor_smoothed.min()).clamp(min=1e-7)
+      notify: Restart ComfyUI
+
+    - name: Set ownership on ComfyUI directory
+      ansible.builtin.file:
+        path: "{{ comfyui_dir }}"
+        owner: "{{ comfyui_user }}"
+        group: "{{ comfyui_user }}"
+        recurse: yes
+
+  handlers:
+    - name: Restart ComfyUI
+      ansible.builtin.systemd:
+        name: comfyui
+        state: restarted
+        daemon_reload: yes

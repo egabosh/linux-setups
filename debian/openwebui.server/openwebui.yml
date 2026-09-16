@@ -13,7 +13,7 @@
       - "comfyui.{{ inventory_hostname }}:192.168.41.1"
     # Always respond in German or English only. Call generate_image / edit_image
     # directly without asking; for edits keep the rest of the image unmodified.
-    openwebui_system_prompt: "Antworte IMMER ausschließlich auf Deutsch oder Englisch. Schreibe niemals in einer anderen Sprache außer es ist ausdrücklich erwünscht. Sei präzise und halte Antworten kurz, es sei denn, der Nutzer wünscht detaillierte Erklärungen. Wenn der Nutzer ein Bild, eine Grafik oder ein Foto wünscht, rufe das generate_image Tool direkt auf ohne nachzufragen. Wenn der Nutzer ein bereits vorhandenes/hocheladenes Bild bearbeiten will (z.B. ein Objekt entfernen oder verändern), rufe das edit_image Tool direkt auf, übernehme die Datei-Referenz des bestehenden Bildes und formuliere den Prompt so, dass nur die gewünschte Änderung beschrieben wird und der Rest des Bildes unverändert bleibt (\"behalte das Bild ansonsten exakt bei, nur [Änderung]\")."
+    openwebui_system_prompt: "Antworte IMMER ausschließlich auf Deutsch oder Englisch. Schreibe niemals in einer anderen Sprache außer es ist ausdrücklich erwünscht. Sei präzise und halte Antworten kurz, es sei denn, der Nutzer wünscht detaillierte Erklärungen. Wenn der Nutzer ein Bild, eine Grafik oder ein Foto wünscht, rufe das generate_image Tool direkt auf ohne nachzufragen. Wenn der Nutzer ein bereits vorhandenes/hocheladenes Bild bearbeiten will (z.B. ein Objekt entfernen), rufe das edit_image Tool direkt auf, übernehme die Datei-Referenz des bestehenden Bildes und setze den Prompt auf eine nüchterne Beschreibung des zu ENTFERNENDEN Objekts (z.B. \"kleine grüne Rutsche auf dem Boden\"), nicht auf das gewünschte Endergebnis - das Tool maskiert das beschriebene Objekt automatisch und füllt die Stelle passend auf, der Rest des Bildes bleibt exakt erhalten."
   tasks:
 
     # llama.cpp API key: generated once on compute.lan by the llamacpp playbooks.
@@ -354,20 +354,25 @@
             "8": {"class_type": "VAEDecode", "inputs": {"samples": ["3", 0], "vae": ["4", 2]}},
             "9": {"class_type": "SaveImage", "inputs": {"filename_prefix": "ComfyUI", "images": ["8", 0]}},
         }
+        # Edit workflow: CLIPSeg masks the object the user describes (prompt->node 20),
+        # VAEEncodeForInpaint + denoise 1.0 regenerate ONLY the masked region, so the
+        # rest of the uploaded image stays pixel-identical. Node 6 is the fixed
+        # inpainting fill prompt (clean scene), node 7 gets the user negative prompt.
         EDIT_WF = {
             "3": {"class_type": "KSampler", "inputs": {
-                "cfg": 8, "denoise": 0.45, "latent_image": ["10", 0], "model": ["4", 0],
-                "negative": ["6", 0], "positive": ["7", 0], "sampler_name": "euler",
+                "cfg": 8, "denoise": 1.0, "latent_image": ["10", 0], "model": ["4", 0],
+                "negative": ["7", 0], "positive": ["6", 0], "sampler_name": "euler",
                 "scheduler": "normal", "seed": 42, "steps": 25}},
             "4": {"class_type": "CheckpointLoaderSimple", "inputs": {"ckpt_name": "sd15.safetensors"}},
             "5": {"class_type": "VAEDecode", "inputs": {"samples": ["3", 0], "vae": ["4", 2]}},
-            "6": {"class_type": "CLIPTextEncode", "inputs": {"clip": ["4", 1], "text": "NEGATIVE_PROMPT"}},
-            "7": {"class_type": "CLIPTextEncode", "inputs": {"clip": ["4", 1], "text": "PROMPT"}},
+            "6": {"class_type": "CLIPTextEncode", "inputs": {"clip": ["4", 1], "text": "clean empty scene, no objects, photorealistic, high quality, sharp details"}},
+            "7": {"class_type": "CLIPTextEncode", "inputs": {"clip": ["4", 1], "text": "NEGATIVE_PROMPT"}},
             "8": {"class_type": "SaveImage", "inputs": {"filename_prefix": "ComfyUI", "images": ["5", 0]}},
-            "10": {"class_type": "VAEEncode", "inputs": {"pixels": ["12", 0], "vae": ["4", 2]}},
+            "10": {"class_type": "VAEEncodeForInpaint", "inputs": {"pixels": ["12", 0], "vae": ["4", 2], "mask": ["20", 0], "grow_mask_by": 12}},
             "11": {"class_type": "LoadImage", "inputs": {"image": ""}},
             "12": {"class_type": "ImageScaleToTotalPixels", "inputs":
                 {"upscale_method": "lanczos", "megapixels": 0.33, "resolution_steps": 64, "image": ["11", 0]}},
+            "20": {"class_type": "CLIPSeg", "inputs": {"image": ["12", 0], "text": "PROMPT", "threshold": 0.3, "blur": 7, "dilation_factor": 6}},
         }
         gen_nodes = [
             {"type": "model",           "node_ids": ["4"], "key": "ckpt_name"},
@@ -381,8 +386,8 @@
         ]
         edit_nodes = [
             {"type": "model",           "node_ids": ["4"], "key": "ckpt_name"},
-            {"type": "prompt",          "node_ids": ["7"], "key": "text"},
-            {"type": "negative_prompt", "node_ids": ["6"], "key": "text"},
+            {"type": "prompt",          "node_ids": ["20"], "key": "text"},
+            {"type": "negative_prompt", "node_ids": ["7"], "key": "text"},
             {"type": "image",           "node_ids": ["11"], "key": "image"},
         ]
 
