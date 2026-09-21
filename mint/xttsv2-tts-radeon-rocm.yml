@@ -32,7 +32,7 @@
       register: tor
       changed_when: "'Successfully installed' in tor.stdout"
 
-    - name: Write device env (ROCm, pinned to GPU[1])
+    - name: Write device env (ROCm, pinned to GPU[0])
       ansible.builtin.copy:
         dest: /etc/tts2/env
         owner: root
@@ -46,7 +46,12 @@
           # resident (ROCm#6522, same as comfyui); HSA_TOOLS_DISABLE_REGISTER=1
           # stops it (kept in sync with comfyui-radeon-rocm.yml).
           HSA_TOOLS_DISABLE_REGISTER=1
-          HIP_VISIBLE_DEVICES=1
+          HIP_VISIBLE_DEVICES=0
+          # XTTS runs on GPU[0] (2026-09-21): GPU[1] is nearly filled by the
+          # llama-server KV cache, which leaves too little headroom and causes
+          # stretched/repeated words in long batches; GPU[0] has ~9 GiB free.
+          # ComfyUI is not in use while the TTS batch runs.
+          PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
           # Coqui XTTS defaults: the aggressive anti-drift tuning from
           # 2026-09-14 (temp 0.5 / rep_penalty 4.0) sounded robotic and
           # artificial - reverted to the community-natural defaults. If
@@ -57,13 +62,24 @@
           TTS_TOP_P=0.85
           TTS_LENGTH_PENALTY=1.0
           TTS_REPETITION_PENALTY=2.0
-          # 650 chars/chunk ~= 365 tokens (safe under the 402-token assert),
-          # fewer chunks than 500 -> less per-chunk overhead for long texts.
-          TTS_CHUNK_CHARS=650
+          # 650 chars/chunk ~= 365 tokens was far above the model's own German
+          # limit (265... 253 chars, from tokenizer.char_limits): long passes
+          # collapse the attention (repeated/stretched words), reproducible at
+          # 45-53 s of a 1616-char request. 250 = XTTS' own "de" limit.
+          TTS_CHUNK_CHARS=250
           # Idle-exit: model unloads + process exits after TTS_IDLE_TIMEOUT s
           # of no use; poll TTS_IDLE_POLL s so GPU[1] busy drops promptly.
           TTS_IDLE_TIMEOUT={{ xtts_idle_timeout }}
           TTS_IDLE_POLL={{ xtts_idle_poll }}
+
+    - name: Create voice-cloning reference dir (/opt/tts2/refs/<name>.wav)
+      ansible.builtin.file:
+        path: /opt/tts2/refs
+        state: directory
+        owner: "{{ xtts_user }}"
+        group: "{{ xtts_user }}"
+        mode: "0755"
+      tags: xtts-proxy
 
     - name: Remove manual systemd override (idle config now lives in /etc/tts2/env)
       ansible.builtin.file:

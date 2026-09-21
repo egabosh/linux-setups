@@ -1,6 +1,8 @@
 import json, io, os, re, sys, tempfile, threading, time, struct, wave
 import numpy as np
-from http.server import HTTPServer, BaseHTTPRequestHandler
+# ThreadingHTTPServer: one long synthesis must not block /health or other
+# requests (a plain HTTPServer starves every client while a chapter renders).
+from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 
 # Coqui TTS 0.22 checkpoints embed pickled class instances (XttsConfig).
 # PyTorch >= 2.6 defaults torch.load to weights_only=True and rejects them,
@@ -79,10 +81,23 @@ TTS_IDLE_TIMEOUT = float(os.environ.get('TTS_IDLE_TIMEOUT', '600'))
 _lock = threading.Lock()
 _tts = None
 _last_use = 0.0
+# Count of TTS requests currently being served (synthesis AND response
+# streaming). The idle unloader must never exit while _busy > 0, otherwise a
+# long request gets a truncated body (200 headers already sent, then
+# os._exit(0) kills the process mid-stream) and the client sees
+# curl "(18) transfer closed with outstanding read data remaining".
+_busy = 0
 # XTTS conditions on the fixed reference voice. get_conditioning_latents()
 # analyzes reference.wav (WavLM + GPT encoder) - expensive and identical for
 # every chunk, so compute it once per model load and reuse it.
 _cond = None  # (gpt_cond_latent, speaker_embedding)
+# Per-request voice cloning: latents inferred from REF_DIR/<name>.wav when a
+# client submits {"ref": "<name>"}. get_conditioning_latents() is expensive
+# (WavLM + GPT analysis), so cache by file name; names are validated strictly
+# (no slashes) to keep REF_DIR the only readable location.
+REF_DIR = '/opt/tts2/refs'
+DEFAULT_REF = 'standard'
+_ref_cache = {}
 
 def _ensure_tts():
     """Load the XTTS model on first use; caller must hold _lock."""
@@ -119,7 +134,8 @@ def _idle_unloader():
         try:
             time.sleep(TTS_IDLE_POLL)
             with _lock:
-                if _tts is not None and time.time() - _last_use > TTS_IDLE_TIMEOUT:
+                if (_tts is not None and _busy == 0
+                        and time.time() - _last_use > TTS_IDLE_TIMEOUT):
                     print('XTTS-v2 idle, unloading + exiting (frees GPU[1])',
                           flush=True)
                     try:
@@ -135,21 +151,22 @@ print(f'XTTS-v2 ready on port {PORT} device {TTS_DEVICE} (lazy load)',
       flush=True)
 
 class TTSHandler(BaseHTTPRequestHandler):
-    def _synth_chunk(self, text, speed):
+    def _synth_chunk(self, text, speed, cond):
         """Synthesize one chunk and return 24000 Hz mono int16 PCM bytes.
 
         Calls Xtts.inference directly with the precomputed conditioning
         latents instead of TTS.tts_to_file: the Coqui high-level path
         re-runs get_conditioning_latents() for every chunk, which is the
         dominant cost for long texts. speed is applied as a latent length
-        scale inside the model (matches what tts_to_file did).
+        scale inside the model (matches what tts_to_file did). cond is the
+        (gpt_cond_latent, speaker_embedding) pair of the active voice.
         """
         tts = _ensure_tts()
         wav = tts.synthesizer.tts_model.inference(
             text=text,
             language='de',
-            gpt_cond_latent=_cond[0],
-            speaker_embedding=_cond[1],
+            gpt_cond_latent=cond[0],
+            speaker_embedding=cond[1],
             temperature=TTS_TEMPERATURE,
             top_k=TTS_TOP_K,
             top_p=TTS_TOP_P,
@@ -190,13 +207,42 @@ class TTSHandler(BaseHTTPRequestHandler):
             chunks.append(cur)
         return chunks
 
-    def _synthesize(self, text, speed):
-        # XTTS clones the fixed CC0 reference voice; OpenAI voice names are ignored.
+    def _latents_for(self, ref):
+        """Return (gpt_cond_latent, speaker_embedding) for the active voice.
+
+        ref is None or the default voice -> the global _cond from REFERENCE.
+        Any other ref must be a plain file name under REF_DIR; latents are
+        computed once per name and then cached.
+        """
+        tts = _ensure_tts()
+        if not ref:
+            # no explicit reference -> the standard voice (falling back to the
+            # legacy /opt/tts2/reference.wav conditioning only if it is missing)
+            ref = DEFAULT_REF
+        if not ref.endswith('.wav'):
+            ref = ref + '.wav'
+        if not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9._-]*', ref):
+            raise ValueError(f'ref "{ref}" is not a valid voice file name')
+        path = os.path.join(REF_DIR, ref)
+        if not os.path.isfile(path):
+            if ref == DEFAULT_REF + '.wav':
+                print(f'WARNING: default reference voice {path} missing, '
+                      'using /opt/tts2/reference.wav instead', flush=True)
+                return _cond
+            raise ValueError(f'unknown reference voice: {ref}')
+        if ref not in _ref_cache:
+            _ref_cache[ref] = tts.synthesizer.tts_model.get_conditioning_latents(
+                audio_path=path)
+        return _ref_cache[ref]
+
+    def _synthesize(self, text, speed, ref):
+        # XTTS clones the reference voice; the OpenAI voice name is ignored.
         with _lock:
+            cond = self._latents_for(ref)
             chunks = self._chunk_sentences(text, TTS_CHUNK_CHARS)
             pcm_parts = []
             for chunk in chunks:
-                data = self._synth_chunk(chunk, speed)
+                data = self._synth_chunk(chunk, speed, cond)
                 if data:
                     pcm_parts.append(data)
             if not pcm_parts:
@@ -239,27 +285,38 @@ class TTSHandler(BaseHTTPRequestHandler):
 
     def _handle_tts(self):
         try:
-            length = int(self.headers.get('Content-Length', 0))
-            body = json.loads(self.rfile.read(length))
-            text = body.get('input') or body.get('text', '')
-            if not text:
-                self._json(400, {'error': 'no input text'})
-                return
-            # Cap input length only as a crude safety net (real splitting happens
-            # in _chunk_sentences); value comes from TTS_MAX_CHARS env/ansible var.
-            text = text[:TTS_MAX_CHARS]
-            speed = float(body.get('speed', 1.0))
-            speed = max(0.6, min(1.6, speed))
-            data = self._synthesize(text, speed)
-            self.send_response(200)
-            self.send_header('Content-Type', 'audio/wav')
-            self.send_header('Content-Length', str(len(data)))
-            self.end_headers()
-            self.wfile.write(data)
+            global _last_use, _busy
+            # Mark the request as actively served BEFORE synthesis starts:
+            # (a) _last_use keeps the idle unloader from treating this request's
+            # whole duration as idle time, (b) _busy blocks os._exit(0) during
+            # synthesis AND while the WAV body is still being streamed out.
+            _last_use = time.time()
+            _busy += 1
+            try:
+                length = int(self.headers.get('Content-Length', 0))
+                body = json.loads(self.rfile.read(length))
+                text = body.get('input') or body.get('text', '')
+                if not text:
+                    self._json(400, {'error': 'no input text'})
+                    return
+                # Cap input length only as a crude safety net (real splitting happens
+                # in _chunk_sentences); value comes from TTS_MAX_CHARS env/ansible var.
+                text = text[:TTS_MAX_CHARS]
+                speed = float(body.get('speed', 1.0))
+                speed = max(0.6, min(1.6, speed))
+                ref = body.get('ref') or None
+                data = self._synthesize(text, speed, ref)
+                self.send_response(200)
+                self.send_header('Content-Type', 'audio/wav')
+                self.send_header('Content-Length', str(len(data)))
+                self.end_headers()
+                self.wfile.write(data)
+            finally:
+                _busy -= 1
         except Exception as e:
             import traceback
             traceback.print_exc()
             self._json(500, {'error': str(e)})
 
 if __name__ == '__main__':
-    HTTPServer(('0.0.0.0', PORT), TTSHandler).serve_forever()
+    ThreadingHTTPServer(('0.0.0.0', PORT), TTSHandler).serve_forever()
