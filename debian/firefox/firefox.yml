@@ -52,24 +52,3 @@
         mode: "0555"
       changed_when: false
 
-    - name: /usr/local/sbin/autoupdate.d/video-download-helper.update
-      blockinfile:
-        path: /usr/local/sbin/autoupdate.d/video-download-helper.update
-        mode: "0400"
-        owner: root
-        group: root
-        create: yes
-        marker: "# {mark} ANSIBLE MANAGED BLOCK"
-        block: |
-          wget -q $(curl -s https://api.github.com/repositories/108186071/releases/latest | jq -r '.assets[].browser_download_url' | grep linux-{{ ansible_architecture }}.deb | head -n1) -O /tmp/vdh.deb
-          dpkg -i /tmp/vdh.deb
-          rm /tmp/vdh.deb
-        backup: yes
-        validate: /bin/bash -n %s
-
-    - name: Install video-download-helper
-      command: bash -e /usr/local/sbin/autoupdate.d/video-download-helper.update
-      args:
-        creates: /opt/net.downloadhelper.coapp
-      changed_when: false
-
