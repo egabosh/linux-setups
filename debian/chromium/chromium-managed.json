@@ -1,5 +1,5 @@
 {
-  "ExtensionInstallForcelist": ["ckdcpbflcbeillmamogkpmdhnbeggfja", "ohahllgiabjaoigichmmfljhkcfikeof", "clpapnmmlmecieknddelobgikompchkk", "fnaicdffflnofjppbagibeoednhnbjhg", "mhajlicjhgoofheldnmollgbgjheenbi", "fgmjlmbojbkmdpofahffgcpkhkngfpef", "lmjnegcaeklhafolokijcfjliaokphfk"],
+  "ExtensionInstallForcelist": ["ckdcpbflcbeillmamogkpmdhnbeggfja", "ohahllgiabjaoigichmmfljhkcfikeof", "clpapnmmlmecieknddelobgikompchkk", "fnaicdffflnofjppbagibeoednhnbjhg", "mhajlicjhgoofheldnmollgbgjheenbi", "fgmjlmbojbkmdpofahffgcpkhkngfpef", "iakkmkmhhckcmoiibcfjnooibphlobak"],
   "ExtensionSettings": {
     "ckdcpbflcbeillmamogkpmdhnbeggfja": {
       "update_url": "https://clients2.google.com/service/update2/crx"
@@ -18,7 +18,7 @@
       "toolbar_pin": "force_pinned",
       "update_url": "https://clients2.google.com/service/update2/crx"
     },
-    "lmjnegcaeklhafolokijcfjliaokphfk": {
+    "iakkmkmhhckcmoiibcfjnooibphlobak": {
       "toolbar_pin": "force_pinned",
       "update_url": "https://clients2.google.com/service/update2/crx"
     },
